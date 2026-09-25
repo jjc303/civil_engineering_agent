@@ -17,11 +17,14 @@ class TimeAnchor:
 
     def __init__(
         self,
-        session_started_at_utc: Optional[datetime] = None,
+        session_started_at_utc: Optional[Union[datetime, str]] = None,
         session_started_monotonic: Optional[float] = None,
     ):
         if session_started_at_utc is not None:
-            if session_started_at_utc.tzinfo is None:
+            if isinstance(session_started_at_utc, str):
+                dt = datetime.fromisoformat(session_started_at_utc.replace("Z", "+00:00"))
+                self.session_started_at_utc = dt.astimezone(timezone.utc)
+            elif session_started_at_utc.tzinfo is None:
                 self.session_started_at_utc = session_started_at_utc.replace(tzinfo=timezone.utc)
             else:
                 self.session_started_at_utc = session_started_at_utc.astimezone(timezone.utc)

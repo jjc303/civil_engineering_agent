@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import torch
 
-from perception.detectors.base import BaseDetector
+from perception.detectors.base import BaseDetector, get_optimal_device
 from perception.schemas.detection import BoundingBox, DetectionResult
 
 
@@ -19,8 +19,8 @@ class LegacyYOLOv5Adapter(BaseDetector):
     without altering any internal Smart_Construction source code.
     """
 
-    def __init__(self, weights_path: Optional[str] = None, device: str = "cpu"):
-        self.device_str = device
+    def __init__(self, weights_path: Optional[str] = None, device: Optional[str] = None):
+        self.device_str = get_optimal_device(device)
         self.device = torch.device("cpu")
         self.model = None
         self.half = False
@@ -34,9 +34,9 @@ class LegacyYOLOv5Adapter(BaseDetector):
             sys.path.insert(0, str(self.legacy_root))
 
         if weights_path and Path(weights_path).is_file():
-            self.load_model(weights_path, device)
+            self.load_model(weights_path, self.device_str)
 
-    def load_model(self, weights_path: str, device: str = "cpu") -> None:
+    def load_model(self, weights_path: str, device: Optional[str] = None) -> None:
         p = Path(weights_path)
         if not p.is_file():
             raise FileNotFoundError(f"Model weight file not found: {weights_path}")
@@ -45,7 +45,8 @@ class LegacyYOLOv5Adapter(BaseDetector):
         from utils.torch_utils import select_device
         from utils.utils import check_img_size
 
-        self.device = select_device(device if device != "cpu" else "cpu")
+        target_dev = get_optimal_device(device or self.device_str)
+        self.device = select_device(target_dev if target_dev != "cpu" else "cpu")
         self.half = self.device.type != "cpu"
 
         # Load weights with PyTorch 2.6+ backward compatibility

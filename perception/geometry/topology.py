@@ -1,12 +1,30 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple, Union
 import numpy as np
 from pydantic import BaseModel, Field
 from scipy.optimize import linear_sum_assignment
 
 from perception.schemas.detection import BoundingBox
+
+
+DEFAULT_PERSON_CLASSES: Tuple[Union[str, int], ...] = ("person", "worker", "pedestrian", 0)
+DEFAULT_HELMET_CLASSES: Tuple[Union[str, int], ...] = ("helmet", "hard_hat", "hard-hat", "hardhat", 2)
+DEFAULT_HEAD_CLASSES: Tuple[Union[str, int], ...] = ("head", "face", 1)
+
+
+def _is_class_match(box: BoundingBox, allowed_classes: Iterable[Union[str, int]]) -> bool:
+    name_lower = box.class_name.lower().strip()
+    for target in allowed_classes:
+        if isinstance(target, int):
+            if box.class_id == target:
+                return True
+        elif isinstance(target, str):
+            target_lower = target.lower().strip()
+            if target_lower == name_lower or target_lower in name_lower:
+                return True
+    return False
 
 
 class HelmetCompliance(str, Enum):
@@ -50,6 +68,9 @@ def match_person_head_helmet(
     detections: List[BoundingBox],
     head_ratio: float = 0.35,
     min_containment_ratio: float = 0.4,
+    person_classes: Optional[Iterable[Union[str, int]]] = None,
+    helmet_classes: Optional[Iterable[Union[str, int]]] = None,
+    head_classes: Optional[Iterable[Union[str, int]]] = None,
 ) -> List[PersonTopologyResult]:
     """
     Performs spatial topology matching between persons and detected helmets / bare heads.
@@ -62,19 +83,25 @@ def match_person_head_helmet(
     :param detections: list of all BoundingBoxes in current frame
     :param head_ratio: vertical fraction of person height representing head region (default 0.35)
     :param min_containment_ratio: minimum fraction of candidate helmet/head area inside person head region
+    :param person_classes: optional custom class names/IDs for persons (defaults to DEFAULT_PERSON_CLASSES)
+    :param helmet_classes: optional custom class names/IDs for helmets (defaults to DEFAULT_HELMET_CLASSES)
+    :param head_classes: optional custom class names/IDs for bare heads (defaults to DEFAULT_HEAD_CLASSES)
     :return: list of PersonTopologyResult with compliance state and attached boxes
     """
+    p_classes = person_classes if person_classes is not None else DEFAULT_PERSON_CLASSES
+    h_classes = helmet_classes if helmet_classes is not None else DEFAULT_HELMET_CLASSES
+    hd_classes = head_classes if head_classes is not None else DEFAULT_HEAD_CLASSES
+
     persons: List[BoundingBox] = []
     helmets: List[BoundingBox] = []
     heads: List[BoundingBox] = []
 
     for b in detections:
-        name_lower = b.class_name.lower()
-        if "person" in name_lower or b.class_id == 0:
+        if _is_class_match(b, p_classes):
             persons.append(b)
-        elif "helmet" in name_lower or b.class_id == 2:
+        elif _is_class_match(b, h_classes):
             helmets.append(b)
-        elif "head" in name_lower or b.class_id == 1:
+        elif _is_class_match(b, hd_classes):
             heads.append(b)
 
     if not persons:

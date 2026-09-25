@@ -80,3 +80,28 @@ def test_topology_no_head_or_helmet_detected():
     assert len(results) == 1
     assert results[0].compliance == HelmetCompliance.UNKNOWN
     assert results[0].has_helmet is False
+
+
+def test_topology_custom_class_mappings():
+    """Verify that custom class names and custom class IDs are correctly matched."""
+    # Worker labeled 'construction_worker' with class_id=10
+    worker = BoundingBox(
+        x1=100.0, y1=100.0, x2=200.0, y2=300.0,
+        conf=0.9, class_id=10, class_name="construction_worker",
+    )
+    # Hardhat labeled 'safety_cap' with class_id=20
+    hardhat = BoundingBox(
+        x1=120.0, y1=85.0, x2=180.0, y2=135.0,
+        conf=0.88, class_id=20, class_name="safety_cap",
+    )
+
+    results = match_person_head_helmet(
+        [worker, hardhat],
+        person_classes=["construction_worker", 10],
+        helmet_classes=["safety_cap", 20],
+    )
+    assert len(results) == 1
+    assert results[0].compliance == HelmetCompliance.HELMETED
+    assert results[0].has_helmet is True
+    assert results[0].helmet_box is not None
+

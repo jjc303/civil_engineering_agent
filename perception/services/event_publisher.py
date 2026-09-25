@@ -151,6 +151,16 @@ class OutboxStore:
             ).fetchone()
             return dict(row) if row else None
 
+    def get_all_events(self, delivered: Optional[bool] = None) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            if delivered is True:
+                rows = conn.execute("SELECT * FROM outbox_events WHERE delivered_at IS NOT NULL ORDER BY created_at ASC;").fetchall()
+            elif delivered is False:
+                rows = conn.execute("SELECT * FROM outbox_events WHERE delivered_at IS NULL ORDER BY created_at ASC;").fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM outbox_events ORDER BY created_at ASC;").fetchall()
+            return [dict(r) for r in rows]
+
 
 class PerceptionEventPublisher:
     """
@@ -161,12 +171,13 @@ class PerceptionEventPublisher:
         self,
         agent_base_url: str = "http://127.0.0.1:8000",
         db_path: Union[str, Path] = "runs/outbox.db",
+        outbox_store: Optional[OutboxStore] = None,
         bearer_token: Optional[str] = None,
         timeout: float = 5.0,
         session: Optional[requests.Session] = None,
     ):
         self.agent_base_url = agent_base_url.rstrip("/")
-        self.outbox = OutboxStore(db_path)
+        self.outbox = outbox_store if outbox_store is not None else OutboxStore(db_path)
         self.bearer_token = bearer_token
         self.timeout = timeout
         self.session = session or requests.Session()

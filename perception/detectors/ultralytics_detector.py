@@ -6,7 +6,7 @@ from typing import List, Optional
 import numpy as np
 from ultralytics import YOLO
 
-from perception.detectors.base import BaseDetector
+from perception.detectors.base import BaseDetector, get_optimal_device
 from perception.schemas.detection import BoundingBox, DetectionResult
 
 
@@ -16,21 +16,21 @@ class UltralyticsDetector(BaseDetector):
     Implements the BaseDetector interface, producing standardized DetectionResult outputs.
     """
 
-    def __init__(self, weights_path: Optional[str] = None, device: str = "cpu"):
-        self.device = device
+    def __init__(self, weights_path: Optional[str] = None, device: Optional[str] = None):
+        self.device = get_optimal_device(device)
         self.model: Optional[YOLO] = None
         self.names = {}
         self.weights_path = weights_path
 
         if weights_path and Path(weights_path).is_file():
-            self.load_model(weights_path, device)
+            self.load_model(weights_path, self.device)
 
-    def load_model(self, weights_path: str, device: str = "cpu") -> None:
+    def load_model(self, weights_path: str, device: Optional[str] = None) -> None:
         p = Path(weights_path)
         if not p.is_file():
             raise FileNotFoundError(f"Ultralytics model weight not found: {weights_path}")
 
-        self.device = device
+        self.device = get_optimal_device(device or self.device)
         self.weights_path = str(p)
         self.model = YOLO(str(p))
         self.names = self.model.names if hasattr(self.model, "names") else {}

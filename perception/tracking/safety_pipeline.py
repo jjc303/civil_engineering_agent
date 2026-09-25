@@ -1,18 +1,23 @@
-from __future__ import annotations
-
 import time
-from typing import List, Optional
+from datetime import datetime, timezone
+from typing import Iterable, List, Optional, Union
 import numpy as np
 from pydantic import BaseModel, Field
 
 from perception.detectors.base import BaseDetector
 from perception.geometry.topology import match_person_head_helmet
+from perception.schemas.contract_v1 import (
+    CameraRunConfigContractV1,
+    TimeAnchor,
+    to_event_contract_v1,
+)
 from perception.schemas.detection import (
     BoundingBox,
     DangerZone,
     TrackedPerson,
     ViolationEvent,
 )
+from perception.services.event_publisher import PerceptionEventPublisher
 from perception.storage.event_store import EventStore
 from perception.tracking.byte_tracker import BYTETracker
 from perception.tracking.state_machine import WorkerSafetyMonitor
@@ -33,7 +38,7 @@ class PipelineFrameResult(BaseModel):
 class SafetyPerceptionPipeline:
     """
     Unified end-to-end perception and worker safety pipeline:
-    Frame -> Detection -> Topology Matching -> Tracking -> State Machine -> Event Persistence.
+    Frame -> Detection -> Topology Matching -> Tracking -> State Machine -> Event Persistence & Contract Outbox.
     """
 
     def __init__(
@@ -41,16 +46,33 @@ class SafetyPerceptionPipeline:
         detector: BaseDetector,
         danger_zones: Optional[List[DangerZone]] = None,
         event_store: Optional[EventStore] = None,
+        event_publisher: Optional[PerceptionEventPublisher] = None,
+        time_anchor: Optional[TimeAnchor] = None,
+        monitor_session_id: str = "default_session",
         camera_id: str = "cam_01",
         enter_debounce_frames: int = 3,
         exit_debounce_frames: int = 5,
         helmet_debounce_frames: int = 5,
         track_thresh: float = 0.4,
+        person_classes: Optional[Iterable[Union[str, int]]] = None,
+        helmet_classes: Optional[Iterable[Union[str, int]]] = None,
+        head_classes: Optional[Iterable[Union[str, int]]] = None,
+        model_name: str = "helmet_head_person_m",
+        model_version: str = "legacy-yolov5",
     ):
         self.detector = detector
         self.danger_zones = danger_zones or []
         self.event_store = event_store
+        self.event_publisher = event_publisher
+        self.time_anchor = time_anchor or TimeAnchor()
+        self.monitor_session_id = monitor_session_id
         self.camera_id = camera_id
+
+        self.person_classes = person_classes
+        self.helmet_classes = helmet_classes
+        self.head_classes = head_classes
+        self.model_name = model_name
+        self.model_version = model_version
 
         self.tracker = BYTETracker(track_thresh=track_thresh)
         self.safety_monitor = WorkerSafetyMonitor(
@@ -65,6 +87,25 @@ class SafetyPerceptionPipeline:
 
     def set_danger_zones(self, zones: List[DangerZone]):
         self.danger_zones = zones
+
+    def set_time_anchor(self, time_anchor: TimeAnchor) -> None:
+        self.time_anchor = time_anchor
+
+    def update_config(
+        self,
+        enter_debounce_frames: Optional[int] = None,
+        exit_debounce_frames: Optional[int] = None,
+        helmet_debounce_frames: Optional[int] = None,
+        danger_zones: Optional[List[DangerZone]] = None,
+    ) -> None:
+        """Dynamically updates debounce frames and danger zones at runtime."""
+        self.safety_monitor.update_config(
+            enter_debounce_frames=enter_debounce_frames,
+            exit_debounce_frames=exit_debounce_frames,
+            helmet_debounce_frames=helmet_debounce_frames,
+        )
+        if danger_zones is not None:
+            self.danger_zones = danger_zones
 
     def reset(self):
         self.tracker.reset()
@@ -95,7 +136,12 @@ class SafetyPerceptionPipeline:
         det_result = self.detector.detect(frame)
 
         # 2. Perform person-head-helmet spatial topology matching
-        topo_results = match_person_head_helmet(det_result.boxes)
+        topo_results = match_person_head_helmet(
+            det_result.boxes,
+            person_classes=self.person_classes,
+            helmet_classes=self.helmet_classes,
+            head_classes=self.head_classes,
+        )
 
         # 3. Prepare person bounding boxes with attached helmet metadata for tracker
         person_boxes: List[BoundingBox] = []
@@ -149,6 +195,32 @@ class SafetyPerceptionPipeline:
                     end_time=ev.end_time or now,
                     duration_seconds=ev.duration_seconds,
                 )
+
+        # 8. Dispatch events to Contract v1 Outbox / Publisher
+        if self.event_publisher is not None:
+            zone_id_map = {z.name: getattr(z, "zone_id", z.name) for z in self.danger_zones}
+
+            for ev in new_events:
+                contract_ev = to_event_contract_v1(
+                    event=ev,
+                    time_anchor=self.time_anchor,
+                    monitor_session_id=self.monitor_session_id,
+                    zone_id=zone_id_map.get(ev.zone_name) if ev.zone_name else None,
+                    model_name=self.model_name,
+                    model_version=self.model_version,
+                )
+                self.event_publisher.publish(contract_ev)
+
+            for ev in closed_events:
+                contract_ev = to_event_contract_v1(
+                    event=ev,
+                    time_anchor=self.time_anchor,
+                    monitor_session_id=self.monitor_session_id,
+                    zone_id=zone_id_map.get(ev.zone_name) if ev.zone_name else None,
+                    model_name=self.model_name,
+                    model_version=self.model_version,
+                )
+                self.event_publisher.publish(contract_ev)
 
         return PipelineFrameResult(
             frame_id=self.frame_counter,

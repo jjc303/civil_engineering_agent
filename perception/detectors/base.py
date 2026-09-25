@@ -1,11 +1,32 @@
-from __future__ import annotations
-
+import os
 import time
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 import numpy as np
 
 from perception.schemas.detection import BoundingBox, DetectionResult
+
+
+def get_optimal_device(requested_device: Optional[str] = None) -> str:
+    """
+    Resolves the optimal execution device:
+    1. Explicit requested_device (if specified and non-empty)
+    2. Environment variable PERCEPTION_DEVICE (e.g. 'cuda:0', 'cpu')
+    3. Auto-detected CUDA if torch.cuda.is_available()
+    4. Fallback to 'cpu'
+    """
+    if requested_device:
+        return requested_device
+    env_dev = os.getenv("PERCEPTION_DEVICE")
+    if env_dev:
+        return env_dev
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda:0"
+    except Exception:
+        pass
+    return "cpu"
 
 
 class BaseDetector(ABC):

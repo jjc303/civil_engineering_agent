@@ -125,3 +125,72 @@ def test_safety_pipeline_end_to_end_on_sample_video():
         # Check snapshot generation
         snapshots = list(snap_dir.glob("*/*.jpg"))
         assert len(snapshots) >= 1, "Snapshot image was not written to disk"
+
+
+def test_safety_pipeline_with_event_publisher_outbox():
+    """Verify that SafetyPerceptionPipeline publishes contract v1 events to the outbox."""
+    from perception.services.event_publisher import OutboxStore, PerceptionEventPublisher
+    from perception.schemas.contract_v1 import TimeAnchor
+
+    fixtures_dir = Path(__file__).parent / "fixtures"
+    video_path = fixtures_dir / "sample_walk.mp4"
+    ground_truth_path = fixtures_dir / "ground_truth.json"
+
+    with open(ground_truth_path, "r", encoding="utf-8") as f:
+        gt_data = json.load(f)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        outbox_db = Path(tmp_dir) / "outbox.db"
+        outbox_store = OutboxStore(db_path=outbox_db)
+        publisher = PerceptionEventPublisher(
+            outbox_store=outbox_store,
+            agent_base_url="http://127.0.0.1:9999",
+        )
+
+        zone_data = gt_data["danger_zones"][0]
+        danger_zone = DangerZone(
+            name=zone_data["name"],
+            polygon=zone_data["polygon"],
+            alarm_dwell_threshold_seconds=1.0,
+        )
+
+        time_anchor = TimeAnchor(
+            session_started_at_utc="2026-09-25T10:00:00Z",
+            session_started_monotonic=0.0,
+        )
+
+        detector = ReplayDetector(gt_data["frame_annotations"])
+        pipeline = SafetyPerceptionPipeline(
+            detector=detector,
+            danger_zones=[danger_zone],
+            event_publisher=publisher,
+            time_anchor=time_anchor,
+            monitor_session_id="session_test_42",
+            camera_id="cam_site_01",
+            enter_debounce_frames=2,
+            exit_debounce_frames=2,
+        )
+
+        cap = cv2.VideoCapture(str(video_path))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        frame_idx = 0
+
+        while cap.isOpened() and frame_idx < 95:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            pipeline.process_frame(frame, timestamp=frame_idx / fps)
+            frame_idx += 1
+
+        cap.release()
+
+        # Check outbox entries
+        undelivered = outbox_store.get_all_events(delivered=False)
+        assert len(undelivered) >= 1
+        first = undelivered[0]
+        payload = json.loads(first["payload_json"])
+        assert payload["schema_version"] == "1.0"
+        assert payload["camera_id"] == "cam_site_01"
+        assert payload["monitor_session_id"] == "session_test_42"
+        assert payload["event_uuid"] is not None
+

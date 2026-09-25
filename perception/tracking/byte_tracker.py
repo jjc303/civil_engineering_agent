@@ -70,8 +70,8 @@ class STrack:
         STrack.shared_id += 1
         return STrack.shared_id
 
-    def activate(self, frame_id: int):
-        self.track_id = self.next_id()
+    def activate(self, frame_id: int, track_id: Optional[int] = None):
+        self.track_id = track_id if track_id is not None else self.next_id()
         self.state = TrackState.Tracked
         if frame_id == 1:
             self.is_activated = True
@@ -81,14 +81,14 @@ class STrack:
         self.last_update_time = time.monotonic()
         self.trajectory.append(self.feet_point)
 
-    def re_activate(self, new_track: STrack, frame_id: int, new_id: bool = False):
+    def re_activate(self, new_track: STrack, frame_id: int, new_id: bool = False, track_id: Optional[int] = None):
         self._tlbr = new_track._tlbr
         self.score = new_track.score
         self.state = TrackState.Tracked
         self.is_activated = True
         self.frame_id = frame_id
         if new_id:
-            self.track_id = self.next_id()
+            self.track_id = track_id if track_id is not None else self.next_id()
         self.has_helmet = new_track.has_helmet
         self.helmet_box = new_track.helmet_box
         self.head_box = new_track.head_box
@@ -179,10 +179,12 @@ class BYTETracker:
         track_thresh: float = 0.5,
         match_thresh: float = 0.7,
         max_lost_frames: int = 30,
+        start_id: int = 0,
     ):
         self.track_thresh = track_thresh
         self.match_thresh = match_thresh
         self.max_lost_frames = max_lost_frames
+        self._next_id: int = start_id
 
         self.tracked_stracks: List[STrack] = []
         self.lost_stracks: List[STrack] = []
@@ -190,7 +192,12 @@ class BYTETracker:
 
         self.frame_id = 0
 
+    def next_track_id(self) -> int:
+        self._next_id += 1
+        return self._next_id
+
     def reset(self):
+        self._next_id = 0
         STrack.shared_id = 0
         self.tracked_stracks.clear()
         self.lost_stracks.clear()
@@ -284,7 +291,7 @@ class BYTETracker:
         # Init new tracks
         for idet in unmatched_new_dets:
             track = unmatched_high_dets[idet]
-            track.activate(self.frame_id)
+            track.activate(self.frame_id, track_id=self.next_track_id())
             activated_stracks.append(track)
 
         # Remove dead tracks

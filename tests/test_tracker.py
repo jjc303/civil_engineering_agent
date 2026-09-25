@@ -61,3 +61,37 @@ def test_byte_tracker_association():
     assert len(tracks_frame4) == 1
     # Successfully re-identified and recovered same track_id
     assert tracks_frame4[0].track_id == track_id
+
+
+def test_byte_tracker_multi_instance_isolation():
+    """Verify that multiple BYTETracker instances don't share IDs or conflict."""
+    tracker_a = BYTETracker()
+    tracker_b = BYTETracker()
+
+    det_a = [
+        BoundingBox(x1=50.0, y1=50.0, x2=100.0, y2=150.0, conf=0.9, class_id=0, class_name="person")
+    ]
+    det_b = [
+        BoundingBox(x1=200.0, y1=200.0, x2=300.0, y2=400.0, conf=0.9, class_id=0, class_name="person")
+    ]
+
+    tracks_a = tracker_a.update(det_a)
+    tracks_b = tracker_b.update(det_b)
+
+    # Both start their own sequence from 1
+    assert tracks_a[0].track_id == 1
+    assert tracks_b[0].track_id == 1
+
+    tracker_a.reset()
+    assert tracker_a._next_id == 0
+    # tracker_b is unaffected and assigns ID 2
+    det_b2 = [
+        BoundingBox(x1=10.0, y1=10.0, x2=20.0, y2=30.0, conf=0.9, class_id=0, class_name="person")
+    ]
+    tracker_b.update(det_b2)
+    assert any(t.track_id == 2 for t in tracker_b.tracked_stracks)
+
+    # Frame 3 confirms the new track
+    tracks_b3 = tracker_b.update(det_b2)
+    assert any(t.track_id == 2 for t in tracks_b3)
+

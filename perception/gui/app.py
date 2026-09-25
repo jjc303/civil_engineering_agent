@@ -104,10 +104,14 @@ class PerceptionWorkerThread(QThread):
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.running = False
 
-        # Event storage and danger zones
+        # Event storage, outbox, and danger zones
         self.event_store = EventStore(
             db_path=self.output_dir / "safety_events.db",
             snapshot_dir=self.output_dir / "snapshots",
+        )
+        from perception.services.event_publisher import PerceptionEventPublisher
+        self.event_publisher = PerceptionEventPublisher(
+            db_path=self.output_dir / "outbox.db",
         )
         self.danger_zones: List[DangerZone] = []
         cfg_path = PROJECT_ROOT / "perception" / "configs" / "default_danger_zones.json"
@@ -118,6 +122,7 @@ class PerceptionWorkerThread(QThread):
         self.running = True
         import cv2
         import numpy as np
+        from perception.schemas.contract_v1 import TimeAnchor
         from perception.tracking.safety_pipeline import SafetyPerceptionPipeline
 
         src = self.source_path
@@ -129,6 +134,8 @@ class PerceptionWorkerThread(QThread):
             detector=self.detector,
             danger_zones=self.danger_zones,
             event_store=self.event_store,
+            event_publisher=self.event_publisher,
+            time_anchor=TimeAnchor(),
             camera_id=p_src.stem,
         )
 
@@ -233,26 +240,36 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setWindowTitle(f"Civil Engineering Agent - Safety Perception Studio {CODE_VER}")
         self.showMaximized()
 
-        # Load detector from perception/weights/
-        weights_dir = PROJECT_ROOT / "perception" / "weights"
-        m_weight = weights_dir / "helmet_head_person_m.pt"
-        s_weight = weights_dir / "helmet_head_person_s.pt"
+        # Dynamically determine optimal compute device
+        from perception.detectors.base import get_optimal_device
+        device = get_optimal_device()
 
-        if m_weight.is_file():
-            self.detector = LegacyYOLOv5Adapter(str(m_weight), device="cpu")
-            self.using_weight_name = m_weight.name
-        elif s_weight.is_file():
-            self.detector = LegacyYOLOv5Adapter(str(s_weight), device="cpu")
-            self.using_weight_name = s_weight.name
-        else:
-            v8_weight = weights_dir / "yolov8n.pt"
-            if v8_weight.is_file():
-                self.detector = UltralyticsDetector(str(v8_weight), device="cpu")
-                self.using_weight_name = v8_weight.name
-            else:
-                from perception.detectors.base import MockDetector
-                self.detector = MockDetector()
-                self.using_weight_name = "MockDetector (No weights)"
+        # Load detector from PERCEPTION_MODEL_WEIGHTS or perception/weights/
+        weights_dir = PROJECT_ROOT / "perception" / "weights"
+        candidate_weights = []
+        env_weight = os.environ.get("PERCEPTION_MODEL_WEIGHTS")
+        if env_weight and Path(env_weight).is_file():
+            candidate_weights.append(Path(env_weight))
+        candidate_weights.extend([
+            weights_dir / "helmet_head_person_m.pt",
+            weights_dir / "helmet_head_person_s.pt",
+            weights_dir / "yolov8n.pt",
+        ])
+
+        self.detector = None
+        self.using_weight_name = "MockDetector (No weights)"
+        for w in candidate_weights:
+            if w.is_file():
+                if "yolov8" in w.name.lower() or "yolo11" in w.name.lower():
+                    self.detector = UltralyticsDetector(str(w), device=device)
+                else:
+                    self.detector = LegacyYOLOv5Adapter(str(w), device=device)
+                self.using_weight_name = f"{w.name} [{device}]"
+                break
+
+        if self.detector is None:
+            from perception.detectors.base import MockDetector
+            self.detector = MockDetector()
 
         # Update weight label in UI if present
         if hasattr(self, "weight_file_label"):
