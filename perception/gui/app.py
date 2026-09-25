@@ -15,10 +15,24 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import psutil
 
-# Safe PyTorch JIT patch
+# Import PyTorch and torchvision before PyQt5 to avoid C++ runtime symbol conflicts
+import torch
 import torch.jit
+import torchvision
 torch.jit.script_method = lambda fn, _rcb=None: fn
 torch.jit.script = lambda obj, optimize=True, _frames_up=0, _rcb=None: obj
+
+# Explicitly ensure Qt5 platform and plugin paths resolve to PyQt5
+import PyQt5
+pyqt5_dir = os.path.dirname(PyQt5.__file__)
+qt5_plugins = os.path.join(pyqt5_dir, "Qt5", "plugins")
+if os.path.isdir(qt5_plugins):
+    if "QT_PLUGIN_PATH" not in os.environ:
+        os.environ["QT_PLUGIN_PATH"] = qt5_plugins
+    platforms_dir = os.path.join(qt5_plugins, "platforms")
+    if os.path.isdir(platforms_dir) and "QT_QPA_PLATFORM_PLUGIN_PATH" not in os.environ:
+        os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = platforms_dir
+
 
 from PyQt5.QtCore import QDateTime, Qt, QThread, QTimer, QUrl, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QBrush, QColor, QIcon, QImage, QPixmap
@@ -37,9 +51,11 @@ from perception.gui.UI.main_window import Ui_MainWindow
 from perception.detectors.legacy_yolo_adapter import LegacyYOLOv5Adapter
 from perception.detectors.ultralytics_detector import UltralyticsDetector
 from perception.geometry.danger_zone import (
+    DangerZone,
     load_danger_zones_from_json,
     person_in_danger_zone,
 )
+from perception.storage.event_store import EventStore
 from perception.tracking.byte_tracker import BYTETracker
 from perception.schemas.detection import BoundingBox
 
@@ -292,7 +308,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.chart.addAxis(self.axisY, Qt.AlignLeft)
         self.series.attachAxis(self.axisY)
 
-        self.chart_view.setChart(self.chart)
+        if hasattr(self, "gpu_info_chart"):
+            self.gpu_info_chart.setChart(self.chart)
+        elif hasattr(self, "chart_view"):
+            self.chart_view.setChart(self.chart)
 
     def update_hardware_chart(self):
         info = get_hardware_info()
