@@ -106,7 +106,6 @@ tests/agent/
 **真实 DeepSeek 闭环**：使用 `.env` 中的真实 Key 调用 `deepseek-flash` 成功生成合法 `ToolDecision`，调用 `get_violation_statistics` 查询 MySQL，并基于返回事实生成中文回答；测试事件已清理。
 
 
-
 ---
 
 ## 4. 当前目录与运行方式

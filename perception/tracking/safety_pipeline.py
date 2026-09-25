@@ -1,6 +1,6 @@
 import time
 from datetime import datetime, timezone
-from typing import Iterable, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Union
 import numpy as np
 from pydantic import BaseModel, Field
 
@@ -17,10 +17,12 @@ from perception.schemas.detection import (
     TrackedPerson,
     ViolationEvent,
 )
-from perception.services.event_publisher import PerceptionEventPublisher
 from perception.storage.event_store import EventStore
 from perception.tracking.byte_tracker import BYTETracker
 from perception.tracking.state_machine import WorkerSafetyMonitor
+
+if TYPE_CHECKING:
+    from perception.services.event_publisher import PerceptionEventPublisher
 
 
 class PipelineFrameResult(BaseModel):
@@ -46,7 +48,7 @@ class SafetyPerceptionPipeline:
         detector: BaseDetector,
         danger_zones: Optional[List[DangerZone]] = None,
         event_store: Optional[EventStore] = None,
-        event_publisher: Optional[PerceptionEventPublisher] = None,
+        event_publisher: Optional["PerceptionEventPublisher"] = None,
         time_anchor: Optional[TimeAnchor] = None,
         monitor_session_id: str = "default_session",
         camera_id: str = "cam_01",

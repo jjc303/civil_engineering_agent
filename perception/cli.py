@@ -60,6 +60,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     publisher = PerceptionEventPublisher(
         outbox_store=outbox_store,
         agent_base_url=args.agent_url,
+        bearer_token=os.getenv("INTERNAL_PERCEPTION_TOKEN"),
     )
     logger.info(f"Outbox initialized at {args.outbox_db}, targeting Agent at {args.agent_url}")
 

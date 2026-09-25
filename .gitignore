@@ -50,6 +50,8 @@ htmlcov/
 # Local Inference & Run Outputs
 runs/
 inference/output/
+data/
+*.db
 *.log
 
 # Operating System & Windows Metadata
