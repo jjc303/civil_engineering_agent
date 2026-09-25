@@ -7,8 +7,9 @@ from perception.detectors.ultralytics_detector import UltralyticsDetector
 from perception.geometry.danger_zone import load_danger_zones_from_json, person_in_danger_zone
 from perception.schemas.detection import DetectionResult
 
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
-WEIGHTS_DIR = Path(__file__).parent.parent / "perception" / "weights"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures"
+WEIGHTS_DIR = PROJECT_ROOT / "perception" / "weights"
 
 
 def test_legacy_yolo_adapter_regression():

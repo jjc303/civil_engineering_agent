@@ -9,6 +9,9 @@ from perception.schemas.detection import BoundingBox, DangerZone, DetectionResul
 from perception.storage.event_store import EventStore
 from perception.tracking.safety_pipeline import SafetyPerceptionPipeline
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures"
+
 
 class ReplayDetector(BaseDetector):
     """Replays pre-annotated ground truth bounding boxes frame by frame."""
@@ -59,9 +62,8 @@ class ReplayDetector(BaseDetector):
 
 
 def test_safety_pipeline_end_to_end_on_sample_video():
-    fixtures_dir = Path(__file__).parent / "fixtures"
-    video_path = fixtures_dir / "sample_walk.mp4"
-    gt_path = fixtures_dir / "ground_truth.json"
+    video_path = FIXTURES_DIR / "sample_walk.mp4"
+    gt_path = FIXTURES_DIR / "ground_truth.json"
 
     with open(gt_path, "r", encoding="utf-8") as f:
         gt_data = json.load(f)
@@ -132,9 +134,8 @@ def test_safety_pipeline_with_event_publisher_outbox():
     from perception.services.event_publisher import OutboxStore, PerceptionEventPublisher
     from perception.schemas.contract_v1 import TimeAnchor
 
-    fixtures_dir = Path(__file__).parent / "fixtures"
-    video_path = fixtures_dir / "sample_walk.mp4"
-    ground_truth_path = fixtures_dir / "ground_truth.json"
+    video_path = FIXTURES_DIR / "sample_walk.mp4"
+    ground_truth_path = FIXTURES_DIR / "ground_truth.json"
 
     with open(ground_truth_path, "r", encoding="utf-8") as f:
         gt_data = json.load(f)

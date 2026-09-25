@@ -74,8 +74,11 @@ def test_gui_coordinate_mapping_roundtrip():
         assert err_y <= 1, f"Y roundtrip error {err_y} > 1 for {pt}"
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
 def test_load_danger_zones_from_json():
-    json_path = Path(__file__).parent / "fixtures" / "sample_site.json"
+    json_path = PROJECT_ROOT / "tests" / "fixtures" / "sample_site.json"
     zones = load_danger_zones_from_json(json_path)
 
     assert len(zones) >= 1
@@ -85,7 +88,7 @@ def test_load_danger_zones_from_json():
 
 def test_load_danger_zones_from_modern_config():
     # Test loading modern default_danger_zones.json (list format)
-    cfg_path = Path(__file__).parent.parent / "perception" / "configs" / "default_danger_zones.json"
+    cfg_path = PROJECT_ROOT / "perception" / "configs" / "default_danger_zones.json"
     zones = load_danger_zones_from_json(cfg_path)
 
     assert len(zones) == 1

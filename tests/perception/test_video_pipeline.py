@@ -8,10 +8,13 @@ from perception.geometry.danger_zone import point_in_polygon_cv2
 from perception.tracking.byte_tracker import BYTETracker
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures"
+
+
 def test_sample_walk_video_ground_truth_consistency():
-    fixtures_dir = Path(__file__).parent / "fixtures"
-    video_path = fixtures_dir / "sample_walk.mp4"
-    gt_path = fixtures_dir / "ground_truth.json"
+    video_path = FIXTURES_DIR / "sample_walk.mp4"
+    gt_path = FIXTURES_DIR / "ground_truth.json"
 
     assert video_path.is_file(), "sample_walk.mp4 missing"
     assert gt_path.is_file(), "ground_truth.json missing"
