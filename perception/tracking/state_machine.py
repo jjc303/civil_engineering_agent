@@ -119,19 +119,27 @@ class PersonZoneTracker:
                     self.state = ZoneIntrusionState.DWELL_TIMEOUT
                     self.escalated_to_alarm = True
 
-                    # Close previous warning or create escalated critical event
-                    dwell_event = ViolationEvent(
-                        event_uuid=str(uuid.uuid4()),
-                        track_id=self.track_id,
-                        camera_id=camera_id,
-                        violation_type=ViolationType.DWELL_TIMEOUT,
-                        severity=ViolationSeverity.CRITICAL,
-                        zone_name=self.zone_name,
-                        start_time=self.entry_timestamp or current_time,
-                        duration_seconds=self.dwell_seconds,
-                    )
-                    self.active_violation = dwell_event
-                    new_event = dwell_event
+                    # Escalation must maintain the SAME event_uuid
+                    if self.active_violation:
+                        self.active_violation.severity = ViolationSeverity.CRITICAL
+                        self.active_violation.duration_seconds = self.dwell_seconds
+                        self.active_violation.extra_details["escalation_reason"] = "DWELL_TIMEOUT"
+                        self.active_violation.extra_details["dwell_threshold_seconds"] = self.dwell_threshold
+                        new_event = self.active_violation
+                    else:
+                        dwell_event = ViolationEvent(
+                            event_uuid=str(uuid.uuid4()),
+                            track_id=self.track_id,
+                            camera_id=camera_id,
+                            violation_type=ViolationType.DANGER_ZONE_INTRUSION,
+                            severity=ViolationSeverity.CRITICAL,
+                            zone_name=self.zone_name,
+                            start_time=self.entry_timestamp or current_time,
+                            duration_seconds=self.dwell_seconds,
+                            extra_details={"escalation_reason": "DWELL_TIMEOUT", "dwell_threshold_seconds": self.dwell_threshold},
+                        )
+                        self.active_violation = dwell_event
+                        new_event = dwell_event
                 elif self.active_violation:
                     self.active_violation.duration_seconds = self.dwell_seconds
             else:
@@ -156,6 +164,7 @@ class PersonZoneTracker:
                         self.active_violation.end_time = current_time
                         if self.entry_timestamp is not None:
                             self.active_violation.duration_seconds = max(0.0, current_time - self.entry_timestamp)
+                        self.active_violation.status = "RESOLVED"
                         closed_event = self.active_violation
                         self.active_violation = None
 
@@ -174,9 +183,10 @@ class PersonZoneTracker:
 class HelmetComplianceTracker:
     """Tracks consecutive unhelmeted frames and manages helmet violation events."""
 
-    def __init__(self, track_id: int, debounce_frames: int = 5):
+    def __init__(self, track_id: int, debounce_frames: int = 5, resolve_debounce_frames: Optional[int] = None):
         self.track_id = track_id
         self.debounce_frames = debounce_frames
+        self.resolve_debounce_frames = resolve_debounce_frames if resolve_debounce_frames is not None else debounce_frames
         self.consecutive_unhelmeted: int = 0
         self.consecutive_helmeted: int = 0
 
@@ -208,6 +218,7 @@ class HelmetComplianceTracker:
                     zone_name=None,
                     start_time=self.start_unhelmeted_time or current_time,
                     duration_seconds=0.0,
+                    status="ACTIVE",
                 )
                 new_event = self.active_violation
             elif self.active_violation and self.start_unhelmeted_time:
@@ -215,12 +226,13 @@ class HelmetComplianceTracker:
         else:
             self.consecutive_helmeted += 1
             self.consecutive_unhelmeted = 0
-            if self.consecutive_helmeted >= 3:
+            if self.consecutive_helmeted >= self.resolve_debounce_frames:
                 # Resolved helmet compliance
                 if self.active_violation:
                     self.active_violation.end_time = current_time
                     if self.start_unhelmeted_time:
                         self.active_violation.duration_seconds = max(0.0, current_time - self.start_unhelmeted_time)
+                    self.active_violation.status = "RESOLVED"
                     closed_event = self.active_violation
                     self.active_violation = None
                 self.start_unhelmeted_time = None
@@ -239,16 +251,35 @@ class WorkerSafetyMonitor:
         enter_debounce_frames: int = 3,
         exit_debounce_frames: int = 5,
         helmet_debounce_frames: int = 5,
+        helmet_resolve_debounce_frames: int = 5,
     ):
         self.camera_id = camera_id
         self.enter_debounce_frames = enter_debounce_frames
         self.exit_debounce_frames = exit_debounce_frames
         self.helmet_debounce_frames = helmet_debounce_frames
+        self.helmet_resolve_debounce_frames = helmet_resolve_debounce_frames
 
         # Map (track_id, zone_name) -> PersonZoneTracker
         self.zone_trackers: Dict[Tuple[int, str], PersonZoneTracker] = {}
         # Map track_id -> HelmetComplianceTracker
         self.helmet_trackers: Dict[int, HelmetComplianceTracker] = {}
+
+    def update_config(
+        self,
+        enter_debounce_frames: Optional[int] = None,
+        exit_debounce_frames: Optional[int] = None,
+        helmet_debounce_frames: Optional[int] = None,
+        helmet_resolve_debounce_frames: Optional[int] = None,
+    ) -> None:
+        """Dynamically updates debounce thresholds received from camera configuration."""
+        if enter_debounce_frames is not None:
+            self.enter_debounce_frames = enter_debounce_frames
+        if exit_debounce_frames is not None:
+            self.exit_debounce_frames = exit_debounce_frames
+        if helmet_debounce_frames is not None:
+            self.helmet_debounce_frames = helmet_debounce_frames
+        if helmet_resolve_debounce_frames is not None:
+            self.helmet_resolve_debounce_frames = helmet_resolve_debounce_frames
 
     def process(
         self,
@@ -275,6 +306,7 @@ class WorkerSafetyMonitor:
             tracker = self.zone_trackers.pop(k)
             if tracker.active_violation:
                 tracker.active_violation.end_time = now
+                tracker.active_violation.status = "RESOLVED"
                 closed_events.append(tracker.active_violation)
 
         stale_helmet_keys = [tid for tid in self.helmet_trackers.keys() if tid not in active_track_ids]
@@ -282,6 +314,7 @@ class WorkerSafetyMonitor:
             ht = self.helmet_trackers.pop(tid)
             if ht.active_violation:
                 ht.active_violation.end_time = now
+                ht.active_violation.status = "RESOLVED"
                 closed_events.append(ht.active_violation)
 
         # Process each active person
@@ -293,6 +326,7 @@ class WorkerSafetyMonitor:
                 self.helmet_trackers[tid] = HelmetComplianceTracker(
                     track_id=tid,
                     debounce_frames=self.helmet_debounce_frames,
+                    resolve_debounce_frames=self.helmet_resolve_debounce_frames,
                 )
             h_new, h_closed = self.helmet_trackers[tid].update(
                 has_helmet=person.has_helmet,

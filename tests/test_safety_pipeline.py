@@ -5,7 +5,7 @@ import cv2
 import pytest
 
 from perception.detectors.base import BaseDetector
-from perception.schemas.detection import BoundingBox, DangerZone, DetectionResult, ViolationType
+from perception.schemas.detection import BoundingBox, DangerZone, DetectionResult, ViolationSeverity, ViolationType
 from perception.storage.event_store import EventStore
 from perception.tracking.safety_pipeline import SafetyPerceptionPipeline
 
@@ -105,6 +105,8 @@ def test_safety_pipeline_end_to_end_on_sample_video():
             for ev in result.new_violations:
                 if ev.violation_type == ViolationType.DANGER_ZONE_INTRUSION:
                     intrusion_detected = True
+                    if ev.severity == ViolationSeverity.CRITICAL or ev.extra_details.get("escalation_reason") == "DWELL_TIMEOUT":
+                        dwell_alarm_detected = True
                 elif ev.violation_type == ViolationType.DWELL_TIMEOUT:
                     dwell_alarm_detected = True
 

@@ -54,6 +54,8 @@ def test_zone_tracker_debounce_and_dwell_timeout():
     assert ev_new is not None
     assert ev_new.violation_type == ViolationType.DANGER_ZONE_INTRUSION
     assert ev_new.severity == ViolationSeverity.WARNING
+    assert ev_new.status == "ACTIVE"
+    initial_event_uuid = ev_new.event_uuid
 
     # Advance time to 4.5 seconds (still < 5.0 threshold)
     ev_new, ev_closed = tracker.update(is_inside_raw=True, current_time=4.5, enter_debounce_frames=3)
@@ -61,12 +63,15 @@ def test_zone_tracker_debounce_and_dwell_timeout():
     assert ev_new is None
     assert tracker.dwell_seconds == pytest.approx(4.3, 0.05)
 
-    # Advance time to 5.2 seconds (>= 5.0 threshold) -> escalates to DWELL_TIMEOUT
+    # Advance time to 5.2 seconds (>= 5.0 threshold) -> escalates to CRITICAL with SAME event_uuid
     ev_new, ev_closed = tracker.update(is_inside_raw=True, current_time=5.3, enter_debounce_frames=3)
     assert tracker.state == ZoneIntrusionState.DWELL_TIMEOUT
     assert ev_new is not None
-    assert ev_new.violation_type == ViolationType.DWELL_TIMEOUT
+    assert ev_new.event_uuid == initial_event_uuid
+    assert ev_new.violation_type == ViolationType.DANGER_ZONE_INTRUSION
     assert ev_new.severity == ViolationSeverity.CRITICAL
+    assert ev_new.extra_details.get("escalation_reason") == "DWELL_TIMEOUT"
+    assert ev_new.status == "ACTIVE"
 
     # Step outside for 1 frame -> PENDING_EXIT (not yet closed due to exit debounce)
     ev_new, ev_closed = tracker.update(is_inside_raw=False, current_time=5.4, exit_debounce_frames=3)
@@ -78,10 +83,12 @@ def test_zone_tracker_debounce_and_dwell_timeout():
     assert tracker.state == ZoneIntrusionState.PENDING_EXIT
     assert ev_closed is None
 
-    # Frame 3 outside -> exit confirmed
+    # Frame 3 outside -> exit confirmed with SAME event_uuid and status RESOLVED
     ev_new, ev_closed = tracker.update(is_inside_raw=False, current_time=5.6, exit_debounce_frames=3)
     assert tracker.state == ZoneIntrusionState.OUTSIDE
     assert ev_closed is not None
+    assert ev_closed.event_uuid == initial_event_uuid
+    assert ev_closed.status == "RESOLVED"
     assert ev_closed.end_time == 5.6
     assert ev_closed.duration_seconds > 5.0
 

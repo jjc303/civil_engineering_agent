@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
 
 
@@ -87,6 +87,9 @@ class ViolationEvent(BaseModel):
     end_time: Optional[float] = Field(None, description="Timestamp when violation was resolved")
     duration_seconds: float = Field(0.0, description="Total violation duration")
     snapshot_path: Optional[str] = Field(None, description="Saved violation image snapshot path")
+    status: str = Field("ACTIVE", description="Violation status: ACTIVE, RESOLVED, or FALSE_ALARM")
+    monitor_session_id: Optional[str] = Field(None, description="Identifier of the monitoring session")
+    extra_details: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary metadata dictionary")
 
 
 class CameraStatus(BaseModel):
