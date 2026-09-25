@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import pytest
 from perception.geometry.danger_zone import (
@@ -80,3 +81,38 @@ def test_load_danger_zones_from_json():
     assert len(zones) >= 1
     assert zones[0].name == "dangerous"
     assert len(zones[0].polygon) == 9  # 1.json has 9 vertices
+
+
+def test_load_danger_zones_from_modern_config():
+    # Test loading modern default_danger_zones.json (list format)
+    cfg_path = Path(__file__).parent.parent / "perception" / "configs" / "default_danger_zones.json"
+    zones = load_danger_zones_from_json(cfg_path)
+
+    assert len(zones) == 1
+    assert zones[0].name == "Crane_Operational_Zone"
+    assert len(zones[0].polygon) == 9
+    assert zones[0].alarm_dwell_threshold_seconds == 5.0
+    assert zones[0].enabled is True
+
+
+def test_load_danger_zones_from_dict_container(tmp_path):
+    # Test loading dict container format {"zones": [...]}
+    test_json = tmp_path / "test_zones.json"
+    test_json.write_text(
+        json.dumps({
+            "zones": [
+                {
+                    "name": "Scaffold_Zone",
+                    "polygon": [[10.0, 10.0], [50.0, 10.0], [50.0, 50.0], [10.0, 50.0]],
+                    "alarm_dwell_threshold_seconds": 3.0,
+                    "enabled": True,
+                }
+            ]
+        }),
+        encoding="utf-8",
+    )
+    zones = load_danger_zones_from_json(test_json)
+    assert len(zones) == 1
+    assert zones[0].name == "Scaffold_Zone"
+    assert len(zones[0].polygon) == 4
+    assert zones[0].alarm_dwell_threshold_seconds == 3.0

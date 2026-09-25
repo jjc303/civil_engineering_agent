@@ -106,7 +106,11 @@ def map_raw_to_ui_coords(
 
 def load_danger_zones_from_json(json_path: Union[str, Path]) -> List[DangerZone]:
     """
-    Loads danger zone polygon definitions from legacy annotation JSON files.
+    Loads danger zone polygon definitions from JSON files.
+    Supports:
+      1) Modern DangerZone list format (e.g. default_danger_zones.json)
+      2) Modern dict container format (e.g. {"zones": [...]})
+      3) Legacy annotation JSON format (e.g. outputs.object[].polygon.{x1, y1, ...})
     """
     p = Path(json_path)
     if not p.is_file():
@@ -116,6 +120,34 @@ def load_danger_zones_from_json(json_path: Union[str, Path]) -> List[DangerZone]
         data = json.load(f)
 
     zones: List[DangerZone] = []
+
+    # Format 1: Direct list of DangerZone dicts (e.g. default_danger_zones.json)
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict) and "polygon" in item:
+                pts = [(float(pt[0]), float(pt[1])) for pt in item["polygon"]]
+                item_dict = dict(item)
+                item_dict["polygon"] = pts
+                zones.append(DangerZone(**item_dict))
+            elif isinstance(item, DangerZone):
+                zones.append(item)
+        return zones
+
+    if not isinstance(data, dict):
+        return []
+
+    # Format 2: Dict containing zones list, e.g. {"zones": [...]} or {"danger_zones": [...]}
+    zone_list = data.get("zones") or data.get("danger_zones")
+    if isinstance(zone_list, list):
+        for item in zone_list:
+            if isinstance(item, dict) and "polygon" in item:
+                pts = [(float(pt[0]), float(pt[1])) for pt in item["polygon"]]
+                item_dict = dict(item)
+                item_dict["polygon"] = pts
+                zones.append(DangerZone(**item_dict))
+        return zones
+
+    # Format 3: Legacy annotation format: outputs.object[].polygon.{x1, y1, ...}
     outputs = data.get("outputs", {})
     objects = outputs.get("object", [])
 

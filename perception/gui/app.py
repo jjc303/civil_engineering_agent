@@ -112,13 +112,7 @@ class PerceptionWorkerThread(QThread):
         self.danger_zones: List[DangerZone] = []
         cfg_path = PROJECT_ROOT / "perception" / "configs" / "default_danger_zones.json"
         if cfg_path.is_file():
-            try:
-                import json
-                with open(cfg_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    self.danger_zones = [DangerZone(**item) for item in data]
-            except Exception:
-                pass
+            self.danger_zones = load_danger_zones_from_json(cfg_path)
 
     def run(self):
         self.running = True
