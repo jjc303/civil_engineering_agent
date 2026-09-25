@@ -206,6 +206,7 @@ class SafetyPerceptionPipeline:
                     time_anchor=self.time_anchor,
                     monitor_session_id=self.monitor_session_id,
                     zone_id=zone_id_map.get(ev.zone_name) if ev.zone_name else None,
+                    relative_snapshot_uri=ev.snapshot_path,
                     model_name=self.model_name,
                     model_version=self.model_version,
                 )
@@ -217,6 +218,7 @@ class SafetyPerceptionPipeline:
                     time_anchor=self.time_anchor,
                     monitor_session_id=self.monitor_session_id,
                     zone_id=zone_id_map.get(ev.zone_name) if ev.zone_name else None,
+                    relative_snapshot_uri=ev.snapshot_path,
                     model_name=self.model_name,
                     model_version=self.model_version,
                 )

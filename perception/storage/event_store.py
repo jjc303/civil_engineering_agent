@@ -171,12 +171,37 @@ class EventStore:
         sub_dir = self.snapshot_dir / date_str
         sub_dir.mkdir(parents=True, exist_ok=True)
 
+        # Ensure compatibility if snapshot_dir is named 'snapshots'
+        if self.snapshot_dir.name == "snapshots":
+            symlink_alias = self.snapshot_dir / "snapshots"
+            if not symlink_alias.exists():
+                try:
+                    symlink_alias.symlink_to(".", target_is_directory=True)
+                except OSError:
+                    pass
+
         filename = f"{event.event_uuid}.jpg"
         file_path = sub_dir / filename
         cv2.imwrite(str(file_path), final_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
-        # Return path relative to snapshot_dir
-        return f"{date_str}/{filename}"
+        # Return standardized relative media URI: snapshots/YYYYMMDD/{uuid}.jpg
+        return f"snapshots/{date_str}/{filename}"
+
+    def get_snapshot_full_path(self, snapshot_path: str) -> Path:
+        """
+        Resolves a relative snapshot URI (e.g. snapshots/20260925/uuid.jpg or 20260925/uuid.jpg)
+        to the full Path on disk.
+        """
+        p = Path(snapshot_path)
+        if p.parts and p.parts[0] == "snapshots":
+            rel_p = Path(*p.parts[1:])
+        else:
+            rel_p = p
+
+        candidate = self.snapshot_dir / rel_p
+        if candidate.exists():
+            return candidate
+        return self.snapshot_dir / snapshot_path
 
     def close_event(
         self,
@@ -307,6 +332,14 @@ class EventStore:
 
     @staticmethod
     def _row_to_event(row: sqlite3.Row) -> ViolationEvent:
+        row_keys = row.keys()
+        extra_dict = {}
+        if "extra_details" in row_keys and row["extra_details"]:
+            try:
+                extra_dict = json.loads(row["extra_details"])
+            except Exception:
+                extra_dict = {}
+
         return ViolationEvent(
             event_uuid=row["event_uuid"],
             track_id=row["track_id"],
@@ -318,4 +351,6 @@ class EventStore:
             end_time=float(row["end_time"]) if row["end_time"] is not None else None,
             duration_seconds=float(row["duration_seconds"]),
             snapshot_path=row["snapshot_path"],
+            created_at=row["created_at"] if "created_at" in row_keys else None,
+            extra_details=extra_dict,
         )

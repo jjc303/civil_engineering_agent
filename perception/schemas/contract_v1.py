@@ -157,6 +157,12 @@ def to_event_contract_v1(
 
     status = "RESOLVED" if event.end_time is not None else event.status
 
+    raw_snap = relative_snapshot_uri or event.snapshot_path
+    if raw_snap:
+        snap_uri = raw_snap if raw_snap.startswith("snapshots/") else f"snapshots/{raw_snap}"
+    else:
+        snap_uri = None
+
     return PerceptionEventContractV1(
         schema_version="1.0",
         event_uuid=event.event_uuid,
@@ -172,7 +178,7 @@ def to_event_contract_v1(
         occurred_at_utc=occurred_iso,
         resolved_at_utc=resolved_iso,
         duration_seconds=round(event.duration_seconds, 2),
-        snapshot_uri=relative_snapshot_uri,
+        snapshot_uri=snap_uri,
         model_name=model_name,
         model_version=model_version,
         extra_details=merged_details,

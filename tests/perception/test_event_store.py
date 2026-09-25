@@ -98,6 +98,9 @@ def test_event_store_snapshot_archiving():
         )
 
         assert saved_event.snapshot_path is not None
+        assert saved_event.snapshot_path.startswith("snapshots/")
         full_snap_path = snapshot_dir / saved_event.snapshot_path
         assert full_snap_path.is_file(), f"Snapshot file {full_snap_path} was not created"
+        resolved_path = store.get_snapshot_full_path(saved_event.snapshot_path)
+        assert resolved_path.is_file()
         assert full_snap_path.stat().st_size > 0

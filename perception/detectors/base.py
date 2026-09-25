@@ -15,10 +15,10 @@ def get_optimal_device(requested_device: Optional[str] = None) -> str:
     3. Auto-detected CUDA if torch.cuda.is_available()
     4. Fallback to 'cpu'
     """
-    if requested_device:
+    if requested_device and requested_device.lower() not in ("auto", ""):
         return requested_device
     env_dev = os.getenv("PERCEPTION_DEVICE")
-    if env_dev:
+    if env_dev and env_dev.lower() not in ("auto", ""):
         return env_dev
     try:
         import torch

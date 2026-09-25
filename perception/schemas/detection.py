@@ -89,6 +89,7 @@ class ViolationEvent(BaseModel):
     snapshot_path: Optional[str] = Field(None, description="Saved violation image snapshot path")
     status: str = Field("ACTIVE", description="Violation status: ACTIVE, RESOLVED, or FALSE_ALARM")
     monitor_session_id: Optional[str] = Field(None, description="Identifier of the monitoring session")
+    created_at: Optional[str] = Field(None, description="ISO timestamp when violation was created/stored")
     extra_details: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary metadata dictionary")
 
 
