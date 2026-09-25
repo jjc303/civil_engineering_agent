@@ -28,10 +28,10 @@ class LegacyYOLOv5Adapter(BaseDetector):
         self.img_size = 640
         self.weights_path = weights_path
 
-        # Add Smart_Construction to sys.path dynamically for internal imports
-        self.smart_construction_root = Path(__file__).resolve().parent.parent.parent / "Smart_Construction"
-        if str(self.smart_construction_root) not in sys.path:
-            sys.path.insert(0, str(self.smart_construction_root))
+        # Add self-contained yolov5_legacy to sys.path for internal imports
+        self.legacy_root = Path(__file__).resolve().parent / "yolov5_legacy"
+        if str(self.legacy_root) not in sys.path:
+            sys.path.insert(0, str(self.legacy_root))
 
         if weights_path and Path(weights_path).is_file():
             self.load_model(weights_path, device)
