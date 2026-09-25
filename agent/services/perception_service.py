@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from agent.contracts.camera_config import CameraConfigUpdateRequest, CameraRunConfigV1
 from agent.contracts.event_v1 import CameraStatusReportV1, EventUpsertResponse, SafetyViolationEventV1
 from agent.contracts.query import CameraStatusResponse, SafetyQueryRequest, SafetyQueryResponse, ViolationQuery, ViolationRecord, ViolationStatisticsResponse
 from agent.db.base import Database
+from agent.repositories.camera_configs import CameraConfigRepository
 from agent.repositories.violations import ViolationRepository
 
 
@@ -31,6 +33,15 @@ class PerceptionService:
     def query_violations(self, query: ViolationQuery) -> list[ViolationRecord]:
         with self.database.session() as session:
             return ViolationRepository(session).query_events(query)
+
+
+    def get_camera_config(self, camera_id: str) -> CameraRunConfigV1 | None:
+        with self.database.session() as session:
+            return CameraConfigRepository(session).get(camera_id)
+
+    def update_camera_config(self, camera_id: str, request: CameraConfigUpdateRequest) -> CameraRunConfigV1:
+        with self.database.session() as session:
+            return CameraConfigRepository(session).upsert(camera_id, request)
 
     def get_statistics(self, query: ViolationQuery) -> ViolationStatisticsResponse:
         with self.database.session() as session:

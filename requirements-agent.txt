@@ -5,5 +5,7 @@ SQLAlchemy>=2.0,<2.2
 PyMySQL>=1.1,<2
 alembic>=1.13,<2
 langchain>=0.3,<2
+langchain-openai>=0.3,<2
+python-dotenv>=1.0,<2
 langgraph>=0.2,<2
 httpx>=0.27,<1

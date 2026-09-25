@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials
 
 from agent.api.dependencies import get_perception_service
+from agent.contracts.camera_config import CameraRunConfigV1
 from agent.contracts.event_v1 import CameraStatusReportV1, EventUpsertResponse, SafetyViolationEventV1
 from agent.core.security import bearer_scheme, verify_internal_token
 from agent.services.perception_service import PerceptionService
@@ -28,6 +29,13 @@ def upsert_event(event: SafetyViolationEventV1, service: PerceptionService = Dep
 @router.put("/cameras/{camera_id}/status", dependencies=[Depends(require_internal_token)])
 def upsert_camera_status(camera_id: str, report: CameraStatusReportV1, service: PerceptionService = Depends(get_perception_service)):
     if camera_id != report.camera_id:
-        from fastapi import HTTPException
         raise HTTPException(status_code=422, detail="camera_id path/body mismatch")
     return service.upsert_camera_status(report)
+
+
+@router.get("/cameras/{camera_id}/config", response_model=CameraRunConfigV1, dependencies=[Depends(require_internal_token)])
+def get_camera_config(camera_id: str, service: PerceptionService = Depends(get_perception_service)) -> CameraRunConfigV1:
+    result = service.get_camera_config(camera_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="camera config not found")
+    return result

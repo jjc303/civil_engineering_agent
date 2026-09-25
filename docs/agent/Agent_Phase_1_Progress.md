@@ -1,48 +1,146 @@
-# Agent 阶段 1 进度
+# 施工安全智能体（Agent）当前进展报告
 
-> **日期**：2026-09-25  
-> **状态**：最小业务闭环及真实 MySQL 验证完成；待 CV 发布器联调。
+> **报告版本**：v2.1（CV—Agent 事件、状态与版本化围栏配置联调完成）  
+> **更新时间**：2026-09-25  
+> **当前里程碑**：  
+> - **阶段 0：跨系统边界与 Event Contract v1 —— 100% 完成**  
+> - **阶段 1：CV 事件、状态与版本化配置入库 —— 100% 完成**  
+> - **阶段 2：自然语言问答、工具注册与 LangGraph 编排 —— 100% 完成（本地/测试模型）**  
+> - **阶段 3：DeepSeek 适配、密钥治理与真实模型工具闭环 —— 100% 完成**  
+> **测试状态**：Agent 9 项自动化测试全部通过；全项目回归当前被感知层新测试的导入错误阻断，Agent 无失败。
 
-## 已完成
+---
 
-1. FastAPI 应用工厂、环境变量配置与 CV 内部 Bearer Token 鉴权。
-2. Event Contract v1 的 Pydantic 校验：UUID、UTC 时间、RESOLVED 时间规则、相对 `snapshot_uri`。
-3. MySQL/SQLAlchemy 事件与摄像头状态模型；`event_uuid` 为事件主键，重复上报更新同一记录。
-4. CV 内部接口：
-   - `POST /internal/v1/perception/events`
-   - `PUT /internal/v1/perception/cameras/{camera_id}/status`
-   - `GET /internal/v1/perception/health`
-5. Web/Agent 查询接口：违规列表、统计、摄像头状态、结构化安全查询。
-6. 本地工具注册表及 LangGraph 单主流程：`select_tool → execute_tool → format_response`。
-7. Alembic 初始迁移：`20260925_0001`。
+## 1. 里程碑概览与当前状态
 
-## 验证结果
+Agent 子系统负责把 CV 感知层产生的结构化事件转为可持久化、可查询、可解释的施工安全业务事实。它不推理图像、不直连 CV SQLite，也不允许模型直接执行 SQL。
 
-`python3 -m pytest -q`：**35 passed**。其中 `tests/agent/test_minimal_closed_loop.py` 覆盖：
+当前已完成从 CV 事件接收，到 MySQL 幂等入库，再到 LangGraph 驱动工具查询和结构化回答的最小闭环。DeepSeek 已通过可替换的 `ChatModelPort` 接入；未配置真实 Key 时，系统仍使用确定性 `FakeChatModel` 供开发、演示和测试使用。
 
-- 事件创建、相同 UUID 的升级/闭环更新及统计不重复计数；
-- 摄像头运行状态上报和读取；
-- LangGraph 工具查询；
-- 内部鉴权、绝对媒体路径、无效结案时间的拒绝。
+```mermaid
+flowchart LR
+    M0["阶段 0：契约与职责边界<br/>100% 完成"] --> M1["阶段 1：FastAPI + MySQL<br/>100% 完成"]
+    M1 --> M2["阶段 2：LangGraph 工具问答<br/>100% 完成"]
+    M2 --> M3["阶段 3：DeepSeek 真实联调<br/>100% 完成"]
+    M3 --> M4["阶段 4：CV + Web 联调 / RAG<br/>未开始"]
 
-测试使用 SQLite 内存库作为数据库适配层测试替身；它不替代 MySQL 集成验收。
+    style M0 fill:#4CAF50,stroke:#388E3C,color:#fff
+    style M1 fill:#4CAF50,stroke:#388E3C,color:#fff
+    style M2 fill:#4CAF50,stroke:#388E3C,color:#fff
+    style M3 fill:#2196F3,stroke:#1976D2,color:#fff
+    style M4 fill:#BDBDBD,stroke:#757575,color:#fff
+```
 
-真实 MySQL 已在 WSL `127.0.0.1:3307` 的 `safety_agent` 库完成 `20260925_0001` 迁移。以一个自动清理的测试 UUID 验证了“创建 → 相同 UUID 更新 → LangGraph 按摄像头统计”，结果为单行、`CRITICAL`、计数 `1`。
+### 1.1 当前业务闭环
+
+```text
+CV Event Contract v1
+  → POST /internal/v1/perception/events
+  → Pydantic 契约校验 + event_uuid 幂等 Upsert
+  → MySQL violation_events / camera_statuses
+  → Repository + Tool Registry
+  → LangGraph（选工具 → 执行工具 → 生成回答）
+  → POST /api/v1/agent/chat 或 Web 查询接口
+```
+
+事实只来自 MySQL 和受控工具结果；LLM 的职责是将自然语言转为受限工具决策，并根据工具结果生成中文回答。模型的原始推理文本不会保存、审计或返回给前端。
+
+---
+
+5. **版本化围栏配置**：`camera_configs` 由迁移 `20260925_0002` 建立；Web 可写入围栏并自动递增 `config_version`，CV 经内部接口读取同一业务事实。
+## 2. 本阶段核心交付成果
+
+### 2.1 CV 事件接收与 MySQL 业务事实层
+
+1. **Event Contract v1**：`SafetyViolationEventV1` 校验 `event_uuid`、UTC 时间、危险区字段、`RESOLVED` 结案时间和相对 `snapshot_uri`；绝对路径与 `..` 路径被拒绝。
+2. **内部 CV 接口**：
+   - `POST /internal/v1/perception/events`：以 `event_uuid` 创建或更新事件；
+   - `PUT /internal/v1/perception/cameras/{camera_id}/status`：更新摄像头最新状态；
+   - `GET /internal/v1/perception/health`：CV 连通性探测。
+3. **MySQL 主存**：`violation_events` 以 `event_uuid` 为主键，`camera_statuses` 以 `camera_id` 为主键；CV 不持有 Agent ORM，也不直连 MySQL。
+4. **可复现迁移**：Alembic 初始迁移 `20260925_0001` 已在 WSL `127.0.0.1:3307` 的 `safety_agent` 库执行并验证。
+
+### 2.2 查询、工具与 LangGraph 编排
+
+1. **公开查询 API**：违规列表、违规统计、摄像头运行状态及结构化安全查询已对 Web 开放。
+2. **基础只读工具**：
+   - `query_violations`：按摄像头、时间、类型、严重级别和状态筛选事件；
+   - `get_violation_statistics`：总数、类型分布、严重级别分布和平均时长；
+   - `get_camera_status`：在线状态、FPS、帧号、在场人数和模型版本。
+3. **LangGraph 单主流程**：`select_tool → execute_tool → respond`；单请求上限为两次工具调用，工具名位于服务器白名单，所有参数均经 Pydantic 再验证。
+4. **聊天接口**：`POST /api/v1/agent/chat` 返回 `answer`、`evidence`、`tool_trace`、`degraded` 和 `error_code`。`tool_trace` 仅记录可读审计摘要，并非模型思维链。
+5. **UTC 规范化**：解决 SQLite/MySQL 读回无时区 `DATETIME` 的差异，API DTO 会将其规范为 UTC 再输出。
+
+### 2.3 DeepSeek 与密钥治理
+
+1. **可替换模型端口**：`ChatModelPort` 将 Graph 与供应商 SDK 解耦；默认 `FakeChatModel` 可在无网络、无 Key 时跑完整测试。
+2. **DeepSeek 适配器**：`DeepSeekChatModel` 通过 LangChain `ChatOpenAI` 使用 OpenAI 兼容接口；工具选择阶段要求 JSON 输出，并在本服务转换为 `ToolDecision` 后才可执行。
+3. **防止推理泄露**：决策提示词要求只返回 JSON；回答提示词只读取已验证工具结果；不记录 `reasoning_content`。
+4. **`.env` 支持**：应用以 `python-dotenv` 加载本地 `.env`，但已有部署环境变量优先；真实 `.env` 已被 `.gitignore` 忽略，仓库只提供 `.env.example`。
+
+详细配置见：[DeepSeek 接入说明](DeepSeek_Integration.md) 与 [`.env.example`](../../.env.example)。
+
+---
+
+## 3. 测试体系与验证结果
+
+### 3.1 Agent 测试目录
+
+```text
+tests/agent/
+├── test_minimal_closed_loop.py  # CV 上报、幂等更新、查询、统计、鉴权与输入边界
+├── test_camera_config_api.py     # 围栏写入、CV 读取、版本递增与冲突控制
+├── test_chat_closed_loop.py     # 自然语言问题、两次工具调用、证据输出、摄像头状态
+└── test_llm_factory.py          # fake / DeepSeek 工厂选择、无 Key 启动保护
+```
+
+### 3.2 已验证项目
+
+- **Agent 测试**：`python3 -m pytest -q tests/agent` → **9 passed**。
+- **历史全项目回归**：此前为 **43 passed, 0 failed**；本次运行在感知层 `tests/perception/test_session_runner.py` 收集阶段因缺少 `Optional` 导入而中止，Agent 测试均通过。
+- **真实 MySQL 闭环**：随机 UUID 创建 → 同 UUID 更新为 `CRITICAL` → LangGraph 统计结果仍为单条；验证完成后已清理测试数据。
+- **真实 CV—Agent 事件与状态联调**：CV Outbox 成功投递同 UUID 的 `ACTIVE → CRITICAL → RESOLVED`；状态上报中的会话与处理帧号已入库，临时数据均已清理。
+- **真实配置热更新联调**：Web 写入配置版本 1 → CV 发布器拉取版本 1 → Web 更新为版本 2 → CV 拉取版本 2 和新的防抖参数，均已通过。
+- **真实 MySQL 聊天路径**：`/api/v1/agent/chat` 已在 MySQL 数据源上验证会依次调用统计与违规列表工具，并输出关联事件证据。
+
+**真实 DeepSeek 闭环**：使用 `.env` 中的真实 Key 调用 `deepseek-flash` 成功生成合法 `ToolDecision`，调用 `get_violation_statistics` 查询 MySQL，并基于返回事实生成中文回答；测试事件已清理。
 
 
-## 启动与迁移
+---
+
+## 4. 当前目录与运行方式
+
+```text
+agent/
+├── api/            # 内部 CV 接口、公开查询、聊天接口
+├── contracts/      # Event Contract、查询 DTO、聊天与工具 DTO
+├── core/           # Settings、.env 加载、内部鉴权
+├── db/             # SQLAlchemy、Alembic 迁移
+├── graph/          # SafetyGraph、ChatGraph 与受控状态
+├── llm/            # Protocol、Fake、DeepSeek Adapter、Factory
+├── repositories/   # MySQL 查询与幂等 Upsert
+├── services/       # 事务边界与图调用
+└── tools/          # 显式注册的只读安全工具
+```
+
+本地首次启动：
 
 ```bash
+cp .env.example .env
+# 编辑 .env，填入数据库密码、内部 Token 与 DeepSeek Key
 python3 -m pip install -r requirements-agent.txt
-export AGENT_DATABASE_URL='mysql+pymysql://USER:PASSWORD@HOST:3306/safety_agent?charset=utf8mb4'
-export INTERNAL_PERCEPTION_TOKEN='replace-with-random-secret'
 alembic upgrade head
 uvicorn agent.main:create_app --factory --host 0.0.0.0 --port 8000
 ```
 
-开发期可临时设置 `AGENT_AUTO_CREATE_SCHEMA=true`，但共享/生产 MySQL 必须使用 Alembic 迁移。
+不使用真实 LLM 时，令 `AGENT_LLM_PROVIDER=fake`；启用 DeepSeek 时，必须设置 `AGENT_LLM_PROVIDER=deepseek` 与 `AGENT_LLM_API_KEY`。
 
-## 下一步联调前置
+---
 
-1. CV 完成 Contract v1 发布器后，以同一 `event_uuid` 推送 `ACTIVE → CRITICAL → RESOLVED`。
-2. 确定共享媒体根目录与 Web 的 `snapshot_uri` 映射。
+## 5. 下一步开发计划
+
+1. **DeepSeek 稳定性与质量评估**：以真实 CV 事件集统计工具决策合法率、超时率、延迟、中文回答事实一致性与调用成本。
+2. **CV—Agent 全链路验收**：用 `sample_walk.mp4` 由 CV Outbox 推送同一 `event_uuid` 的 `ACTIVE → CRITICAL → RESOLVED`，再由 Agent 和聊天接口查询验证。
+3. **Web 接入**：消费查询和聊天 API，将 `evidence.snapshot_uri` 映射到共享媒体根目录，展示回答、证据和工具摘要。
+4. **可选 RAG / Redis**：先定义 `KnowledgeRetrieverPort` 与 `ConversationMemoryPort`；只在安全制度解释、处置建议和短期会话需要时启用，不能替代 MySQL 事件事实。
+5. **生产化增强**：内部 Token 轮换、API 限流、审计持久化、会话与角色权限、LLM 调用指标与告警。

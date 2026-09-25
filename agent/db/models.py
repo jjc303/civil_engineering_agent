@@ -48,3 +48,18 @@ class CameraStatusModel(Base):
     model_version: Mapped[str | None] = mapped_column(String(128))
     reported_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     extra_details: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class CameraConfigModel(Base):
+    __tablename__ = "camera_configs"
+
+    camera_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    config_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_width: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_height: Mapped[int] = mapped_column(Integer, nullable=False)
+    enter_debounce_frames: Mapped[int] = mapped_column(Integer, nullable=False)
+    exit_debounce_frames: Mapped[int] = mapped_column(Integer, nullable=False)
+    helmet_debounce_frames: Mapped[int] = mapped_column(Integer, nullable=False)
+    alarm_dwell_threshold_seconds: Mapped[float] = mapped_column(Float, nullable=False)
+    zones: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    updated_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
