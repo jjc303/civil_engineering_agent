@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from agent.contracts.event_v1 import CameraStatusReportV1, SafetyViolationEventV1
 from agent.contracts.query import CameraStatusResponse, ViolationQuery, ViolationRecord, ViolationStatisticsResponse
-from agent.db.models import CameraStatusModel, ViolationEventModel
+from agent.db.models import CameraConfigModel, CameraStatusModel, ViolationEventModel
 
 
 def _utc_now() -> datetime:
@@ -61,6 +61,18 @@ class ViolationRepository:
         return self._to_camera_status(model)
 
     def query_events(self, query: ViolationQuery) -> list[ViolationRecord]:
+        statement = self._event_statement(query)
+        statement = statement.order_by(ViolationEventModel.occurred_at_utc.desc()).offset(query.offset).limit(query.limit)
+        return [self._to_record(item) for item in self.session.scalars(statement)]
+
+    def query_events_page(self, query: ViolationQuery) -> tuple[list[ViolationRecord], int]:
+        statement = self._event_statement(query)
+        total = self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
+        statement = statement.order_by(ViolationEventModel.occurred_at_utc.desc()).offset(query.offset).limit(query.limit)
+        return [self._to_record(item) for item in self.session.scalars(statement)], int(total)
+
+    @staticmethod
+    def _event_statement(query: ViolationQuery):
         statement = select(ViolationEventModel)
         if query.camera_id:
             statement = statement.where(ViolationEventModel.camera_id == query.camera_id)
@@ -74,8 +86,7 @@ class ViolationRepository:
             statement = statement.where(ViolationEventModel.occurred_at_utc >= query.start_time_utc)
         if query.end_time_utc:
             statement = statement.where(ViolationEventModel.occurred_at_utc <= query.end_time_utc)
-        statement = statement.order_by(ViolationEventModel.occurred_at_utc.desc()).offset(query.offset).limit(query.limit)
-        return [self._to_record(item) for item in self.session.scalars(statement)]
+        return statement
 
     def get_statistics(self, query: ViolationQuery) -> ViolationStatisticsResponse:
         filters = []
@@ -93,6 +104,38 @@ class ViolationRepository:
     def get_camera_status(self, camera_id: str) -> CameraStatusResponse | None:
         model = self.session.get(CameraStatusModel, camera_id)
         return self._to_camera_status(model) if model else None
+
+    def list_camera_statuses(self, now: datetime | None = None) -> list[CameraStatusResponse]:
+        now = now or _utc_now()
+        status_by_id = {model.camera_id: model for model in self.session.scalars(select(CameraStatusModel))}
+        configured = {camera_id: updated_at for camera_id, updated_at in self.session.execute(select(CameraConfigModel.camera_id, CameraConfigModel.updated_at_utc))}
+        results: list[CameraStatusResponse] = []
+
+        for camera_id in sorted(set(status_by_id) | set(configured)):
+            model = status_by_id.get(camera_id)
+            if model is None:
+                results.append(CameraStatusResponse(
+                    camera_id=camera_id,
+                    monitor_session_id="unreported",
+                    is_online=False,
+                    fps=0.0,
+                    processed_frame_id=0,
+                    active_workers_count=0,
+                    model_name=None,
+                    model_version=None,
+                    reported_at_utc=configured[camera_id],
+                    extra_details={},
+                ))
+                continue
+
+            item = self._to_camera_status(model)
+            reported_at = item.reported_at_utc
+            if reported_at.tzinfo is None:
+                reported_at = reported_at.replace(tzinfo=timezone.utc)
+            item.is_online = (now - reported_at).total_seconds() <= 30
+            results.append(item)
+
+        return sorted(results, key=lambda item: (not item.is_online, item.camera_id))
 
     @staticmethod
     def _to_record(model: ViolationEventModel) -> ViolationRecord:

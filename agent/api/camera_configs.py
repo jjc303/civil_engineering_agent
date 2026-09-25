@@ -10,6 +10,17 @@ from agent.services.perception_service import PerceptionService
 router = APIRouter(prefix="/api/v1", tags=["camera-configurations"])
 
 
+@router.get("/cameras/{camera_id}/zones", response_model=CameraRunConfigV1)
+def get_camera_zones(
+    camera_id: str,
+    service: PerceptionService = Depends(get_perception_service),
+) -> CameraRunConfigV1:
+    result = service.get_camera_config(camera_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="camera config not found")
+    return result
+
+
 @router.put("/cameras/{camera_id}/zones", response_model=CameraRunConfigV1)
 def update_camera_zones(
     camera_id: str,

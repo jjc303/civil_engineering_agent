@@ -1,11 +1,13 @@
 # 智能建造工程智能体 (Civil Engineering Agent) 系统功能与使用指南
 
-> **文档版本**：v1.0  
+> **文档版本**：v1.2
 > **更新时间**：2026-09-25  
 > **归档路径**：`docs/migration/SYSTEM_FEATURES_AND_USAGE_GUIDE.md`  
-> **适用受众**：算法工程师、后厨/后端工程师、前端开发者、系统运维与现场实施人员。
+> **适用受众**：算法工程师、后端工程师、前端开发者、系统运维与现场实施人员。
 
 ---
+
+> 本文以当前仓库实现和自动化测试为准。Web 仪表盘、对象存储服务及生产部署编排不在本仓库内；文中示例须按实际部署的数据库、令牌与媒体存储配置调整。
 
 ## 目录
 
@@ -39,7 +41,7 @@
 
 ## 1. 系统架构与分层定位
 
-本项目致力于构建面向建筑施工现场的**高可靠、端到端闭环安全生产智能体**，整体采用三层解耦架构：
+当前代码实现的是感知层和 Agent 服务的最小闭环：感知端处理视频、持久化本地事件并通过 HTTP 投递；Agent 端验证契约、写入关系数据库，并提供查询、统计、配置和问答 API。
 
 ```mermaid
 flowchart TD
@@ -63,22 +65,22 @@ flowchart TD
         Graph --> Tools["工具调用 (SQL事实查询 / 统计聚合)"]
     end
 
-    subgraph S3["交互层 (Web / Terminal)"]
-        Web["Web 仪表盘 / 视频证据墙"]
-        Chat["智能体人机交互对话终端"]
+    subgraph S3["当前仓库提供的交互入口"]
+        Docs["FastAPI /docs"]
         CLI["感知运维 CLI (perception.cli)"]
+        GUI["本地桌面批处理客户端"]
     end
 
-    APIGW --> Web
-    Graph --> Chat
+    APIGW --> Docs
     Runner -.-> CLI
+    Det -.-> GUI
 ```
 
 ### 核心设计原则
-1. **事实来源原则 (Source of Truth)**：违规事件由 CV 采集并由 Agent 写入 MySQL；大模型（LLM）**只能解释和汇总已入库的事实**，严禁模型凭空捏造事件、违规人数或现场时间。
-2. **写边界隔离**：FastAPI 是进入 MySQL 生产数据库的唯一写入通道，CV 不直连 MySQL，亦不依赖 Agent ORM 模型。
-3. **媒体引用解耦**：数据库仅保存标准相对媒体 URI（如 `snapshots/20260925/{event_uuid}.jpg`），底层物理图片存放在共享媒体卷或对象存储上，禁止向外泄露宿主机绝对路径。
-4. **生命周期不变量**：一次违规事件从进入告警（`WARNING`）、滞留超时升级（`CRITICAL`）到离开结案（`RESOLVED`），**全程保持唯一的 `event_uuid`**。
+1. **写边界隔离**：感知端不直接连接 Agent 数据库；事件和状态经 FastAPI 内部接口投递，且接口要求 Bearer 令牌。
+2. **媒体引用约束**：服务端仅接受相对 `snapshot_uri`（例如 `snapshots/20260925/{event_uuid}.jpg`），拒绝绝对路径和包含 `..` 的路径。
+3. **事件幂等**：同一 `event_uuid` 可从活动状态更新为已解决状态；`RESOLVED` 必须提供不早于发生时间的 `resolved_at_utc`。
+4. **问答边界**：问答图只能调用违规查询、统计和相机状态工具；默认模型为本地 `fake` 实现，DeepSeek 为可选配置。
 
 ---
 
@@ -87,18 +89,18 @@ flowchart TD
 感知层代码位于 `perception/` 目录下，具备从像素解码到事件上报的完整闭环能力。
 
 ### 2.1 目标检测与多模型适配
-- **统一抽象基类 [`BaseDetector`](file:///home/jjc/projects/python/civil_engineering_agent/perception/detectors/base.py)**：定义统一的 `load_model()` 与 `detect()` 接口，业务层完全面向接口编程；
-- **旧版 YOLO 适配器 [`LegacyYOLOv5Adapter`](file:///home/jjc/projects/python/civil_engineering_agent/perception/detectors/legacy_yolo_adapter.py)**：平滑加载 `helmet_head_person_s.pt` 三分类（`person`, `head`, `helmet`）权重；
-- **现代 YOLO 适配器 [`UltralyticsDetector`](file:///home/jjc/projects/python/civil_engineering_agent/perception/detectors/ultralytics_detector.py)**：基于官方 Ultralytics 引擎，支持 YOLOv8/v9/v11 权重的即插即用；
+- **统一抽象基类 [`BaseDetector`](../../perception/detectors/base.py)**：定义统一的 `load_model()` 与 `detect()` 接口，业务层面向接口编程；
+- **旧版 YOLO 适配器 [`LegacyYOLOv5Adapter`](../../perception/detectors/legacy_yolo_adapter.py)**：加载 `helmet_head_person_s.pt` 三分类（`person`、`head`、`helmet`）权重；
+- **现代 YOLO 适配器 [`UltralyticsDetector`](../../perception/detectors/ultralytics_detector.py)**：基于 Ultralytics 引擎加载兼容权重；实际支持范围取决于已安装的 Ultralytics 版本和权重格式；
 - **设备自动仲裁 (`get_optimal_device`)**：支持命令行显式指定、`PERCEPTION_DEVICE` 环境变量、CUDA 自动检测与 CPU 自动回落。
 
 ### 2.2 多相机隔离的目标追踪 (ByteTrack)
-- **纯 Python 移植实现**：位于 [`perception/tracking/byte_tracker.py`](file:///home/jjc/projects/python/civil_engineering_agent/perception/tracking/byte_tracker.py)，完全摆脱对 C++ 扩展和 Cython 的编译依赖；
+- **纯 Python 实现**：位于 [`perception/tracking/byte_tracker.py`](../../perception/tracking/byte_tracker.py)，不依赖本项目额外的 C++ 或 Cython 扩展；
 - **实例级 ID 隔离**：彻底重构旧版全局静态自增 ID，每个摄像头实例持有独立的 `_next_id` 计数器，杜绝多机位并发监控时的 Track ID 碰撞。
 
 ### 2.3 人-头-帽空间拓扑匹配
 - **解剖学上部几何裁剪**：人体头部与安全帽天然位于人体边界框（Bounding Box）上方约前 35% 区域；
-- **匈牙利二分图匹配算法**：在 [`perception/geometry/topology.py`](file:///home/jjc/projects/python/civil_engineering_agent/perception/geometry/topology.py) 中，当单帧视野出现多个工人、多顶安全帽时，使用全局最优 IoU 代价矩阵进行二分匹配，杜绝“张冠李戴”；
+- **二分图匹配算法**：在 [`perception/geometry/topology.py`](../../perception/geometry/topology.py) 中，当单帧出现多个工人与安全帽时，按 IoU 代价矩阵进行匹配，以降低错配概率；
 - **类别语义解耦**：支持 `worker`、`person`、`hardhat`、`safety_cap` 等多种标签语义别名，适应不同模型训练数据集。
 
 ### 2.4 电子围栏判定与双向坐标变换
@@ -108,15 +110,15 @@ flowchart TD
 
 ### 2.5 单调时钟防抖状态机与滞留告警
 - **时间基准**：严格采用单调时钟 `time.monotonic()`（实时流）或 PTS 帧时间戳（离线文件），杜绝按固定帧数估算时间的传统缺陷；
-- **防抖去重生命周期 ([`WorkerSafetyMonitor`](file:///home/jjc/projects/python/civil_engineering_agent/perception/tracking/state_machine.py))**：
+- **防抖去重生命周期（[`WorkerSafetyMonitor`](../../perception/tracking/state_machine.py)）**：
   - **进入确认**：目标连续在区域内驻留超过 $T_{\text{enter}}$ 帧，触发入界警示（`WARNING`）；
   - **滞留超时升级**：驻留总时长累计达到预设阈值（默认 5.0 秒），无缝升级为严重告警（`CRITICAL`），沿用原 `event_uuid` 并标记升级原因；
   - **离开冷却结案**：目标连续消失超过 $T_{\text{exit}}$ 帧，触发结案（`RESOLVED`），准确结算持续秒数；
   - **未戴安全帽防抖**：目标连续未戴安全帽超过 $T_{\text{helmet}}$ 帧才触发违规，避免偶尔低头遮挡产生的瞬态误报。
 
 ### 2.6 本地持久化与快照渲染 (EventStore)
-- **SQLite 事件存储**：在 [`perception/storage/event_store.py`](file:///home/jjc/projects/python/civil_engineering_agent/perception/storage/event_store.py) 中自动维护本地 `violation_events` 表；
-- **可视化违规快照生成**：违规发生时，自动在原图上叠加红色半透明危险多边形遮罩、目标人员框，以及顶部包含 `[CRITICAL] NO_HELMET | Cam: cam_01 | Zone: 吊装区` 的警示横幅，并保存为标准快照文件；
+- **SQLite 事件存储**：在 [`perception/storage/event_store.py`](../../perception/storage/event_store.py) 中自动维护本地 `violation_events` 表；
+- **可视化违规快照生成**：事件持久化时可在原图上叠加区域、目标框和事件文字，并保存 JPEG 快照；具体标注内容随事件类型和可用图像数据而定；
 - **标准路径契约**：统一存储至 `snapshots/YYYYMMDD/{event_uuid}.jpg`。
 
 ### 2.7 离线缓冲发布器 (OutboxStore & Publisher)
@@ -125,38 +127,39 @@ flowchart TD
 - **致命错误熔断**：遇到 400/422 客户端格式错误时，自动标记为不可恢复终态并记录日志，避免无效死循环请求。
 
 ### 2.8 无头会话调度器与心跳守护 (SessionRunner)
-- **多相机调度中枢 [`CivilSafetyPerceptionService`](file:///home/jjc/projects/python/civil_engineering_agent/perception/services/session_runner.py)**：支持多路流并发拉起与单独停机；
-- **独立线程运行 [`CameraSessionRunner`](file:///home/jjc/projects/python/civil_engineering_agent/perception/services/session_runner.py)**：自动管理解码、推理、防抖状态与时间锚点；
-- **周期性心跳**：每 5 秒滑动计算 FPS、在线工人数、安全帽合规率，定时上报 Agent；
-- **配置在线轮询与优雅降级**：定时拉取最新围栏配置；若 Agent 配置端点暂不可用，**自动回退至本地默认配置，核心事件链路保持畅通**。
+- **会话服务 [`CivilSafetyPerceptionService`](../../perception/services/session_runner.py)**：提供会话管理与本地日报统计能力；
+- **独立线程运行 [`CameraSessionRunner`](../../perception/services/session_runner.py)**：管理单路解码、推理、防抖状态与时间锚点；多相机场景由调用方创建并管理多个运行器；
+- **周期性心跳**：默认每 5 秒上报 FPS、已处理帧号、在线工人数及安全帽合规率；间隔可通过 CLI 参数调整；
+- **配置在线轮询与优雅降级**：定时拉取最新围栏配置；配置端点不可用时，回退到 CLI 传入的区域或本地默认配置。
 
 ---
 
 ## 3. 智能体中枢子系统 (Agent) 功能详解
 
-Agent 层代码位于 `agent/` 目录下，负责事件接收校验、业务主存入库、大模型（LLM）对话交互与安全日报编排。
+Agent 层代码位于 `agent/` 目录下，负责事件接收校验、关系数据库持久化、查询统计及受限工具驱动的 LLM 对话。
 
-### 3.1 FastAPI 契约层与 MySQL 事务持久化
+### 3.1 FastAPI 契约层与关系数据库持久化
 - **API 路由规范**：
   - `/internal/v1/perception/events`：供 CV 调用的违规事件上报接口（基于 `event_uuid` 实现严格幂等的 UPSERT）；
   - `/internal/v1/perception/cameras/{camera_id}/status`：供 CV 调用的相机状态与心跳上报接口；
   - `/internal/v1/perception/cameras/{camera_id}/config`：供 CV 调用的围栏参数下发接口；
-  - `/api/v1/safety/violations`：供前端或用户查询的安全违规列表查询接口；
-  - `/api/v1/chat`：面向大模型的人机对话接口。
-- **MySQL 关系主库**：通过 Alembic 进行数据库版本管理，管理摄像头、电子围栏、违规事件、日报任务等结构化数据。
+  - `/api/v1/violations`：供调用方查询安全违规列表；
+  - `/api/v1/agent/chat`：面向大模型的人机对话接口；
+  - `/api/v1/agent/safety-query`：结构化安全查询接口。
+- **关系数据库**：通过 SQLAlchemy 持久化违规、相机状态和相机配置。运行时数据库由 `AGENT_DATABASE_URL` 指定；测试使用 SQLite，生产 MySQL 迁移脚本位于 `agent/db/migrations/`。当前迁移不包含日报任务表。
 
 ### 3.2 围栏与摄像头在线配置管理
-- 支持在 Agent 侧对每个摄像头配置专属的危险区域多边形、生效时段与防抖时间阈值；
+- 支持在 Agent 侧对每个摄像头配置专属的危险区域多边形、源分辨率、滞留阈值和防抖帧数；
 - 配置带有单调自增的 `config_version`，CV 会话轮询到新版本即可实现**线上热更新**。
 
 ### 3.3 LangGraph 对话图与事实驱动原则
-- **结构化图状态**：在 [`agent/graph/chat_graph.py`](file:///home/jjc/projects/python/civil_engineering_agent/agent/graph/chat_graph.py) 中定义显式状态流，包含意图分类、参数提取、工具调用、事实整合与回复生成；
-- **证据链接地 (Evidence Grounding)**：对话系统检索出违规事实后，自动附带对应的 `event_uuid`、时间范围以及 `snapshot_uri`，供前端直接渲染点击查看现场照片。
+- **结构化图状态**：在 `agent/graph/chat_graph.py` 中编排模型决策、受限工具调用和回复生成；工具调用次数受 `AGENT_TOOL_MAX_CALLS`（1–2）限制；
+- **证据接地**：对话响应可附带查询到的 `event_uuid`、发生时间和 `snapshot_uri`。媒体文件的实际托管与前端渲染由调用方部署负责。
 
-### 3.4 LLM 适配器与多模型热切换 (DeepSeek)
-- **协议端口 [`ChatModelPort`](file:///home/jjc/projects/python/civil_engineering_agent/agent/llm/protocol.py)**：定义统一的聊天接口契约；
-- **DeepSeek 官方适配 [`DeepSeekChatModel`](file:///home/jjc/projects/python/civil_engineering_agent/agent/llm/deepseek_adapter.py)**：支持接入 DeepSeek-V3 / DeepSeek-R1 高性价比推理模型；
-- **离线测试桩 [`FakeChatModel`](file:///home/jjc/projects/python/civil_engineering_agent/agent/llm/fake_adapter.py)**：在无网络、无 API Key 场景下保障全部单元测试与自动化流水线通过。
+### 3.4 LLM 适配器与可配置模型选择 (DeepSeek)
+- **协议端口 [`ChatModelPort`](../../agent/llm/protocol.py)**：定义统一的聊天接口契约；
+- **DeepSeek 适配 [`DeepSeekChatModel`](../../agent/llm/deepseek_adapter.py)**：通过可配置的兼容接口访问 DeepSeek 模型；
+- **离线测试桩 [`FakeChatModel`](../../agent/llm/fake_adapter.py)**：支持无网络、无 API Key 的本地测试。
 
 ---
 
@@ -164,47 +167,59 @@ Agent 层代码位于 `agent/` 目录下，负责事件接收校验、业务主�
 
 ### 4.1 环境准备与依赖安装
 
-系统支持 Linux 与 Windows 运行，推荐 Python 3.10+。
+推荐 Python 3.10+。感知层和 Agent 层的依赖清单分开维护；桌面客户端还需要本机可用的图形环境。
 
 ```bash
 # 1. 克隆进入工程目录
 cd /home/jjc/projects/python/civil_engineering_agent
 
 # 2. 安装感知层与智能体运行依赖
+pip install -r requirements.txt
 pip install -r requirements-agent.txt
 ```
+
+启动 Agent 前，必须配置以下环境变量（也可写入项目根目录 `.env`）：
+
+```bash
+export AGENT_DATABASE_URL='sqlite+pysqlite:///./data/agent.db'
+export AGENT_AUTO_CREATE_SCHEMA=true       # 仅适合本地验证
+export INTERNAL_PERCEPTION_TOKEN='replace-with-a-secret'
+export AGENT_LLM_PROVIDER=fake             # 或 deepseek；后者还需要 AGENT_LLM_API_KEY
+```
+
+生产环境应通过 Alembic 执行 `agent/db/migrations/` 中的迁移，不应依赖 `AGENT_AUTO_CREATE_SCHEMA=true`。
 
 ---
 
 ### 4.2 感知子系统 CLI 命令行运行
 
-无需启动任何窗口，即可在终端中运行视频流监控或生成日报。
+无需启动窗口，即可运行视频流监控或从本地 SQLite 事件库生成日报统计。`run` 子命令目前使用旧版 YOLOv5 适配器，因此指定的权重必须存在且与该适配器兼容。
 
 #### 命令 1：启动监控流 (`run`)
 
 ```bash
 # 场景 A：使用离线视频样例测试
-python -m perception.cli run \
+python3 -m perception.cli run \
   --camera-id cam_gate_01 \
   --source tests/fixtures/sample_walk.mp4 \
   --agent-url http://127.0.0.1:8000 \
   --device auto
 
 # 场景 B：接入施工现场 RTSP 高清监控流
-python -m perception.cli run \
+python3 -m perception.cli run \
   --camera-id cam_tower_crane \
-  --source "rtsp://admin:password@192.168.1.108:554/live" \
+  --source "rtsp://user:password@camera.example:554/live" \
   --agent-url http://127.0.0.1:8000 \
   --device cuda:0 \
   --heartbeat-interval 5.0
 ```
 
-> **操作提示**：按下 `Ctrl + C`，程序将捕获中断信号，安全释放视频流并向 Agent 报送下线状态后退出。
+> **操作提示**：内部投递需要令牌，因此运行前应设置与 Agent 相同的 `INTERNAL_PERCEPTION_TOKEN`。按下 `Ctrl + C` 会请求停止会话；运行器会尝试上报离线状态并刷新到期的 Outbox 项。
 
 #### 命令 2：生成安全巡检日报数据 (`report`)
 
 ```bash
-python -m perception.cli report --date 2026-09-25 --event-db data/events.db
+python3 -m perception.cli report --date 2026-09-25 --event-db data/events.db
 ```
 
 终端将打印结构化的 JSON 统计数据（包含当日总违规数、各机位分布、违规类型占比与证据图 URI）。
@@ -216,22 +231,20 @@ python -m perception.cli report --date 2026-09-25 --event-db data/events.db
 在有图形界面的开发机上，支持鼠标实时交互与绘制电子围栏。
 
 ```bash
-python -m perception.gui.app
+python3 -m perception.gui.app
 ```
 
-- **操作步骤**：
-  1. 点击 **“Import”** 按钮选择视频或图片文件（例如 `tests/fixtures/sample_walk.mp4`）；
-  2. 点击 **“Predict”** 按钮启动推理管道，系统自动加载 [`perception/configs/default_danger_zones.json`](../../perception/configs/default_danger_zones.json) 中定义的电子围栏并在画面上渲染红色警示框；
-  3. 推理完成后，点击 **“Play”** 即可同步对比播放原视频与违规目标标注/电子围栏告警画面；
-  4. 点击 **“Open in Browser”** 可直接打开推理生成的结果视频与违规证据快照目录。
+- 客户端用于选择本地图片或视频、执行批处理推理、预览结果及打开结果目录；并非多相机监控控制台。
+- 它优先使用 `PERCEPTION_MODEL_WEIGHTS` 指向的现有权重；否则依次尝试仓库内的默认权重。均不可用时会使用 `MockDetector`，只适合演示和测试，不代表真实检测结果。
+- 默认危险区来自 [`perception/configs/default_danger_zones.json`](../../perception/configs/default_danger_zones.json)。
 
 ---
 
 ### 4.4 启动 Agent 智能体后台服务
 
 ```bash
-# 启动 FastAPI 服务 (开发模式)
-python -m uvicorn agent.main:app --host 0.0.0.0 --port 8000 --reload
+# 启动 FastAPI 服务工厂（开发模式；需先配置第 4.1 节环境变量）
+python3 -m uvicorn agent.main:create_app --factory --host 0.0.0.0 --port 8000 --reload
 ```
 
 服务启动后，可在浏览器访问 `http://127.0.0.1:8000/docs` 查看交互式 Swagger API 文档。
@@ -240,21 +253,24 @@ python -m uvicorn agent.main:app --host 0.0.0.0 --port 8000 --reload
 
 ### 4.5 CV 与 Agent 端到端全链路实操演练
 
-完成以下三步即可体验完整的跨系统集成流水线：
+完成以下步骤可验证当前仓库的感知—Agent 最小闭环：
 
 ```bash
-# 步骤 1：后台启动 Agent API 服务
-python -m uvicorn agent.main:app --port 8000 &
+# 步骤 1：后台启动 Agent API 服务工厂
+python3 -m uvicorn agent.main:create_app --factory --port 8000 &
 
 # 步骤 2：启动 CV 监控会话，灌入测试视频
-python -m perception.cli run \
+python3 -m perception.cli run \
   --camera-id cam_field_01 \
   --source tests/fixtures/sample_walk.mp4 \
   --agent-url http://127.0.0.1:8000
 
-# 步骤 3：查询 Agent 端是否成功入库事件与心跳
-curl -X GET "http://127.0.0.1:8000/api/v1/safety/violations?camera_id=cam_field_01"
+# 步骤 3：查询 Agent 端已入库事件、统计与相机状态
+curl -X GET "http://127.0.0.1:8000/api/v1/violations?camera_id=cam_field_01"
+curl -X GET "http://127.0.0.1:8000/api/v1/cameras/cam_field_01/status"
 ```
+
+若 Agent 暂不可达，请检查 `data/outbox.db` 中的待投递记录、令牌一致性及服务日志。
 
 ---
 
@@ -273,6 +289,9 @@ curl -X GET "http://127.0.0.1:8000/api/v1/safety/violations?camera_id=cam_field_
 | `run` | `--heartbeat-interval`| float | `5.0` | 状态心跳上报间隔时间 (秒) |
 | `run` | `--outbox-db` | string | `data/outbox.db` | 离线事件暂存缓冲库路径 |
 | `run` | `--event-db` | string | `data/events.db` | 本地归档事件数据库路径 |
+| `run` | `--snapshot-dir` | string | `data/snapshots` | 本地快照根目录 |
+| `run` | `--config-poll-interval` | float | `30.0` | 远程配置轮询间隔（秒） |
+| `run` | `--model-name` / `--model-version` | string | `helmet_head_person_s` / `legacy-yolov5` | 上报的模型标识 |
 | `report` | `--date` | string | **必填** | 查询日期，支持 `YYYYMMDD` 或 `YYYY-MM-DD` |
 | `report` | `--event-db` | string | `data/events.db` | 本地归档事件数据库路径 |
 
@@ -282,6 +301,7 @@ curl -X GET "http://127.0.0.1:8000/api/v1/safety/violations?camera_id=cam_field_
 
 #### 1. 内部感知事件上报 (Internal Perception Events)
 - **请求方法**：`POST /internal/v1/perception/events`
+- **鉴权**：`Authorization: Bearer <INTERNAL_PERCEPTION_TOKEN>`；其余内部感知接口也需要该请求头。
 - **请求体规格**：
   ```json
   {
@@ -312,44 +332,45 @@ curl -X GET "http://127.0.0.1:8000/api/v1/safety/violations?camera_id=cam_field_
     "fps": 24.8,
     "processed_frame_id": 1205,
     "active_workers_count": 6,
-    "extra_details": {
-      "helmet_compliance_rate": 0.8333
-    }
+    "reported_at_utc": "2026-09-25T10:30:00Z",
+    "extra_details": {"helmet_compliance_rate": 0.8333}
   }
   ```
 
 #### 3. 智能问答与安全分析 (Chat Agent API)
-- **请求方法**：`POST /api/v1/chat`
+- **请求方法**：`POST /api/v1/agent/chat`
 - **请求体规格**：
   ```json
   {
-    "query": "今天塔吊区有哪些严重的违规行为？",
-    "session_id": "user_session_101"
+    "question": "今天塔吊区有哪些严重的违规行为？",
+    "conversation_id": "user_session_101"
   }
   ```
-- **返回结果**：包含 LLM 回答正文、从数据库检索到的事实证据（`event_uuid`、时间戳、快照 URI）以及图执行审计摘要。
+- **返回结果**：包含回答、可用的事实证据（`event_uuid`、发生时间、快照 URI）、工具调用记录及降级标识。
 
 ---
 
 ## 6. 自动化测试体系与质量验收
 
-系统构建了高覆盖率的分层测试套件，杜绝回归缺陷。
+系统提供分层自动化测试套件，用于检查已实现的核心契约与回归场景；测试不能替代现场模型评估或生产验收。
 
 ```text
 tests/
-├── agent/                         # 智能体闭环测试套件 (9 项)
+├── agent/                         # Agent 契约、配置、问答与模型工厂测试
 │   ├── test_camera_config_api.py  # 围栏配置下发与版本管理
 │   ├── test_chat_closed_loop.py   # 智能问答全流程
 │   ├── test_llm_factory.py        # 模型工厂与热切换
 │   └── test_minimal_closed_loop.py # 最小闭环测试
-└── perception/                    # 感知模块测试套件 (43 项)
+└── perception/                    # 感知模块测试
     ├── test_cli.py                # 命令行工具解析与报告测试
+    ├── test_data_tools.py         # VOC/YOLO 数据转换工具
     ├── test_detector_interface.py # 检测器适配器抽象
     ├── test_event_store.py        # 本地 SQLite 存储与快照验证
     ├── test_geometry.py           # 触地判定与坐标变换
     ├── test_integration_contract.py # 跨系统契约与 Outbox 验证
     ├── test_regression.py         # YOLO 双适配器回归推理
     ├── test_safety_pipeline.py    # 端到端感知流水线
+    ├── test_schemas.py            # 感知数据模型与序列化
     ├── test_session_runner.py     # 无头会话生命周期与心跳轮询
     ├── test_state_machine.py      # 防抖状态机与滞留升级
     ├── test_topology.py           # 人头帽解剖拓扑匹配
@@ -361,4 +382,4 @@ tests/
 ```bash
 python3 -m pytest tests/ -v
 ```
-> **验收基线**：**52 项测试全部通过（100% Pass）**，零错误、零破坏性变更。
+> **当前清单**：`tests/` 目录中有 52 个测试函数。请以本地执行命令的实际结果为准；本文件不对特定环境下的通过率作保证。

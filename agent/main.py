@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 from agent.api.chat import router as chat_router
 from agent.api.camera_configs import router as camera_config_router
@@ -21,6 +24,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         database.create_schema()
 
     app = FastAPI(title="Civil Engineering Safety Agent", version="0.1.0")
+    media_root = Path(settings.media_root)
+    media_root.mkdir(parents=True, exist_ok=True)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    app.mount("/media", StaticFiles(directory=str(media_root)), name="media")
     app.state.settings = settings
     app.include_router(chat_router)
     app.state.perception_service = PerceptionService(database)

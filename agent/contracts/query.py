@@ -51,6 +51,13 @@ class ViolationStatisticsResponse(BaseModel):
     by_severity: dict[str, int]
 
 
+class ViolationPageResponse(BaseModel):
+    items: list[ViolationRecord]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1)
+    offset: int = Field(ge=0)
+
+
 class CameraStatusResponse(BaseModel):
     camera_id: str
     monitor_session_id: str

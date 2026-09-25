@@ -40,6 +40,11 @@ def test_versioned_camera_config_is_written_and_read_by_cv(client: TestClient) -
     assert created.status_code == 200
     assert created.json()["config_version"] == 1
 
+    public_config = client.get("/api/v1/cameras/cam-a01/zones")
+    assert public_config.status_code == 200
+    assert public_config.json()["zones"][0]["zone_id"] == "zone-crane"
+    assert client.get("/api/v1/cameras/missing/zones").status_code == 404
+
     headers = {"Authorization": "Bearer config-contract-token"}
     fetched = client.get("/internal/v1/perception/cameras/cam-a01/config", headers=headers)
     assert fetched.status_code == 200

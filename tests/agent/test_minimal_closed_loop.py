@@ -74,10 +74,12 @@ def test_event_is_idempotently_upserted_and_queryable(client: TestClient, intern
 
     violations = client.get("/api/v1/violations", params={"camera_id": "camera-a01"})
     assert violations.status_code == 200
-    assert len(violations.json()) == 1
-    assert violations.json()[0]["event_uuid"] == event_uuid
-    assert violations.json()[0]["severity"] == "CRITICAL"
-    assert violations.json()[0]["duration_seconds"] == 12
+    assert violations.json()["total"] == 1
+    assert violations.json()["limit"] == 100
+    assert violations.json()["offset"] == 0
+    assert violations.json()["items"][0]["event_uuid"] == event_uuid
+    assert violations.json()["items"][0]["severity"] == "CRITICAL"
+    assert violations.json()["items"][0]["duration_seconds"] == 12
 
     statistics = client.get("/api/v1/violations/statistics")
     assert statistics.status_code == 200
@@ -111,6 +113,10 @@ def test_camera_status_and_input_boundaries(client: TestClient, internal_headers
     status = client.get("/api/v1/cameras/camera-a01/status")
     assert status.status_code == 200
     assert status.json()["fps"] == 24.5
+
+    cameras = client.get("/api/v1/cameras")
+    assert cameras.status_code == 200
+    assert cameras.json()[0]["camera_id"] == "camera-a01"
 
     graph_status = client.post("/api/v1/agent/safety-query", json={"operation": "camera_status", "camera_id": "camera-a01"})
     assert graph_status.status_code == 200

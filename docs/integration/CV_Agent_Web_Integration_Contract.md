@@ -1,8 +1,10 @@
 # CV—Agent—Web 协商与集成契约
 
-> **版本**：v1.0  
+> **版本**：v1.0 (基础协议)  
 > **状态**：架构已确定；实现前由 CV 与 Agent 开发方确认本文待确认项。  
-> **适用范围**：`perception/` 感知层、计划中的 Agent/FastAPI 服务与 Web 前端。
+> **适用范围**：`perception/` 感知层、Agent/FastAPI 服务与 Web 前端。  
+> **文档优先级声明**：Web–Agent 之间的具体 HTTP API、数据结构、前端类型与联调标准**统一以 [Web_Agent_Freeze_Contract.md](./Web_Agent_Freeze_Contract.md) (v1.1.0+) 为最终准绳**。本文第 6 节中提及的 `monitoring:start/stop` 在当前阶段为 Phase 2 预留接口，Phase 1 监控运行与状态以心跳为准。
+
 
 ## 1. 目标与基本原则
 

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from agent.contracts.camera_config import CameraConfigUpdateRequest, CameraRunConfigV1
 from agent.contracts.event_v1 import CameraStatusReportV1, EventUpsertResponse, SafetyViolationEventV1
-from agent.contracts.query import CameraStatusResponse, SafetyQueryRequest, SafetyQueryResponse, ViolationQuery, ViolationRecord, ViolationStatisticsResponse
+from agent.contracts.query import CameraStatusResponse, SafetyQueryRequest, SafetyQueryResponse, ViolationPageResponse, ViolationQuery, ViolationRecord, ViolationStatisticsResponse
 from agent.db.base import Database
 from agent.repositories.camera_configs import CameraConfigRepository
 from agent.repositories.violations import ViolationRepository
@@ -34,6 +34,11 @@ class PerceptionService:
         with self.database.session() as session:
             return ViolationRepository(session).query_events(query)
 
+    def query_violations_page(self, query: ViolationQuery) -> ViolationPageResponse:
+        with self.database.session() as session:
+            items, total = ViolationRepository(session).query_events_page(query)
+            return ViolationPageResponse(items=items, total=total, limit=query.limit, offset=query.offset)
+
 
     def get_camera_config(self, camera_id: str) -> CameraRunConfigV1 | None:
         with self.database.session() as session:
@@ -50,6 +55,10 @@ class PerceptionService:
     def get_camera_status(self, camera_id: str) -> CameraStatusResponse | None:
         with self.database.session() as session:
             return ViolationRepository(session).get_camera_status(camera_id)
+
+    def list_camera_statuses(self) -> list[CameraStatusResponse]:
+        with self.database.session() as session:
+            return ViolationRepository(session).list_camera_statuses()
 
     def run_safety_query(self, request: SafetyQueryRequest) -> SafetyQueryResponse:
         from agent.graph.safety_graph import build_safety_graph

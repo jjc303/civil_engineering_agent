@@ -21,6 +21,7 @@ class Settings:
     llm_base_url: str = "https://api.deepseek.com"
     llm_api_key: str = ""
     llm_timeout_seconds: float = 20.0
+    media_root: str = "./runs/media"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -34,6 +35,7 @@ class Settings:
             tool_max_calls=int(os.getenv("AGENT_TOOL_MAX_CALLS", "2")),
             internal_perception_token=os.getenv("INTERNAL_PERCEPTION_TOKEN", ""),
             auto_create_schema=os.getenv("AGENT_AUTO_CREATE_SCHEMA", "false").lower() == "true",
+            media_root=os.getenv("AGENT_MEDIA_ROOT", "./runs/media"),
         )
 
     def validate_for_runtime(self) -> None:
