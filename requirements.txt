@@ -1,0 +1,14 @@
+# Civil Engineering Agent - Core Perception Dependencies
+# Python 3.10+
+torch>=2.0.0
+torchvision>=0.15.0
+numpy>=1.24.0
+scipy>=1.11.0
+opencv-python>=4.8.0
+pillow>=10.0.0
+pydantic>=2.5.0
+pytest>=8.0.0
+PyYAML>=6.0
+psutil>=5.9.0
+tqdm>=4.65.0
+requests>=2.25.0

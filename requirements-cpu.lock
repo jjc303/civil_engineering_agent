@@ -1,0 +1,16 @@
+# CPU-only development and CI environment lockfile
+# Generated for Python 3.10 on Linux x86_64
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch==2.1.2+cpu
+torchvision==0.16.2+cpu
+numpy>=1.24.0,<2.0.0
+scipy>=1.11.0
+opencv-python>=4.8.0
+pillow>=10.0.0
+pydantic>=2.5.0
+pytest>=8.0.0
+PyYAML>=6.0
+psutil>=5.9.0
+tqdm>=4.65.0
+requests>=2.31.0

@@ -1,0 +1,8 @@
+# Standard Weights Checksum Registry (SHA256)
+# Verified on Linux x86_64
+
+# Primary Business 3-class safety helmet model (YOLOv5m base, 100 epochs, mAP@0.5 0.901):
+c9e4706e11301aa6053018c1c6e0e4361bbab9dca8312a325393cb7b8a3777f9  helmet_head_person_m.pt
+
+# Lightweight Business 3-class safety helmet model (YOLOv5s base, 50 epochs, mAP@0.5 0.888):
+cfbdb0bdddf6489374067c0bb64db0eab49054bd818acb6f25ff28a8e02a1cc7  helmet_head_person_s.pt

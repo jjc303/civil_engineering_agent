@@ -1,0 +1,58 @@
+# Git ignore rules for civil_engineering_agent
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Large binary weights & models (managed via weights registry or external storage)
+*.pt
+*.pth
+*.onnx
+*.engine
+*.bin
+*.tar.gz
+*.zip
+
+# Git bundle offline archive (108MB backup package)
+.git_archive/
+
+# Environments & Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Distribution & Packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local Inference & Run Outputs
+runs/
+inference/output/
+*.log
+
+# Operating System & Windows Metadata
+.DS_Store
+Thumbs.db
+*:Zone.Identifier

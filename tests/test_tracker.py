@@ -1,0 +1,63 @@
+import pytest
+from perception.schemas.detection import BoundingBox
+from perception.tracking.byte_tracker import BYTETracker
+
+
+def test_byte_tracker_association():
+    tracker = BYTETracker(track_thresh=0.5, match_thresh=0.7, max_lost_frames=5)
+    tracker.reset()
+
+    # Frame 1: Person at (100, 100, 200, 300)
+    det1 = [
+        BoundingBox(
+            x1=100.0,
+            y1=100.0,
+            x2=200.0,
+            y2=300.0,
+            conf=0.9,
+            class_id=0,
+            class_name="person",
+        )
+    ]
+    tracks_frame1 = tracker.update(det1)
+    assert len(tracks_frame1) == 1
+    track_id = tracks_frame1[0].track_id
+    assert track_id > 0
+
+    # Frame 2: Person slightly moves to (105, 102, 205, 302)
+    det2 = [
+        BoundingBox(
+            x1=105.0,
+            y1=102.0,
+            x2=205.0,
+            y2=302.0,
+            conf=0.88,
+            class_id=0,
+            class_name="person",
+        )
+    ]
+    tracks_frame2 = tracker.update(det2)
+    assert len(tracks_frame2) == 1
+    # Track ID MUST be preserved (no ID switch)
+    assert tracks_frame2[0].track_id == track_id
+
+    # Frame 3: Missing detection (person occluded for 1 frame)
+    tracks_frame3 = tracker.update([])
+    assert len(tracks_frame3) == 0  # In lost state, not returned in active list
+
+    # Frame 4: Person reappears at (110, 105, 210, 305)
+    det4 = [
+        BoundingBox(
+            x1=110.0,
+            y1=105.0,
+            x2=210.0,
+            y2=305.0,
+            conf=0.85,
+            class_id=0,
+            class_name="person",
+        )
+    ]
+    tracks_frame4 = tracker.update(det4)
+    assert len(tracks_frame4) == 1
+    # Successfully re-identified and recovered same track_id
+    assert tracks_frame4[0].track_id == track_id

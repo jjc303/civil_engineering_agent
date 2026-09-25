@@ -1,0 +1,1917 @@
+{
+  "metadata": {
+    "video_path": "tests/fixtures/sample_walk.mp4",
+    "fps": 25,
+    "total_frames": 125,
+    "duration_seconds": 5,
+    "resolution": [
+      1280,
+      720
+    ]
+  },
+  "danger_zones": [
+    {
+      "name": "EXCLUSION_AREA",
+      "polygon": [
+        [
+          700.0,
+          200.0
+        ],
+        [
+          1200.0,
+          200.0
+        ],
+        [
+          1200.0,
+          650.0
+        ],
+        [
+          700.0,
+          650.0
+        ]
+      ]
+    }
+  ],
+  "events": {
+    "entry_frame": 77,
+    "entry_timestamp_sec": 3.08,
+    "expected_violation_duration_sec": 1.92
+  },
+  "frame_annotations": [
+    {
+      "frame_id": 0,
+      "timestamp": 0.0,
+      "worker_bbox": [
+        200,
+        400,
+        280,
+        580
+      ],
+      "feet_point": [
+        240.0,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 1,
+      "timestamp": 0.04,
+      "worker_bbox": [
+        206,
+        400,
+        286,
+        580
+      ],
+      "feet_point": [
+        246.0483870967742,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 2,
+      "timestamp": 0.08,
+      "worker_bbox": [
+        212,
+        400,
+        292,
+        580
+      ],
+      "feet_point": [
+        252.09677419354838,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 3,
+      "timestamp": 0.12,
+      "worker_bbox": [
+        218,
+        400,
+        298,
+        580
+      ],
+      "feet_point": [
+        258.14516129032256,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 4,
+      "timestamp": 0.16,
+      "worker_bbox": [
+        224,
+        400,
+        304,
+        580
+      ],
+      "feet_point": [
+        264.19354838709677,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 5,
+      "timestamp": 0.2,
+      "worker_bbox": [
+        230,
+        400,
+        310,
+        580
+      ],
+      "feet_point": [
+        270.241935483871,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 6,
+      "timestamp": 0.24,
+      "worker_bbox": [
+        236,
+        400,
+        316,
+        580
+      ],
+      "feet_point": [
+        276.2903225806451,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 7,
+      "timestamp": 0.28,
+      "worker_bbox": [
+        242,
+        400,
+        322,
+        580
+      ],
+      "feet_point": [
+        282.3387096774194,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 8,
+      "timestamp": 0.32,
+      "worker_bbox": [
+        248,
+        400,
+        328,
+        580
+      ],
+      "feet_point": [
+        288.38709677419354,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 9,
+      "timestamp": 0.36,
+      "worker_bbox": [
+        254,
+        400,
+        334,
+        580
+      ],
+      "feet_point": [
+        294.43548387096774,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 10,
+      "timestamp": 0.4,
+      "worker_bbox": [
+        260,
+        400,
+        340,
+        580
+      ],
+      "feet_point": [
+        300.48387096774195,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 11,
+      "timestamp": 0.44,
+      "worker_bbox": [
+        266,
+        400,
+        346,
+        580
+      ],
+      "feet_point": [
+        306.5322580645161,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 12,
+      "timestamp": 0.48,
+      "worker_bbox": [
+        272,
+        400,
+        352,
+        580
+      ],
+      "feet_point": [
+        312.5806451612903,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 13,
+      "timestamp": 0.52,
+      "worker_bbox": [
+        278,
+        400,
+        358,
+        580
+      ],
+      "feet_point": [
+        318.6290322580645,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 14,
+      "timestamp": 0.56,
+      "worker_bbox": [
+        284,
+        400,
+        364,
+        580
+      ],
+      "feet_point": [
+        324.6774193548387,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 15,
+      "timestamp": 0.6,
+      "worker_bbox": [
+        290,
+        400,
+        370,
+        580
+      ],
+      "feet_point": [
+        330.7258064516129,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 16,
+      "timestamp": 0.64,
+      "worker_bbox": [
+        296,
+        400,
+        376,
+        580
+      ],
+      "feet_point": [
+        336.7741935483871,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 17,
+      "timestamp": 0.68,
+      "worker_bbox": [
+        302,
+        400,
+        382,
+        580
+      ],
+      "feet_point": [
+        342.8225806451613,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 18,
+      "timestamp": 0.72,
+      "worker_bbox": [
+        308,
+        400,
+        388,
+        580
+      ],
+      "feet_point": [
+        348.8709677419355,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 19,
+      "timestamp": 0.76,
+      "worker_bbox": [
+        314,
+        400,
+        394,
+        580
+      ],
+      "feet_point": [
+        354.9193548387097,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 20,
+      "timestamp": 0.8,
+      "worker_bbox": [
+        320,
+        400,
+        400,
+        580
+      ],
+      "feet_point": [
+        360.9677419354839,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 21,
+      "timestamp": 0.84,
+      "worker_bbox": [
+        327,
+        400,
+        407,
+        580
+      ],
+      "feet_point": [
+        367.01612903225805,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 22,
+      "timestamp": 0.88,
+      "worker_bbox": [
+        333,
+        400,
+        413,
+        580
+      ],
+      "feet_point": [
+        373.06451612903226,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 23,
+      "timestamp": 0.92,
+      "worker_bbox": [
+        339,
+        400,
+        419,
+        580
+      ],
+      "feet_point": [
+        379.11290322580646,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 24,
+      "timestamp": 0.96,
+      "worker_bbox": [
+        345,
+        400,
+        425,
+        580
+      ],
+      "feet_point": [
+        385.1612903225806,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 25,
+      "timestamp": 1.0,
+      "worker_bbox": [
+        351,
+        400,
+        431,
+        580
+      ],
+      "feet_point": [
+        391.2096774193548,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 26,
+      "timestamp": 1.04,
+      "worker_bbox": [
+        357,
+        400,
+        437,
+        580
+      ],
+      "feet_point": [
+        397.258064516129,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 27,
+      "timestamp": 1.08,
+      "worker_bbox": [
+        363,
+        400,
+        443,
+        580
+      ],
+      "feet_point": [
+        403.30645161290323,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 28,
+      "timestamp": 1.12,
+      "worker_bbox": [
+        369,
+        400,
+        449,
+        580
+      ],
+      "feet_point": [
+        409.35483870967744,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 29,
+      "timestamp": 1.16,
+      "worker_bbox": [
+        375,
+        400,
+        455,
+        580
+      ],
+      "feet_point": [
+        415.4032258064516,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 30,
+      "timestamp": 1.2,
+      "worker_bbox": [
+        381,
+        400,
+        461,
+        580
+      ],
+      "feet_point": [
+        421.45161290322585,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 31,
+      "timestamp": 1.24,
+      "worker_bbox": [
+        387,
+        400,
+        467,
+        580
+      ],
+      "feet_point": [
+        427.5,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 32,
+      "timestamp": 1.28,
+      "worker_bbox": [
+        393,
+        400,
+        473,
+        580
+      ],
+      "feet_point": [
+        433.54838709677415,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 33,
+      "timestamp": 1.32,
+      "worker_bbox": [
+        399,
+        400,
+        479,
+        580
+      ],
+      "feet_point": [
+        439.5967741935484,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 34,
+      "timestamp": 1.36,
+      "worker_bbox": [
+        405,
+        400,
+        485,
+        580
+      ],
+      "feet_point": [
+        445.64516129032256,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 35,
+      "timestamp": 1.4,
+      "worker_bbox": [
+        411,
+        400,
+        491,
+        580
+      ],
+      "feet_point": [
+        451.6935483870968,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 36,
+      "timestamp": 1.44,
+      "worker_bbox": [
+        417,
+        400,
+        497,
+        580
+      ],
+      "feet_point": [
+        457.741935483871,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 37,
+      "timestamp": 1.48,
+      "worker_bbox": [
+        423,
+        400,
+        503,
+        580
+      ],
+      "feet_point": [
+        463.7903225806452,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 38,
+      "timestamp": 1.52,
+      "worker_bbox": [
+        429,
+        400,
+        509,
+        580
+      ],
+      "feet_point": [
+        469.8387096774194,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 39,
+      "timestamp": 1.56,
+      "worker_bbox": [
+        435,
+        400,
+        515,
+        580
+      ],
+      "feet_point": [
+        475.88709677419354,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 40,
+      "timestamp": 1.6,
+      "worker_bbox": [
+        441,
+        400,
+        521,
+        580
+      ],
+      "feet_point": [
+        481.93548387096774,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 41,
+      "timestamp": 1.64,
+      "worker_bbox": [
+        447,
+        400,
+        527,
+        580
+      ],
+      "feet_point": [
+        487.98387096774195,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 42,
+      "timestamp": 1.68,
+      "worker_bbox": [
+        454,
+        400,
+        534,
+        580
+      ],
+      "feet_point": [
+        494.0322580645161,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 43,
+      "timestamp": 1.72,
+      "worker_bbox": [
+        460,
+        400,
+        540,
+        580
+      ],
+      "feet_point": [
+        500.08064516129036,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 44,
+      "timestamp": 1.76,
+      "worker_bbox": [
+        466,
+        400,
+        546,
+        580
+      ],
+      "feet_point": [
+        506.1290322580645,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 45,
+      "timestamp": 1.8,
+      "worker_bbox": [
+        472,
+        400,
+        552,
+        580
+      ],
+      "feet_point": [
+        512.1774193548388,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 46,
+      "timestamp": 1.84,
+      "worker_bbox": [
+        478,
+        400,
+        558,
+        580
+      ],
+      "feet_point": [
+        518.2258064516129,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 47,
+      "timestamp": 1.88,
+      "worker_bbox": [
+        484,
+        400,
+        564,
+        580
+      ],
+      "feet_point": [
+        524.2741935483871,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 48,
+      "timestamp": 1.92,
+      "worker_bbox": [
+        490,
+        400,
+        570,
+        580
+      ],
+      "feet_point": [
+        530.3225806451612,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 49,
+      "timestamp": 1.96,
+      "worker_bbox": [
+        496,
+        400,
+        576,
+        580
+      ],
+      "feet_point": [
+        536.3709677419355,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 50,
+      "timestamp": 2.0,
+      "worker_bbox": [
+        502,
+        400,
+        582,
+        580
+      ],
+      "feet_point": [
+        542.4193548387096,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 51,
+      "timestamp": 2.04,
+      "worker_bbox": [
+        508,
+        400,
+        588,
+        580
+      ],
+      "feet_point": [
+        548.4677419354839,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 52,
+      "timestamp": 2.08,
+      "worker_bbox": [
+        514,
+        400,
+        594,
+        580
+      ],
+      "feet_point": [
+        554.516129032258,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 53,
+      "timestamp": 2.12,
+      "worker_bbox": [
+        520,
+        400,
+        600,
+        580
+      ],
+      "feet_point": [
+        560.5645161290322,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 54,
+      "timestamp": 2.16,
+      "worker_bbox": [
+        526,
+        400,
+        606,
+        580
+      ],
+      "feet_point": [
+        566.6129032258065,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 55,
+      "timestamp": 2.2,
+      "worker_bbox": [
+        532,
+        400,
+        612,
+        580
+      ],
+      "feet_point": [
+        572.6612903225807,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 56,
+      "timestamp": 2.24,
+      "worker_bbox": [
+        538,
+        400,
+        618,
+        580
+      ],
+      "feet_point": [
+        578.7096774193549,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 57,
+      "timestamp": 2.28,
+      "worker_bbox": [
+        544,
+        400,
+        624,
+        580
+      ],
+      "feet_point": [
+        584.758064516129,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 58,
+      "timestamp": 2.32,
+      "worker_bbox": [
+        550,
+        400,
+        630,
+        580
+      ],
+      "feet_point": [
+        590.8064516129032,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 59,
+      "timestamp": 2.36,
+      "worker_bbox": [
+        556,
+        400,
+        636,
+        580
+      ],
+      "feet_point": [
+        596.8548387096774,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 60,
+      "timestamp": 2.4,
+      "worker_bbox": [
+        562,
+        400,
+        642,
+        580
+      ],
+      "feet_point": [
+        602.9032258064517,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 61,
+      "timestamp": 2.44,
+      "worker_bbox": [
+        568,
+        400,
+        648,
+        580
+      ],
+      "feet_point": [
+        608.9516129032259,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 62,
+      "timestamp": 2.48,
+      "worker_bbox": [
+        575,
+        400,
+        655,
+        580
+      ],
+      "feet_point": [
+        615.0,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 63,
+      "timestamp": 2.52,
+      "worker_bbox": [
+        581,
+        400,
+        661,
+        580
+      ],
+      "feet_point": [
+        621.0483870967741,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 64,
+      "timestamp": 2.56,
+      "worker_bbox": [
+        587,
+        400,
+        667,
+        580
+      ],
+      "feet_point": [
+        627.0967741935483,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 65,
+      "timestamp": 2.6,
+      "worker_bbox": [
+        593,
+        400,
+        673,
+        580
+      ],
+      "feet_point": [
+        633.1451612903226,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 66,
+      "timestamp": 2.64,
+      "worker_bbox": [
+        599,
+        400,
+        679,
+        580
+      ],
+      "feet_point": [
+        639.1935483870968,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 67,
+      "timestamp": 2.68,
+      "worker_bbox": [
+        605,
+        400,
+        685,
+        580
+      ],
+      "feet_point": [
+        645.241935483871,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 68,
+      "timestamp": 2.72,
+      "worker_bbox": [
+        611,
+        400,
+        691,
+        580
+      ],
+      "feet_point": [
+        651.2903225806451,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 69,
+      "timestamp": 2.76,
+      "worker_bbox": [
+        617,
+        400,
+        697,
+        580
+      ],
+      "feet_point": [
+        657.3387096774193,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 70,
+      "timestamp": 2.8,
+      "worker_bbox": [
+        623,
+        400,
+        703,
+        580
+      ],
+      "feet_point": [
+        663.3870967741937,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 71,
+      "timestamp": 2.84,
+      "worker_bbox": [
+        629,
+        400,
+        709,
+        580
+      ],
+      "feet_point": [
+        669.4354838709678,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 72,
+      "timestamp": 2.88,
+      "worker_bbox": [
+        635,
+        400,
+        715,
+        580
+      ],
+      "feet_point": [
+        675.483870967742,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 73,
+      "timestamp": 2.92,
+      "worker_bbox": [
+        641,
+        400,
+        721,
+        580
+      ],
+      "feet_point": [
+        681.5322580645161,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 74,
+      "timestamp": 2.96,
+      "worker_bbox": [
+        647,
+        400,
+        727,
+        580
+      ],
+      "feet_point": [
+        687.5806451612904,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 75,
+      "timestamp": 3.0,
+      "worker_bbox": [
+        653,
+        400,
+        733,
+        580
+      ],
+      "feet_point": [
+        693.6290322580645,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 76,
+      "timestamp": 3.04,
+      "worker_bbox": [
+        659,
+        400,
+        739,
+        580
+      ],
+      "feet_point": [
+        699.6774193548388,
+        580.0
+      ],
+      "in_danger_zone": false
+    },
+    {
+      "frame_id": 77,
+      "timestamp": 3.08,
+      "worker_bbox": [
+        665,
+        400,
+        745,
+        580
+      ],
+      "feet_point": [
+        705.7258064516129,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 78,
+      "timestamp": 3.12,
+      "worker_bbox": [
+        671,
+        400,
+        751,
+        580
+      ],
+      "feet_point": [
+        711.7741935483871,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 79,
+      "timestamp": 3.16,
+      "worker_bbox": [
+        677,
+        400,
+        757,
+        580
+      ],
+      "feet_point": [
+        717.8225806451612,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 80,
+      "timestamp": 3.2,
+      "worker_bbox": [
+        683,
+        400,
+        763,
+        580
+      ],
+      "feet_point": [
+        723.8709677419355,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 81,
+      "timestamp": 3.24,
+      "worker_bbox": [
+        689,
+        400,
+        769,
+        580
+      ],
+      "feet_point": [
+        729.9193548387096,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 82,
+      "timestamp": 3.28,
+      "worker_bbox": [
+        695,
+        400,
+        775,
+        580
+      ],
+      "feet_point": [
+        735.9677419354839,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 83,
+      "timestamp": 3.32,
+      "worker_bbox": [
+        702,
+        400,
+        782,
+        580
+      ],
+      "feet_point": [
+        742.016129032258,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 84,
+      "timestamp": 3.36,
+      "worker_bbox": [
+        708,
+        400,
+        788,
+        580
+      ],
+      "feet_point": [
+        748.0645161290322,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 85,
+      "timestamp": 3.4,
+      "worker_bbox": [
+        714,
+        400,
+        794,
+        580
+      ],
+      "feet_point": [
+        754.1129032258065,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 86,
+      "timestamp": 3.44,
+      "worker_bbox": [
+        720,
+        400,
+        800,
+        580
+      ],
+      "feet_point": [
+        760.1612903225807,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 87,
+      "timestamp": 3.48,
+      "worker_bbox": [
+        726,
+        400,
+        806,
+        580
+      ],
+      "feet_point": [
+        766.2096774193549,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 88,
+      "timestamp": 3.52,
+      "worker_bbox": [
+        732,
+        400,
+        812,
+        580
+      ],
+      "feet_point": [
+        772.258064516129,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 89,
+      "timestamp": 3.56,
+      "worker_bbox": [
+        738,
+        400,
+        818,
+        580
+      ],
+      "feet_point": [
+        778.3064516129033,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 90,
+      "timestamp": 3.6,
+      "worker_bbox": [
+        744,
+        400,
+        824,
+        580
+      ],
+      "feet_point": [
+        784.3548387096774,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 91,
+      "timestamp": 3.64,
+      "worker_bbox": [
+        750,
+        400,
+        830,
+        580
+      ],
+      "feet_point": [
+        790.4032258064516,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 92,
+      "timestamp": 3.68,
+      "worker_bbox": [
+        756,
+        400,
+        836,
+        580
+      ],
+      "feet_point": [
+        796.4516129032259,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 93,
+      "timestamp": 3.72,
+      "worker_bbox": [
+        762,
+        400,
+        842,
+        580
+      ],
+      "feet_point": [
+        802.5,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 94,
+      "timestamp": 3.76,
+      "worker_bbox": [
+        768,
+        400,
+        848,
+        580
+      ],
+      "feet_point": [
+        808.5483870967741,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 95,
+      "timestamp": 3.8,
+      "worker_bbox": [
+        774,
+        400,
+        854,
+        580
+      ],
+      "feet_point": [
+        814.5967741935484,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 96,
+      "timestamp": 3.84,
+      "worker_bbox": [
+        780,
+        400,
+        860,
+        580
+      ],
+      "feet_point": [
+        820.6451612903226,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 97,
+      "timestamp": 3.88,
+      "worker_bbox": [
+        786,
+        400,
+        866,
+        580
+      ],
+      "feet_point": [
+        826.6935483870967,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 98,
+      "timestamp": 3.92,
+      "worker_bbox": [
+        792,
+        400,
+        872,
+        580
+      ],
+      "feet_point": [
+        832.741935483871,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 99,
+      "timestamp": 3.96,
+      "worker_bbox": [
+        798,
+        400,
+        878,
+        580
+      ],
+      "feet_point": [
+        838.7903225806451,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 100,
+      "timestamp": 4.0,
+      "worker_bbox": [
+        804,
+        400,
+        884,
+        580
+      ],
+      "feet_point": [
+        844.8387096774193,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 101,
+      "timestamp": 4.04,
+      "worker_bbox": [
+        810,
+        400,
+        890,
+        580
+      ],
+      "feet_point": [
+        850.8870967741935,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 102,
+      "timestamp": 4.08,
+      "worker_bbox": [
+        816,
+        400,
+        896,
+        580
+      ],
+      "feet_point": [
+        856.9354838709678,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 103,
+      "timestamp": 4.12,
+      "worker_bbox": [
+        822,
+        400,
+        902,
+        580
+      ],
+      "feet_point": [
+        862.983870967742,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 104,
+      "timestamp": 4.16,
+      "worker_bbox": [
+        829,
+        400,
+        909,
+        580
+      ],
+      "feet_point": [
+        869.0322580645161,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 105,
+      "timestamp": 4.2,
+      "worker_bbox": [
+        835,
+        400,
+        915,
+        580
+      ],
+      "feet_point": [
+        875.0806451612904,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 106,
+      "timestamp": 4.24,
+      "worker_bbox": [
+        841,
+        400,
+        921,
+        580
+      ],
+      "feet_point": [
+        881.1290322580645,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 107,
+      "timestamp": 4.28,
+      "worker_bbox": [
+        847,
+        400,
+        927,
+        580
+      ],
+      "feet_point": [
+        887.1774193548387,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 108,
+      "timestamp": 4.32,
+      "worker_bbox": [
+        853,
+        400,
+        933,
+        580
+      ],
+      "feet_point": [
+        893.2258064516129,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 109,
+      "timestamp": 4.36,
+      "worker_bbox": [
+        859,
+        400,
+        939,
+        580
+      ],
+      "feet_point": [
+        899.2741935483871,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 110,
+      "timestamp": 4.4,
+      "worker_bbox": [
+        865,
+        400,
+        945,
+        580
+      ],
+      "feet_point": [
+        905.3225806451613,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 111,
+      "timestamp": 4.44,
+      "worker_bbox": [
+        871,
+        400,
+        951,
+        580
+      ],
+      "feet_point": [
+        911.3709677419355,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 112,
+      "timestamp": 4.48,
+      "worker_bbox": [
+        877,
+        400,
+        957,
+        580
+      ],
+      "feet_point": [
+        917.4193548387096,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 113,
+      "timestamp": 4.52,
+      "worker_bbox": [
+        883,
+        400,
+        963,
+        580
+      ],
+      "feet_point": [
+        923.4677419354839,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 114,
+      "timestamp": 4.56,
+      "worker_bbox": [
+        889,
+        400,
+        969,
+        580
+      ],
+      "feet_point": [
+        929.516129032258,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 115,
+      "timestamp": 4.6,
+      "worker_bbox": [
+        895,
+        400,
+        975,
+        580
+      ],
+      "feet_point": [
+        935.5645161290322,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 116,
+      "timestamp": 4.64,
+      "worker_bbox": [
+        901,
+        400,
+        981,
+        580
+      ],
+      "feet_point": [
+        941.6129032258065,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 117,
+      "timestamp": 4.68,
+      "worker_bbox": [
+        907,
+        400,
+        987,
+        580
+      ],
+      "feet_point": [
+        947.6612903225807,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 118,
+      "timestamp": 4.72,
+      "worker_bbox": [
+        913,
+        400,
+        993,
+        580
+      ],
+      "feet_point": [
+        953.7096774193549,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 119,
+      "timestamp": 4.76,
+      "worker_bbox": [
+        919,
+        400,
+        999,
+        580
+      ],
+      "feet_point": [
+        959.758064516129,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 120,
+      "timestamp": 4.8,
+      "worker_bbox": [
+        925,
+        400,
+        1005,
+        580
+      ],
+      "feet_point": [
+        965.8064516129033,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 121,
+      "timestamp": 4.84,
+      "worker_bbox": [
+        931,
+        400,
+        1011,
+        580
+      ],
+      "feet_point": [
+        971.8548387096774,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 122,
+      "timestamp": 4.88,
+      "worker_bbox": [
+        937,
+        400,
+        1017,
+        580
+      ],
+      "feet_point": [
+        977.9032258064516,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 123,
+      "timestamp": 4.92,
+      "worker_bbox": [
+        943,
+        400,
+        1023,
+        580
+      ],
+      "feet_point": [
+        983.9516129032259,
+        580.0
+      ],
+      "in_danger_zone": true
+    },
+    {
+      "frame_id": 124,
+      "timestamp": 4.96,
+      "worker_bbox": [
+        950,
+        400,
+        1030,
+        580
+      ],
+      "feet_point": [
+        990.0,
+        580.0
+      ],
+      "in_danger_zone": true
+    }
+  ]
+}
