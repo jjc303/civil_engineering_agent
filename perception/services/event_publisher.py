@@ -284,7 +284,9 @@ class PerceptionEventPublisher:
         Reports camera operational status via PUT /internal/v1/perception/cameras/{camera_id}/status.
         """
         url = f"{self.agent_base_url}/internal/v1/perception/cameras/{status.camera_id}/status"
-        payload = status.model_dump() if hasattr(status, "model_dump") else status.dict()
+        payload = status.to_agent_payload() if hasattr(status, "to_agent_payload") else (
+            status.model_dump() if hasattr(status, "model_dump") else status.dict()
+        )
         try:
             resp = self.session.put(
                 url,

@@ -86,10 +86,13 @@ class AgentEventResponseV1(BaseModel):
 class CameraStatusContractV1(BaseModel):
     """
     Payload for PUT /internal/v1/perception/cameras/{camera_id}/status.
+    Matches Agent CameraStatusReportV1 requirements.
     """
     camera_id: str
+    monitor_session_id: str = "default_session"
     is_online: bool = True
     fps: float = 0.0
+    processed_frame_id: int = 0
     active_workers_count: int = 0
     helmet_compliance_rate: float = 1.0
     model_name: Optional[str] = None
@@ -97,6 +100,16 @@ class CameraStatusContractV1(BaseModel):
     reported_at_utc: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     )
+    extra_details: Dict[str, Any] = Field(default_factory=dict)
+
+    def to_agent_payload(self) -> Dict[str, Any]:
+        """Ensures helmet_compliance_rate is stored in extra_details for Agent schema compatibility."""
+        payload = self.model_dump() if hasattr(self, "model_dump") else self.dict()
+        details = dict(self.extra_details)
+        details["helmet_compliance_rate"] = self.helmet_compliance_rate
+        payload["extra_details"] = details
+        payload.pop("helmet_compliance_rate", None)
+        return payload
 
 
 class CameraZoneConfig(BaseModel):

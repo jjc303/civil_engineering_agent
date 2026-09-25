@@ -394,3 +394,33 @@ def test_publisher_server_error_500_with_backoff_and_flush(tmp_path, monkeypatch
 
     rec_after = publisher.outbox.get_event("event-retry-500")
     assert rec_after["delivered_at"] is not None
+
+
+def test_camera_status_report_contract_alignment():
+    """Verify that CameraStatusContractV1 satisfies Agent's CameraStatusReportV1 schema without 422."""
+    from agent.contracts.event_v1 import CameraStatusReportV1
+
+    status = CameraStatusContractV1(
+        camera_id="cam_crane_01",
+        monitor_session_id="session_20260925_001",
+        is_online=True,
+        fps=24.5,
+        processed_frame_id=120,
+        active_workers_count=4,
+        helmet_compliance_rate=0.75,
+        model_name="helmet_head_person_m",
+        model_version="legacy-yolov5",
+    )
+
+    payload = status.to_agent_payload()
+    assert payload["camera_id"] == "cam_crane_01"
+    assert payload["monitor_session_id"] == "session_20260925_001"
+    assert payload["processed_frame_id"] == 120
+    assert payload["extra_details"]["helmet_compliance_rate"] == 0.75
+
+    # Direct validation against Agent's Pydantic model
+    agent_model = CameraStatusReportV1(**payload)
+    assert agent_model.camera_id == "cam_crane_01"
+    assert agent_model.monitor_session_id == "session_20260925_001"
+    assert agent_model.processed_frame_id == 120
+
