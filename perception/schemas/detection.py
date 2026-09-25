@@ -26,6 +26,9 @@ class BoundingBox(BaseModel):
     conf: float = Field(..., ge=0.0, le=1.0, description="Confidence score")
     class_id: int = Field(..., description="Class ID (0: person, 1: head, 2: helmet)")
     class_name: str = Field(..., description="Class name ('person', 'head', 'helmet')")
+    has_helmet: Optional[bool] = Field(None, description="Whether associated person wears safety helmet")
+    helmet_box: Optional[BoundingBox] = Field(None, description="Associated helmet bounding box")
+    head_box: Optional[BoundingBox] = Field(None, description="Associated bare head bounding box")
 
     @property
     def width(self) -> float:
@@ -57,10 +60,13 @@ class TrackedPerson(BaseModel):
     bbox: BoundingBox = Field(..., description="Current person bounding box")
     feet_point: Tuple[float, float] = Field(..., description="Calculated feet ground point")
     has_helmet: bool = Field(False, description="Whether person wears safety helmet")
+    helmet_box: Optional[BoundingBox] = Field(None, description="Associated helmet bounding box")
+    head_box: Optional[BoundingBox] = Field(None, description="Associated bare head bounding box")
     is_in_danger_zone: bool = Field(False, description="Whether person has entered a danger zone")
     danger_zone_name: Optional[str] = Field(None, description="Name of the invaded danger zone")
     dwell_time_seconds: float = Field(0.0, description="Continuous dwell duration in danger zone")
     trajectory: List[Tuple[float, float]] = Field(default_factory=list, description="Recent feet trajectory points")
+
 
 
 class DangerZone(BaseModel):

@@ -5,6 +5,11 @@ from .danger_zone import (
     map_raw_to_ui_coords,
     load_danger_zones_from_json,
 )
+from .topology import (
+    HelmetCompliance,
+    PersonTopologyResult,
+    match_person_head_helmet,
+)
 
 __all__ = [
     "point_in_polygon_cv2",
@@ -12,4 +17,8 @@ __all__ = [
     "map_ui_to_raw_coords",
     "map_raw_to_ui_coords",
     "load_danger_zones_from_json",
+    "HelmetCompliance",
+    "PersonTopologyResult",
+    "match_person_head_helmet",
 ]
+

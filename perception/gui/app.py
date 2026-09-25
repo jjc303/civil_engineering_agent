@@ -74,7 +74,7 @@ def get_hardware_info() -> Dict[str, float]:
 
 class PerceptionWorkerThread(QThread):
     """
-    Background worker thread for inference and tracking without blocking GUI main loop.
+    Background worker thread for inference, tracking and safety monitoring without blocking GUI main loop.
     """
     progress_signal = pyqtSignal(int, float)  # (percent, fps)
     message_signal = pyqtSignal(str)
@@ -88,47 +88,89 @@ class PerceptionWorkerThread(QThread):
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.running = False
 
+        # Event storage and danger zones
+        self.event_store = EventStore(
+            db_path=self.output_dir / "safety_events.db",
+            snapshot_dir=self.output_dir / "snapshots",
+        )
+        self.danger_zones: List[DangerZone] = []
+        cfg_path = PROJECT_ROOT / "perception" / "configs" / "default_danger_zones.json"
+        if cfg_path.is_file():
+            try:
+                import json
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.danger_zones = [DangerZone(**item) for item in data]
+            except Exception:
+                pass
+
     def run(self):
         self.running = True
         import cv2
+        import numpy as np
+        from perception.tracking.safety_pipeline import SafetyPerceptionPipeline
 
         src = self.source_path
         p_src = Path(src)
         out_file = str(self.output_dir / f"result_{p_src.name}")
 
         is_image = p_src.suffix.lower() in [".jpg", ".jpeg", ".png", ".bmp"]
-        tracker = BYTETracker()
+        pipeline = SafetyPerceptionPipeline(
+            detector=self.detector,
+            danger_zones=self.danger_zones,
+            event_store=self.event_store,
+            camera_id=p_src.stem,
+        )
+
+        def render_frame(frame, pipeline_result):
+            # Draw danger zone overlays
+            for zone in self.danger_zones:
+                if len(zone.polygon) >= 3:
+                    pts = np.array(zone.polygon, dtype=np.int32).reshape((-1, 1, 2))
+                    overlay = frame.copy()
+                    cv2.fillPoly(overlay, [pts], (0, 0, 220))
+                    cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)
+                    cv2.polylines(frame, [pts], isClosed=True, color=(0, 0, 255), thickness=2)
+                    cv2.putText(frame, zone.name, tuple(pts[0][0]), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2)
+
+            # Draw tracked persons with compliance status
+            for track in pipeline_result.tracked_persons:
+                b = track.bbox
+                is_violation = track.is_in_danger_zone or not track.has_helmet
+                color = (0, 0, 255) if is_violation else (0, 255, 0)
+                bx1, by1 = int(b.x1), int(b.y1)
+                bx2, by2 = int(b.x2), int(b.y2)
+                cv2.rectangle(frame, (bx1, by1), (bx2, by2), color, 2)
+
+                # Feet point
+                fx, fy = int(track.feet_point[0]), int(track.feet_point[1])
+                cv2.circle(frame, (fx, fy), 4, (0, 255, 255), -1)
+
+                h_status = "HELMET" if track.has_helmet else "NO_HELMET"
+                label = f"ID:{track.track_id} [{h_status}]"
+                if track.is_in_danger_zone:
+                    label += f" | Dwell:{track.dwell_time_seconds:.1f}s"
+                cv2.putText(frame, label, (bx1, max(15, by1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
+
+            # Log any new violations
+            for ev in pipeline_result.new_violations:
+                self.message_signal.emit(
+                    f"⚠️ [ALERT] {ev.violation_type} (Track {ev.track_id}) at {ev.zone_name or 'Site'}"
+                )
 
         if is_image:
             img = cv2.imread(src)
             if img is not None:
                 t0 = time.monotonic()
-                res = self.detector.detect(img)
+                res = pipeline.process_frame(img)
                 t_cost = time.monotonic() - t0
                 fps = 1.0 / max(0.001, t_cost)
 
-                # Track
-                person_boxes = [b for b in res.boxes if b.class_name == "person"]
-                tracks = tracker.update(person_boxes)
-
-                # Draw bboxes
-                for box in res.boxes:
-                    color = (0, 255, 0) if box.class_name == "helmet" else (0, 0, 255)
-                    cv2.rectangle(img, (int(box.x1), int(box.y1)), (int(box.x2), int(box.y2)), color, 2)
-                    cv2.putText(
-                        img,
-                        f"{box.class_name} {box.conf:.2f}",
-                        (int(box.x1), max(15, int(box.y1) - 5)),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5,
-                        color,
-                        2,
-                    )
-
+                render_frame(img, res)
                 cv2.imwrite(out_file, img)
                 self.progress_signal.emit(100, fps)
                 self.message_signal.emit(
-                    f"Processed {p_src.name}: {len(res.boxes)} detections, {len(tracks)} tracked persons. Cost: {t_cost*1000:.1f}ms"
+                    f"Processed {p_src.name}: {len(res.raw_detections)} bboxes, {len(res.tracked_persons)} workers. Cost: {t_cost*1000:.1f}ms"
                 )
                 self.finished_signal.emit(out_file)
         else:
@@ -154,38 +196,24 @@ class PerceptionWorkerThread(QThread):
 
                 frame_idx += 1
                 t0 = time.monotonic()
-                res = self.detector.detect(frame)
+                res = pipeline.process_frame(frame, timestamp=frame_idx / fps_src)
                 t_cost = time.monotonic() - t0
                 fps = 1.0 / max(0.001, t_cost)
 
-                person_boxes = [b for b in res.boxes if b.class_name == "person"]
-                tracks = tracker.update(person_boxes)
-
-                for track in tracks:
-                    b = track.bbox
-                    cv2.rectangle(frame, (int(b.x1), int(b.y1)), (int(b.x2), int(b.y2)), (0, 255, 255), 2)
-                    cv2.putText(
-                        frame,
-                        f"ID: {track.track_id}",
-                        (int(b.x1), max(15, int(b.y1) - 5)),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5,
-                        (0, 255, 255),
-                        2,
-                    )
-
+                render_frame(frame, res)
                 writer.write(frame)
 
                 percent = int((frame_idx / total_frames) * 100)
                 self.progress_signal.emit(percent, fps)
                 if frame_idx % 10 == 0:
-                    self.message_signal.emit(f"Frame {frame_idx}/{total_frames} processed (FPS: {fps:.1f})")
+                    self.message_signal.emit(f"Frame {frame_idx}/{total_frames} (FPS: {fps:.1f})")
 
             cap.release()
             writer.release()
             self.progress_signal.emit(100, fps_src)
             self.message_signal.emit(f"Video processing finished. Saved to {out_file}")
             self.finished_signal.emit(out_file)
+
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):

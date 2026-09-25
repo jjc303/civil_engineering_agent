@@ -48,6 +48,11 @@ class STrack:
         self.danger_zone_enter_time: Optional[float] = None
         self.dwell_time_seconds: float = 0.0
 
+        # Helmet and head attributes
+        self.has_helmet: bool = bool(getattr(bbox, "has_helmet", False))
+        self.helmet_box: Optional[BoundingBox] = getattr(bbox, "helmet_box", None)
+        self.head_box: Optional[BoundingBox] = getattr(bbox, "head_box", None)
+
         # Trajectory history of feet points (max 50 points)
         self.trajectory: List[Tuple[float, float]] = []
 
@@ -84,6 +89,9 @@ class STrack:
         self.frame_id = frame_id
         if new_id:
             self.track_id = self.next_id()
+        self.has_helmet = new_track.has_helmet
+        self.helmet_box = new_track.helmet_box
+        self.head_box = new_track.head_box
         self.time_since_update = 0
         self.last_update_time = time.monotonic()
         self.trajectory.append(self.feet_point)
@@ -97,6 +105,9 @@ class STrack:
         self.score = new_track.score
         self.state = TrackState.Tracked
         self.is_activated = True
+        self.has_helmet = new_track.has_helmet
+        self.helmet_box = new_track.helmet_box
+        self.head_box = new_track.head_box
         self.last_update_time = time.monotonic()
 
         self.trajectory.append(self.feet_point)
@@ -109,7 +120,7 @@ class STrack:
     def mark_removed(self):
         self.state = TrackState.Removed
 
-    def to_schema(self, has_helmet: bool = False) -> TrackedPerson:
+    def to_schema(self, has_helmet: Optional[bool] = None) -> TrackedPerson:
         x1, y1, x2, y2 = self._tlbr
         bbox = BoundingBox(
             x1=float(x1),
@@ -119,12 +130,18 @@ class STrack:
             conf=float(self.score),
             class_id=self.class_id,
             class_name=self.class_name,
+            has_helmet=self.has_helmet,
+            helmet_box=self.helmet_box,
+            head_box=self.head_box,
         )
+        resolved_helmet = self.has_helmet if has_helmet is None else has_helmet
         return TrackedPerson(
             track_id=self.track_id,
             bbox=bbox,
             feet_point=self.feet_point,
-            has_helmet=has_helmet,
+            has_helmet=resolved_helmet,
+            helmet_box=self.helmet_box,
+            head_box=self.head_box,
             is_in_danger_zone=self.in_danger_zone,
             danger_zone_name=self.danger_zone_name,
             dwell_time_seconds=self.dwell_time_seconds,
