@@ -280,6 +280,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.output_player = QMediaPlayer()
         self.output_player.setVideoOutput(self.output_video_widget)
 
+        # Setup image labels for static media and real-time visualization
+        if hasattr(self, "input_real_time_label"):
+            self.input_real_time_label.setScaledContents(True)
+            self.input_real_time_label.setAlignment(Qt.AlignCenter)
+        if hasattr(self, "output_real_time_label"):
+            self.output_real_time_label.setScaledContents(True)
+            self.output_real_time_label.setAlignment(Qt.AlignCenter)
+
         # Chart initialization
         self.series = QSplineSeries()
         self.chart_init()
@@ -331,12 +339,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self,
             "Select Media File",
             str(PROJECT_ROOT / "tests" / "fixtures"),
-            "Media Files (*.mp4 *.avi *.jpg *.png)",
+            "Media Files (*.mp4 *.avi *.jpg *.jpeg *.png *.bmp)",
         )
         if filepath:
             self.current_source = filepath
-            self.input_player.setMedia(QMediaContent(QUrl.fromLocalFile(filepath)))
-            self.input_player.pause()
+            ext = Path(filepath).suffix.lower()
+            is_image = ext in [".jpg", ".jpeg", ".png", ".bmp"]
+
+            if is_image:
+                if hasattr(self, "input_media_tabWidget"):
+                    self.input_media_tabWidget.setCurrentIndex(1)
+                if hasattr(self, "input_real_time_label"):
+                    self.input_real_time_label.setPixmap(QPixmap(filepath))
+                self.play_pushButton.setEnabled(False)
+                self.pause_pushButton.setEnabled(False)
+            else:
+                if hasattr(self, "input_media_tabWidget"):
+                    self.input_media_tabWidget.setCurrentIndex(0)
+                self.input_player.setMedia(QMediaContent(QUrl.fromLocalFile(filepath)))
+                self.input_player.pause()
+                self.play_pushButton.setEnabled(True)
+                self.pause_pushButton.setEnabled(True)
+
             self.predict_info_plainTextEdit.appendPlainText(f"Imported: {filepath}")
 
     def start_prediction(self):
@@ -363,8 +387,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.start_predict_pushButton.setEnabled(True)
         if out_file and Path(out_file).is_file():
             self.output_file = out_file
-            self.output_player.setMedia(QMediaContent(QUrl.fromLocalFile(out_file)))
-            self.output_player.pause()
+            ext = Path(out_file).suffix.lower()
+            is_image = ext in [".jpg", ".jpeg", ".png", ".bmp"]
+
+            if is_image:
+                if hasattr(self, "output_media_tabWidget"):
+                    self.output_media_tabWidget.setCurrentIndex(1)
+                if hasattr(self, "output_real_time_label"):
+                    self.output_real_time_label.setPixmap(QPixmap(out_file))
+            else:
+                if hasattr(self, "output_media_tabWidget"):
+                    self.output_media_tabWidget.setCurrentIndex(0)
+                self.output_player.setMedia(QMediaContent(QUrl.fromLocalFile(out_file)))
+                self.output_player.pause()
+
             self.predict_info_plainTextEdit.appendPlainText(f"Ready: {out_file}")
 
     def play_media(self):
