@@ -1,12 +1,13 @@
 # 智能建造安全感知系统 (Perception) 当前进展报告
 
-> **报告版本**：v3.0 (Phase 2 Complete)  
+> **报告版本**：v4.0 (Integration Contract Frozen & Pipeline Decoupled)  
 > **更新时间**：2026-09-25  
 > **当前里程碑**：  
-> - **阶段 0：基线固化与架构决策 (Phase 0) —— 已 100% 完成 (Git Tag: `phase0-complete`)**  
-> - **阶段 1：资产吸收与全面解耦 (Phase 1) —— 已 100% 完成 (Git Tag: `phase1-complete`)**  
-> - **阶段 2：业务深化与时序追踪 (Phase 2) —— 已 100% 完成**  
-> **历史工程解耦**：`Smart_Construction/` 目录已彻底下线，所有业务状态机、拓扑匹配与存储归档均实现 100% 独立自包含！
+> - **阶段 0：基线固化与架构决策 (Phase 0) —— 100% 完成 (Git Tag: `phase0-complete`)**  
+> - **阶段 1：资产吸收与全面解耦 (Phase 1) —— 100% 完成 (Git Tag: `phase1-complete`)**  
+> - **阶段 2：业务深化与时序追踪 (Phase 2) —— 100% 完成**  
+> - **阶段 3 / 联调准备：跨系统契约冻结、Outbox 离线缓冲与硬编码专项治理 —— 100% 完成**  
+> **测试状态**：感知模块 36 项自动化单元与集成测试全部通过（全项目 40 项通过率 100%）！
 
 ---
 
@@ -14,148 +15,118 @@
 
 本项目的目标是将 Fork 的 `Smart_Construction` 消化、吸收并重构为母工程 `civil_engineering_agent` 的高可靠、模块化感知子系统（`perception/`）。
 
-目前已顺利达成**阶段 0、阶段 1、阶段 2 全部交付目标**：
+目前已顺利达成**阶段 0、阶段 1、阶段 2 及跨系统联调契约治理的全部目标**：
 - **阶段 0**：建立运行时环境矩阵、Pydantic 契约、纯 Python 追踪引擎、高精度脚底触地几何算法，通过自动化单测与 CPU 冒烟。
 - **阶段 1**：Qt GUI 与图标资产迁移、数据工程脚本迁移、实现官方模块 `UltralyticsDetector`、双模型回归验证，并彻底物理删除旧工程目录。
 - **阶段 2**：
-  1. **单调时钟防抖状态机与滞留超时告警**：消除电子围栏边缘抖动，支持连续进入防抖（3帧）、离开冷却（5帧）与滞留超时告警（$T_{\text{alarm}} \ge 5.0\text{s}$）；
+  1. **单调时钟防抖状态机与滞留超时告警**：消除电子围栏边缘抖动，支持连续进入防抖、离开冷却与滞留超时告警；
   2. **“人-头-帽”空间拓扑匹配**：通过人体解剖学上部区域与匈牙利全局二分匹配算法，实现人体佩戴安全帽的严密逻辑判定；
-  3. **SQLite 违规事件持久化与快照截图存储**：事件自动入库（带索引与结构化字段），自动在图片上渲染危险区遮罩、违规人员框、时间戳及警告横幅；
-  4. **端到端一体化安全感知流水线 (`SafetyPerceptionPipeline`)**：将检测、拓扑绑定、追踪、状态机防抖与存储存档完全打通，并在桌面端 GUI 与端到端视频上验证通过。
+  3. **SQLite 违规事件持久化与快照截图存储**：事件自动入库，自动在图片上渲染危险区遮罩、违规人员框、时间戳及警告横幅；
+  4. **端到端一体化安全感知流水线 (`SafetyPerceptionPipeline`)**：打通检测、拓扑绑定、追踪、状态机防抖与存储存档。
+- **最新阶段（契约与治理）**：
+  1. **联合集成契约（Contract v1）**：冻结跨系统联调 4 个关键细节（单 `event_uuid` 生命周期不变量、UTC 时间锚点转换、防抖配置化、独立 Outbox 表）；
+  2. **Outbox 离线存储与发布器**：实现带指数退避、422 终态错误过滤与幂等性的 `PerceptionEventPublisher`；
+  3. **架构与硬编码整治**：解决多相机 ByteTrack ID 串扰、计算设备动态适配、类别标签语义解耦；
+  4. **测试体系重构**：将所有感知测试归类至 `tests/perception/`，保持与 `tests/agent/` 统一规范。
 
 ```mermaid
 flowchart LR
     M0["阶段 0：基线固化与架构决策<br/>(100% 已达成 - Tag: phase0-complete)"] --> M1["阶段 1：资产吸收与全面解耦<br/>(100% 已达成 - Tag: phase1-complete)"]
     M1 --> M2["阶段 2：业务深化与时序追踪<br/>(100% 已达成 - 状态机/拓扑/SQLite)"]
-    M2 --> M3["阶段 3：GUI 交互与流媒体管理<br/>(待启动)"]
-    M3 --> M4["阶段 4：智能体感知工具集成<br/>(待启动)"]
+    M2 --> M3["阶段 3：契约冻结与 Outbox 缓冲<br/>(100% 已达成 - 架构解耦/发布器)"]
+    M3 --> M4["阶段 4：后台服务化调度与联调<br/>(进行中 - SessionRunner)"]
 
     style M0 fill:#4CAF50,stroke:#388E3C,color:#fff
     style M1 fill:#4CAF50,stroke:#388E3C,color:#fff
     style M2 fill:#4CAF50,stroke:#388E3C,color:#fff
-    style M3 fill:#2196F3,stroke:#1976D2,color:#fff
-    style M4 fill:#e0e0e0,stroke:#9e9e9e,color:#333
+    style M3 fill:#4CAF50,stroke:#388E3C,color:#fff
+    style M4 fill:#2196F3,stroke:#1976D2,color:#fff
 ```
 
 ---
 
-## 2. 阶段 2 核心成果详述 (Phase 2 Deliverables)
+## 2. 本阶段核心交付成果 (Recent Key Deliverables)
 
-### 2.1 “人-头-帽”空间拓扑匹配算法 (`perception/geometry/topology.py`)
-- **解剖学头部有效感应区域**：
-  为检测到的每个人体框 $P$ 动态计算头部感应包围盒：
-  $$R_{\text{head}} = [x_1 - 0.15 w, \; y_1 - 0.20 h, \; x_2 + 0.15 w, \; y_1 + 0.35 h]$$
-- **全局最优二分匹配（匈牙利算法）**：
-  基于候选安全帽/裸露头部与 $R_{\text{head}}$ 的交集比例（$IoA \ge 0.4$）和水平中心偏移建立代价矩阵，使用 `scipy.optimize.linear_sum_assignment` 进行全局独占匹配，彻底避免多工人重叠时安全帽归属漂移与误判。
-- **佩戴状态细分**：
-  - `HELMETED`：有效匹配到安全帽；
-  - `UNHELMETED`：匹配到裸露头部且无安全帽（违规）；
-  - `UNKNOWN`：远距离或严重遮挡未探测到头顶信息。
+### 2.1 跨子系统联调契约实现 (`perception/schemas/contract_v1.py`)
+- **事件契约 (`PerceptionEventContractV1`)**：
+  严格对齐 `docs/integration/CV_Agent_Web_Integration_Contract.md`，定义标准 `UPSERT` 违规事件载荷，包含 `event_uuid`、`camera_id`、`monitor_session_id`、`track_id`、`violation_type`、`severity`、`status`、`occurred_at_utc`、`snapshot_uri` 等关键字段。
+- **高精度时间锚点 (`TimeAnchor`)**：
+  以启动监控会话时刻作为双时间轴基准，既保留单调时钟计算时长的抗干扰优势，又精准换算出供 MySQL/Web 审计的 UTC ISO 8601 时间戳：
+  $$\text{occurred\_at\_utc} = \text{session\_started\_at\_utc} + (t_{\text{monotonic}} - t_{\text{session\_monotonic}})$$
+- **相机状态与运行配置契约**：
+  包含 `CameraStatusContractV1`（在线状态、FPS、在场人数、合规率）与 `CameraRunConfigContractV1`（多边形顶点、进入/离开防抖帧数、报警阈值）。
 
-### 2.2 单调时钟防抖状态机与滞留超时监控 (`perception/tracking/state_machine.py`)
-- **多状态流转引擎 (`ZoneIntrusionState`)**：
-  - `OUTSIDE` $\to$ `PENDING_ENTER` $\to$ `INTRUSION`（连续进入 3 帧确认，触发 WARNING 级告警）；
-  - `INTRUSION` 维持并累计滞留时长 $t_{\text{dwell}}$，当 $t_{\text{dwell}} \ge T_{\text{alarm}}$（默认 5.0 秒）自动跃迁至 `DWELL_TIMEOUT` 并升级为 CRITICAL 级致命告警；
-  - `DWELL_TIMEOUT`/`INTRUSION` $\to$ `PENDING_EXIT` $\to$ `OUTSIDE`（离开区域需连续 5 帧冷却确认，杜绝脚底触地关键点在边缘高频抖动造成的告警振荡）；
-- **安全帽脱摘时序防抖 (`HelmetComplianceTracker`)**：
-  连续 5 帧未戴帽才触发 `NO_HELMET` 违规，连续 3 帧戴帽自动解除，消除单帧漏检带来的“报警闪烁”；
-- **双时钟源支持**：
-  实时流模式使用 `time.monotonic()`；离线视频评测模式使用视频时间戳（`frame_id / fps`），确保测试与回归 100% 确定可复现。
+### 2.2 独立 SQLite Outbox 存储与事件发布器 (`perception/services/event_publisher.py`)
+- **专用 Outbox 数据库表 (`outbox_events`)**：
+  设计包含 `event_uuid`、`payload_json`、`retry_count`、`next_retry_at`、`last_error`、`created_at`、`delivered_at`，与业务事件表严格物理隔离。
+- **发布策略与重试机制**：
+  - 成功投递或 Agent 幂等更新成功（200/201）：立即标记 `delivered_at`；
+  - 遇到网络超时或 5xx 服务端错误：采用指数退避算法（$2^{\text{retry\_count}}$，上限 60 秒）计算下一次重试时间；
+  - 遇到 400/422 客户端格式错误：识别为不可恢复终态，停止自动重试并记录错误原因；
+  - 提供 `flush_outbox()` 机制，在网络恢复后自动批量重试积压事件。
 
-### 2.3 SQLite 违规事件持久化与快照截图存储 (`perception/storage/event_store.py`)
-- **结构化数据库存储 (`violation_events` 表)**：
-  包含 `event_uuid`、`track_id`、`camera_id`、`violation_type`、`severity`、`zone_name`、`start_time`、`end_time`、`duration_seconds`、`snapshot_path`、`extra_details`、`created_at`，并在重要字段上建立 B-Tree 索引；
-- **智能快照归档引擎**：
-  违规触发时自动生成取证图片，按日期目录归档（`snapshots/YYYYMMDD/{uuid}.jpg`），画面中叠加：
-  1. 危险区半透明红色警告多边形；
-  2. 违规工人专属红色外接框与跟踪编号；
-  3. 顶部高对比度警报横条（包含级别、违规类型、摄像头编号与区域名）；
-- **聚合统计与查询 API**：
-  内置 `query_events`、`get_statistics`，支持开箱即用获取各类型违规频次、平均滞留时间与告警级别分布。
+### 2.3 状态机单一 UUID 升级保持与配置化 (`perception/tracking/state_machine.py`)
+- **事件升级与结案不换号**：
+  一次完整的“进入 $\to$ 滞留超时 $\to$ 离开”生命周期全程使用唯一不变的 `event_uuid`：
+  1. **初次进入**：`severity=WARNING`, `status=ACTIVE`；
+  2. **滞留超时**：更新同一记录为 `severity=CRITICAL`, `extra_details.escalation_reason="DWELL_TIMEOUT"`；
+  3. **离开区域**：更新同一记录为 `status=RESOLVED`, `resolved_at_utc=...`，总时长准确归档。
+- **防抖参数全面配置化**：
+  支持通过 `update_config()` 动态调整 `enter_debounce_frames`、`exit_debounce_frames`、`helmet_debounce_frames` 与停留阈值。
 
-### 2.4 端到端一体化安全感知流水线 (`perception/tracking/safety_pipeline.py`)
-- 高度封装的 `SafetyPerceptionPipeline`：
-  $$\text{Frame} \longrightarrow \text{BaseDetector} \longrightarrow \text{Topology Matching} \longrightarrow \text{BYTETracker} \longrightarrow \text{SafetyMonitor} \longrightarrow \text{EventStore}$$
-- 将 GUI 桌面端主线程（`perception/gui/app.py`）的工作流全面无缝升级至此流水线，实现了桌面播放与离线处理时实时的电子围栏渲染、脚底着地点高亮、头盔状态显示与违规事件自动落盘。
-
----
-
-## 3. 测试与验证通过情况
-
-### 3.1 自动化测试套件（24 项全部通过，通过率 100%）
-运行命令：`python3 -m pytest tests/ -v`，用时 5.84 秒：
-```text
-tests/test_data_tools.py::test_voc_bbox_to_yolo_xywh PASSED              [  4%]
-tests/test_data_tools.py::test_voc_xml_conversion_and_merge PASSED       [  8%]
-tests/test_detector_interface.py::test_mock_detector_interface PASSED    [ 12%]
-tests/test_event_store.py::test_event_store_save_and_query PASSED        [ 16%]
-tests/test_event_store.py::test_event_store_snapshot_archiving PASSED    [ 20%]
-tests/test_geometry.py::test_point_in_polygon PASSED                     [ 25%]
-tests/test_geometry.py::test_person_in_danger_zone_feet_detection PASSED [ 29%]
-tests/test_geometry.py::test_gui_coordinate_mapping_roundtrip PASSED     [ 33%]
-tests/test_geometry.py::test_load_danger_zones_from_json PASSED          [ 37%]
-tests/test_regression.py::test_legacy_yolo_adapter_regression PASSED     [ 41%]
-tests/test_regression.py::test_ultralytics_detector_regression PASSED    [ 45%]
-tests/test_safety_pipeline.py::test_safety_pipeline_end_to_end_on_sample_video PASSED [ 50%]
-tests/test_schemas.py::test_bounding_box_properties PASSED               [ 54%]
-tests/test_schemas.py::test_detection_result_serialization PASSED        [ 58%]
-tests/test_schemas.py::test_violation_event_creation PASSED              [ 62%]
-tests/test_state_machine.py::test_zone_tracker_debounce_and_dwell_timeout PASSED [ 66%]
-tests/test_state_machine.py::test_helmet_compliance_tracker_debounce PASSED [ 70%]
-tests/test_state_machine.py::test_worker_safety_monitor_multi_zone PASSED [ 75%]
-tests/test_topology.py::test_topology_single_person_with_helmet PASSED   [ 79%]
-tests/test_topology.py::test_topology_single_person_with_bare_head PASSED [ 83%]
-tests/test_topology.py::test_topology_multiple_persons_and_helmets_bipartite PASSED [ 87%]
-tests/test_topology.py::test_topology_no_head_or_helmet_detected PASSED  [ 91%]
-tests/test_tracker.py::test_byte_tracker_association PASSED              [ 95%]
-tests/test_video_pipeline.py::test_sample_walk_video_ground_truth_consistency PASSED [100%]
-======================== 24 passed, 9 warnings in 5.84s ========================
-```
+### 2.4 硬编码与架构弊端治理
+1. **消除多相机 ByteTrack ID 冲突**：
+   在 [`BYTETracker`](file:///home/jjc/projects/python/civil_engineering_agent/perception/tracking/byte_tracker.py) 引入实例级 `_next_id` 计数器与 `next_track_id()`，取代原先全局静态共享类变量 `STrack.shared_id`，实现多路摄像头实例间的完全隔离；
+2. **计算设备动态探查 (`get_optimal_device`)**：
+   在 [`perception/detectors/base.py`](file:///home/jjc/projects/python/civil_engineering_agent/perception/detectors/base.py) 提供统一设备仲裁机制（参数显式指定 $\to$ 环境变量 `PERCEPTION_DEVICE` $\to$ CUDA 探查 $\to$ CPU 回落），消除各模型适配器和 GUI 中多处 `device="cpu"` 写死；
+3. **拓扑匹配类别解耦**：
+   [`perception/geometry/topology.py`](file:///home/jjc/projects/python/civil_engineering_agent/perception/geometry/topology.py) 增加通用别名与自定义匹配，解耦原 `class_id == 0, 1, 2` 硬编码，支持任意模型训练标签集；
+4. **管道直通 Outbox 与热更新**：
+   [`SafetyPerceptionPipeline`](file:///home/jjc/projects/python/civil_engineering_agent/perception/tracking/safety_pipeline.py) 支持直接绑定 `PerceptionEventPublisher`、`TimeAnchor` 与动态配置更新。
 
 ---
 
-## 4. 当前代码库拓扑结构
+## 3. 测试体系重构与通过情况
+
+与 `tests/agent/` 保持对齐，所有感知模块的单元测试、算法回归测试及端到端视频流测试均已模块化归档于 [`tests/perception/`](file:///home/jjc/projects/python/civil_engineering_agent/tests/perception) 目录下。
+
+### 3.1 测试目录分类
 
 ```text
-civil_engineering_agent/
-├── perception/                         # 【自包含感知子系统】
-│   ├── configs/                        # 集中式配置 (default_danger_zones.json)
-│   ├── data_tools/                     # 数据格式转换与伪标签合并 (voc_to_yolo, label_merger)
-│   ├── detectors/                      # 统一检测器实现 (BaseDetector, Legacy, Ultralytics)
-│   │   ├── base.py
-│   │   ├── legacy_yolo_adapter.py
-│   │   ├── ultralytics_detector.py
-│   │   └── yolov5_legacy/              # 自包含遗留 YOLOv5 模型架构
-│   ├── geometry/                       # 高精度脚底触地空间计算与空间拓扑匹配
-│   │   ├── danger_zone.py
-│   │   └── topology.py                 # 人-头-帽解剖学匈牙利二分匹配
-│   ├── gui/                            # 现代化 PyQt5 桌面端应用与图标素材
-│   │   ├── app.py                      # 集成 SafetyPerceptionPipeline 与可视化
-│   │   └── UI/                         # main_window.ui, icon/
-│   ├── schemas/                        # Pydantic v2 强类型契约
-│   ├── storage/                        # SQLite 违规事件持久化与快照生成
-│   │   └── event_store.py
-│   ├── tracking/                       # ByteTrack 引擎、防抖状态机与安全流水线
-│   │   ├── byte_tracker.py
-│   │   ├── state_machine.py            # 单调时钟防抖状态机与滞留超时监控
-│   │   └── safety_pipeline.py          # 端到端一体化安全感知流水线
-│   └── weights/                        # 模型权重与 SHA256 验签清单
-├── docs/                               # 规范文档中心
-│   ├── README.md                       # 文档中心总览
-│   └── perception/                     # 感知系统专区 (PROGRESS.md, legacy_meta.json 等)
-├── tests/                              # 自动化测试套件 (24 项单元测试、状态机测试与端到端测试)
-├── scripts/                            # 冒烟与基线生成脚本
-├── requirements*.lock                  # 依赖锁定文件
-└── .gitignore                          # 根目录全局过滤规则
+tests/
+├── conftest.py                    # 统一 sys.path 根目录注入
+├── fixtures/                      # 共享真值视频、图片与标注资产
+├── agent/                         # Agent 智能体闭环测试 (4 项)
+└── perception/                    # 感知模块专区 (36 项)
+    ├── test_data_tools.py         # 数据标注与格式转换
+    ├── test_detector_interface.py # BaseDetector 抽象与 Mock 验证
+    ├── test_event_store.py        # SQLite 本地事件库与快照生成
+    ├── test_geometry.py           # 空间多边形判定与双向坐标映射
+    ├── test_integration_contract.py # 契约 Schema、TimeAnchor、Outbox 投递与退避
+    ├── test_regression.py         # YOLO 适配器回归推理验证
+    ├── test_safety_pipeline.py    # 完整感知流水线与 Outbox 集成
+    ├── test_schemas.py            # 数据契约 Schema 属性与序列化
+    ├── test_state_machine.py      # 防抖状态机、滞留升级与多区域测试
+    ├── test_topology.py           # 人头帽解剖拓扑与自定义类别匹配
+    ├── test_tracker.py            # ByteTrack 跨帧关联与多实例隔离
+    └── test_video_pipeline.py     # 真实视频真值一致性
 ```
+
+### 3.2 测试执行结果（100% 通过）
+
+- **感知测试子集**：`python3 -m pytest tests/perception/ -v` $\to$ **36 passed**
+- **全项目自动化测试**：`python3 -m pytest tests/ -v` $\to$ **40 passed, 0 failed**
 
 ---
 
-## 5. 后续阶段规划 (Phase 3 & Beyond)
+## 4. 下一步开发计划 (Next Steps)
 
-- **阶段 3（GUI 交互与流媒体管理）**：
-  - GUI 播放器支持鼠标直接在画面上拖拽、点击交互式绘制/编辑电子围栏多边形，双击闭合并实时持久化为 JSON 配置；
-  - 多路 RTSP/ONVIF 视频流配置管理器，具备指数退避自动断线重连守护线程。
-- **阶段 4（母工程 Agent 工具化集成）**：
-  - 封装 `CivilSafetyPerceptionService` 标准工具接口；
-  - 支撑 LLM 智能体自主调用执行工地巡检、安全统计与安全日报自动生成。
+1. **后台无头监控会话调度器 (`CivilSafetyPerceptionService` / `session_runner.py`)**：
+   - 摆脱 PyQt5 桌面依赖，支持以纯 Python / CLI / 后台线程启动与停止相机会话；
+   - 自动化管理 `monitor_session_id` 生命周期；
+2. **周期性心跳与相机状态上报器**：
+   - 建立定时任务，滑动统计并在会话期间定期向 Agent 接口 `PUT /internal/v1/perception/cameras/{camera_id}/status` 上报 FPS、在场工人数和合规率；
+3. **相机配置动态拉取与热重载**：
+   - 启动时从 Agent 拉取最新围栏配置；运行中检测 `config_version` 变化自动热更新；
+4. **CV 与 Agent 端到端全链路联调**：
+   - 以 `sample_walk.mp4` 作为联合联调门禁，打通“视频推理 $\to$ Outbox $\to$ Agent FastAPI $\to$ 数据库 $\to$ LLM 对话查询”整条业务闭环。
