@@ -80,7 +80,7 @@ flowchart TD
 1. **写边界隔离**：感知端不直接连接 Agent 数据库；事件和状态经 FastAPI 内部接口投递，且接口要求 Bearer 令牌。
 2. **媒体引用约束**：服务端仅接受相对 `snapshot_uri`（例如 `snapshots/20260925/{event_uuid}.jpg`），拒绝绝对路径和包含 `..` 的路径。
 3. **事件幂等**：同一 `event_uuid` 可从活动状态更新为已解决状态；`RESOLVED` 必须提供不早于发生时间的 `resolved_at_utc`。
-4. **问答边界**：问答图只能调用违规查询、统计和相机状态工具；默认模型为本地 `fake` 实现，DeepSeek 为可选配置。
+4. **问答边界**：问答图只能调用违规查询、统计和相机状态工具；默认使用 DeepSeek，必须配置 `AGENT_LLM_API_KEY`；离线开发和测试可显式设置 `AGENT_LLM_PROVIDER=fake`。
 
 ---
 
@@ -184,7 +184,8 @@ pip install -r requirements-agent.txt
 export AGENT_DATABASE_URL='sqlite+pysqlite:///./data/agent.db'
 export AGENT_AUTO_CREATE_SCHEMA=true       # 仅适合本地验证
 export INTERNAL_PERCEPTION_TOKEN='replace-with-a-secret'
-export AGENT_LLM_PROVIDER=fake             # 或 deepseek；后者还需要 AGENT_LLM_API_KEY
+export AGENT_LLM_PROVIDER=deepseek          # 默认值；必须同时配置 AGENT_LLM_API_KEY
+export AGENT_LLM_API_KEY='your-deepseek-api-key'
 ```
 
 生产环境应通过 Alembic 执行 `agent/db/migrations/` 中的迁移，不应依赖 `AGENT_AUTO_CREATE_SCHEMA=true`。

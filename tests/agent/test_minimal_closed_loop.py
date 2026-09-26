@@ -13,6 +13,7 @@ def client() -> TestClient:
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",
         internal_perception_token="contract-test-token",
+        llm_provider="fake",
         auto_create_schema=True,
     )
     with TestClient(create_app(settings)) as test_client:

@@ -8,6 +8,7 @@ def test_camera_list_includes_config_only_camera_as_offline(tmp_path) -> None:
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",
         internal_perception_token="web-contract-token",
+        llm_provider="fake",
         auto_create_schema=True,
         media_root=str(tmp_path / "media"),
     )
@@ -36,6 +37,7 @@ def test_media_mount_and_cors_preflight(tmp_path) -> None:
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",
         internal_perception_token="web-contract-token",
+        llm_provider="fake",
         auto_create_schema=True,
         media_root=str(media_root),
     )

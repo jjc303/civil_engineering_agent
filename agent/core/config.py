@@ -16,7 +16,7 @@ class Settings:
     internal_perception_token: str
     tool_max_calls: int = 2
     auto_create_schema: bool = False
-    llm_provider: str = "fake"
+    llm_provider: str = "deepseek"
     llm_model: str = "deepseek-flash"
     llm_base_url: str = "https://api.deepseek.com"
     llm_api_key: str = ""
@@ -26,7 +26,7 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         return cls(
-            llm_provider=os.getenv("AGENT_LLM_PROVIDER", "fake").lower(),
+            llm_provider=os.getenv("AGENT_LLM_PROVIDER", "deepseek").lower(),
             llm_model=os.getenv("AGENT_LLM_MODEL", "deepseek-flash"),
             llm_base_url=os.getenv("AGENT_LLM_BASE_URL", "https://api.deepseek.com"),
             llm_api_key=os.getenv("AGENT_LLM_API_KEY", ""),

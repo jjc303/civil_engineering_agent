@@ -11,6 +11,7 @@ Agent 通过 LangChain `ChatOpenAI` 使用 DeepSeek 的 OpenAI 兼容接口。�
 在部署环境中注入以下变量，密钥不要提交到 Git：
 
 ```bash
+# 可省略；DeepSeek 是默认提供方。
 export AGENT_LLM_PROVIDER='deepseek'
 export AGENT_LLM_MODEL='deepseek-flash'
 export AGENT_LLM_BASE_URL='https://api.deepseek.com'
@@ -22,10 +23,10 @@ export AGENT_TOOL_MAX_CALLS='2'
 然后启动：
 
 ```bash
-uvicorn agent.main:create_app --factory --host 0.0.0.0 --port 8000
+python3 -m uvicorn agent.main:create_app --factory --host 0.0.0.0 --port 8000
 ```
 
-未设置 `AGENT_LLM_PROVIDER` 时使用 `fake`，便于本地和 CI 运行，不会访问外部模型。选择 `deepseek` 而未提供 API Key 时，服务会拒绝启动。
+未设置 `AGENT_LLM_PROVIDER` 时使用 `deepseek`。因此正常启动必须提供 `AGENT_LLM_API_KEY`；未提供 Key 时服务会拒绝启动。离线开发和 CI 请显式设置 `AGENT_LLM_PROVIDER=fake`，不会访问外部模型。
 
 ## 请求示例
 

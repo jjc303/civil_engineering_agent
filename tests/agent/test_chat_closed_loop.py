@@ -13,6 +13,7 @@ def client() -> TestClient:
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",
         internal_perception_token="chat-contract-token",
+        llm_provider="fake",
         auto_create_schema=True,
     )
     with TestClient(create_app(settings)) as test_client:
@@ -80,3 +81,14 @@ def test_chat_queries_camera_status_and_rejects_blank_question(client: TestClien
 
     blank = client.post("/api/v1/agent/chat", json={"question": "   "})
     assert blank.status_code == 422
+
+
+def test_chat_preserves_multi_segment_camera_id(client: TestClient) -> None:
+    event_uuid = str(uuid4())
+    payload = _event(event_uuid)
+    payload["camera_id"] = "cam_e2e_01"
+    assert client.post("/internal/v1/perception/events", json=payload, headers=_headers()).status_code == 200
+
+    response = client.post("/api/v1/agent/chat", json={"question": "cam_e2e_01 有多少严重违规？"})
+    assert response.status_code == 200
+    assert "共有 1 条违规" in response.json()["answer"]

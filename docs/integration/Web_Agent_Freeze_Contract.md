@@ -558,10 +558,10 @@ python3 -m uvicorn agent.main:create_app --factory --host 0.0.0.0 --port 8000 --
 | `AGENT_DATABASE_URL` | 是 | `sqlite+pysqlite:///./agent.db` 或 `mysql+pymysql://...` | 数据库连接字符串 |
 | `INTERNAL_PERCEPTION_TOKEN` | 是 | `perception-insecure-token` | CV 层调用内部接口的 Bearer 密钥 |
 | `AGENT_MEDIA_ROOT` | 否 | `./runs/media` | 证据截图存储根目录，映射到 `/media/`；未设置时使用该默认值 |
-| `AGENT_LLM_PROVIDER` | 否 | `fake` 或 `deepseek` | LLM 提供方，默认 `fake` |
+| `AGENT_LLM_PROVIDER` | 否 | `deepseek` 或 `fake` | LLM 提供方，默认 `deepseek`；离线测试显式设为 `fake` |
 | `AGENT_LLM_MODEL` | 否 | `deepseek-flash` | 模型名称 |
 | `AGENT_LLM_BASE_URL` | 否 | `https://api.deepseek.com` | DeepSeek API 地址 |
-| `AGENT_LLM_API_KEY` | 否 | `sk-...` | 当 provider 为 deepseek 时必填 |
+| `AGENT_LLM_API_KEY` | 是* | `sk-...` | 默认 provider 为 deepseek 时必填；仅显式设为 `fake` 时可省略 |
 | `AGENT_LLM_TIMEOUT_SECONDS` | 否 | `20.0` | LLM 交互超时时间（秒） |
 | `AGENT_TOOL_MAX_CALLS` | 否 | `2` | 单次问答允许的最大工具调用次数 |
 | `AGENT_AUTO_CREATE_SCHEMA` | 否 | `true` | 是否启动时自动创建 SQLite/MySQL 数据表 |

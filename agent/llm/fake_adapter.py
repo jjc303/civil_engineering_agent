@@ -56,8 +56,11 @@ class FakeChatModel(ChatModelPort):
 
     @staticmethod
     def _camera_id(question: str) -> str | None:
-        match = re.search(r"(?:摄像头\s*)?([A-Za-z]+[-_]?[0-9]{1,3})\b", question)
-        return match.group(1).upper() if match else None
+        # Camera IDs are deployment-defined and commonly contain multiple
+        # hyphen/underscore-delimited segments (for example ``cam_e2e_01``).
+        # Match the complete identifier instead of a trailing partial segment.
+        match = re.search(r"(?:摄像头\s*)?([A-Za-z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)*)\b", question)
+        return match.group(1) if match else None
 
     @staticmethod
     def _asks_for_statistics(normalized: str) -> bool:
