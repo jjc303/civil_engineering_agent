@@ -20,6 +20,11 @@ def test_control_api_requires_node_token_and_rejects_invalid_source(tmp_path: Pa
         heartbeat_interval_seconds=3600,
     )
     service = CivilSafetyPerceptionService(event_store=EventStore(db_path=str(tmp_path / "events.db")))
+    class PreviewRunner:
+        def latest_preview_jpeg(self) -> bytes:
+            return b"jpeg-frame"
+
+    service.runners["cam-01"] = PreviewRunner()  # type: ignore[assignment]
     with TestClient(create_control_app(settings, service)) as client:
         assert client.get("/control/v1/health").status_code == 403
         assert client.get("/control/v1/health", headers={"Authorization": "Bearer test-token"}).status_code == 200
@@ -27,6 +32,10 @@ def test_control_api_requires_node_token_and_rejects_invalid_source(tmp_path: Pa
         assert media.status_code == 200
         assert "nested" in [item["name"] for item in media.json()["directories"]]
         assert [item["name"] for item in media.json()["files"]] == ["clip.mp4"]
+        preview = client.get("/control/v1/sessions/cam-01/preview.jpg", headers={"Authorization": "Bearer test-token"})
+        assert preview.status_code == 200
+        assert preview.headers["content-type"] == "image/jpeg"
+        assert preview.content == b"jpeg-frame"
         invalid = client.post(
             "/control/v1/sessions",
             headers={"Authorization": "Bearer test-token"},

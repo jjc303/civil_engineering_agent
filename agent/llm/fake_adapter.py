@@ -35,6 +35,8 @@ class FakeChatModel(ChatModelPort):
                     purpose=f"查询 {location} 的当前天气",
                 )
             return None
+        if any(token in question for token in ("所有摄像头", "全部摄像头", "全体摄像头", "所有相机", "全部相机")) and any(token in normalized for token in ("状态", "在线", "运行", "fps", "帧率")):
+            return ToolDecision(tool_name="get_all_camera_statuses", purpose="查询全部摄像头的综合运行状态与帧率")
         if "状态" in question or "在线" in question or "fps" in normalized:
             return ToolDecision(tool_name="get_camera_status", camera_id=camera_id or "A01", purpose="查询摄像头最新运行状态")
         if self._asks_for_statistics(normalized):
@@ -62,6 +64,16 @@ class FakeChatModel(ChatModelPort):
                     fragments.append(f"摄像头 {payload.get('camera_id')} 当前{'在线' if payload.get('is_online') else '离线'}，FPS 为 {payload.get('fps')}。")
                 else:
                     fragments.append("未找到该摄像头的状态上报。")
+            elif result.tool_name == "get_all_camera_statuses":
+                rows = result.data if isinstance(result.data, list) else []
+                if not rows:
+                    fragments.append("当前未查询到摄像头状态上报。")
+                else:
+                    details = "；".join(
+                        f"{row.get('camera_id')} {'在线' if row.get('is_online') else '离线'}，FPS {row.get('fps')}"
+                        for row in rows if isinstance(row, dict)
+                    )
+                    fragments.append(f"当前共 {len(rows)} 路摄像头：{details}。")
             elif result.tool_name == "get_current_weather":
                 payload = result.data if isinstance(result.data, dict) else {}
                 if payload:

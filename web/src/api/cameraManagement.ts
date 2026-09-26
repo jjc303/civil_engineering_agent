@@ -54,3 +54,8 @@ export function previewUrl(cameraId: string): string {
   const base = import.meta.env.VITE_API_BASE_URL || ''
   return `${base}/api/v1/cameras/${encodeURIComponent(cameraId)}/preview`
 }
+
+export function previewFrameUrl(cameraId: string): string {
+  const base = import.meta.env.VITE_API_BASE_URL || ''
+  return `${base}/api/v1/cameras/${encodeURIComponent(cameraId)}/preview.jpg`
+}

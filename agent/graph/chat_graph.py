@@ -28,6 +28,14 @@ def build_chat_graph(repository: ViolationRepository, model: ChatModelPort, max_
                 weather_location=location,
                 purpose=f"查询 {location} 的当前天气",
             )}
+        # This is an operational query with an unambiguous scope.  Do not ask
+        # an LLM to invent a camera ID and accidentally invoke the single-
+        # camera tool, which previously caused a false degraded response.
+        if not previous and _asks_for_all_camera_statuses(state["question"]):
+            return {"decision": ToolDecision(
+                tool_name="get_all_camera_statuses",
+                purpose="查询全部摄像头的综合运行状态与帧率",
+            )}
         try:
             return {"decision": model.decide(state["question"], previous)}
         except Exception:
@@ -44,6 +52,8 @@ def build_chat_graph(repository: ViolationRepository, model: ChatModelPort, max_
         try:
             if decision.tool_name == "get_camera_status":
                 data = tools.invoke(decision.tool_name, camera_id=decision.camera_id)
+            elif decision.tool_name == "get_all_camera_statuses":
+                data = tools.invoke(decision.tool_name)
             elif decision.tool_name == "get_current_weather":
                 data = tools.invoke(decision.tool_name, location=decision.weather_location)
             else:
@@ -96,3 +106,10 @@ def _extract_evidence(data: object) -> list[Evidence]:
             continue
         evidence.append(Evidence(event_uuid=row["event_uuid"], occurred_at_utc=row["occurred_at_utc"], snapshot_uri=row.get("snapshot_uri")))
     return evidence
+
+
+def _asks_for_all_camera_statuses(question: str) -> bool:
+    normalized = question.lower()
+    asks_all = any(token in question for token in ("所有摄像头", "全部摄像头", "全体摄像头", "所有相机", "全部相机"))
+    asks_status = any(token in normalized for token in ("状态", "在线", "运行", "fps", "帧率"))
+    return asks_all and asks_status

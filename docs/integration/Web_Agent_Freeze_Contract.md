@@ -1,6 +1,6 @@
 # Web 与 Agent 接口约定冻结契约 (Web-Agent Interface Freeze Contract)
 
-> **版本**：v1.2.1 (FROZEN)
+> **版本**：v1.2.4 (FROZEN)
 > **冻结日期**：2026-09-26
 > **状态**：**已冻结 (Jointly Confirmed & Frozen)** —— Web 前端与 Agent 后端以此为唯一交付、实现与联调准绳。  
 > **适用范围**：Web 前端工程、Agent 服务层 (`agent/api` / `agent/contracts`)。
@@ -8,6 +8,19 @@
 ---
 
 ## 0. 版本演进与变更对齐 (Change Log & Alignment)
+
+### 0.8 v1.2.4：本地文件源事件时间校正
+1. **时间锚点一致性**：CV 对本地文件与实时流均以会话单调时钟生成事件时间，再由 `TimeAnchor` 映射为 UTC；禁止将 `frame_index / fps` 或 PTS 直接作为时间锚点输入。
+2. **列表可见性**：`GET /api/v1/violations` 按 `occurred_at_utc` 倒序返回。修复后生成的本地文件事件会以当前时间位于列表顶部；修复前的历史记录不做改写。
+
+### 0.7 v1.2.3：视频辅助多围栏标定
+1. **标定底图**：危险区域页面默认使用 Agent 代理的 MJPEG 预览；可获取同源最新 JPEG 帧后暂停标定，预览不可用时保留网格兜底。
+2. **多围栏编辑**：页面可管理、切换、复制和删除多个区域，并将完整 `zones` 数组沿用既有围栏配置接口保存。
+3. **坐标边界**：画布按 `source_resolution` 等比例显示，浏览器缩放与高 DPI 不改变保存的原始视频像素坐标。
+
+### 0.6 v1.2.2：全部摄像头状态工具
+1. **确定性状态路由**：问题包含“所有/全部摄像头”且询问状态、在线或帧率时，Agent 固定调用 `get_all_camera_statuses`，不再由模型猜测单个 `camera_id`。
+2. **降级语义**：该类查询会返回所有已上报或已配置摄像头的最新在线状态与 FPS；只有实际工具或数据服务失败时才标记 `degraded=true`。
 
 ### 0.5 v1.2.1：可编辑摄像头与节点文件浏览
 1. **摄像头编辑**：已绑定摄像头可修改显示名、CV 节点、源类型和视频源；运行中的会话必须先停止，Web 会明确确认并停止会话后再保存。
@@ -155,6 +168,7 @@
 | `POST` | `/api/v1/cameras/{id}/monitoring:start` | 启动摄像头监控 | **【Agent 已就绪】** | 经节点 Control API 异步启动，返回 202 |
 | `POST` | `/api/v1/cameras/{id}/monitoring:stop` | 停止摄像头监控 | **【Agent 已就绪】** | 经节点 Control API 停止 |
 | `GET` | `/api/v1/cameras/{id}/preview` | 代理 MJPEG 实时预览 | **【Agent 已就绪】** | Web 不直连 CV 节点 |
+| `GET` | `/api/v1/cameras/{id}/preview.jpg` | 代理最新 JPEG 单帧 | **【Agent 已就绪】** | 标定页暂停/刷新帧；Web 不直连 CV 节点 |
 
 ---
 
@@ -491,7 +505,7 @@ export interface ChatEvidence {
 }
 
 export interface ToolTraceItem {
-  tool_name: "query_violations" | "get_violation_statistics" | "get_camera_status" | "get_current_weather";
+  tool_name: "query_violations" | "get_violation_statistics" | "get_camera_status" | "get_all_camera_statuses" | "get_current_weather";
   success: boolean;
   purpose: string;
   duration_ms: number;

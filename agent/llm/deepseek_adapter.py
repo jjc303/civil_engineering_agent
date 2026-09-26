@@ -12,7 +12,7 @@ from .protocol import ChatModelPort
 
 
 _DECISION_PROMPT = """你是施工安全系统的工具路由器。
-只允许选择 query_violations、get_violation_statistics、get_camera_status、get_current_weather 四个工具之一。
+只允许选择 query_violations、get_violation_statistics、get_camera_status、get_all_camera_statuses、get_current_weather 五个工具之一。
 仅输出一个合法 JSON 对象，不要 Markdown，不要解释，不要输出推理过程。
 JSON 字段必须是 tool_name、query、camera_id、weather_location、purpose。query 只能包含 camera_id、
 violation_type、severity、status、start_time_utc、end_time_utc、limit、offset。
@@ -21,7 +21,7 @@ violation_type 只能是 "NO_HELMET"、"DANGER_ZONE_INTRUSION"、"DWELL_TIMEOUT"
 status 只能是 "ACTIVE"、"RESOLVED"、"FALSE_ALARM"。不确定的筛选字段必须省略或设为 null。
 单次查询 limit 必须为 1 到 100 的整数。
 查询“多少/统计”时优先选择 get_violation_statistics；查询“最近/明细”时选择 query_violations；
-查询设备运行情况时选择 get_camera_status 且必须给出 camera_id。
+查询单个设备运行情况时选择 get_camera_status 且必须给出 camera_id；查询所有/全部摄像头的状态或帧率时选择 get_all_camera_statuses，camera_id 必须为 null。
 查询某地当前天气、气温、降雨或风力时选择 get_current_weather，且必须在 weather_location 中给出地点名称。
 合法示例：
 {"tool_name":"get_violation_statistics","query":{"camera_id":"A01","severity":"CRITICAL","limit":20},"camera_id":null,"purpose":"统计 A01 的严重违规"}

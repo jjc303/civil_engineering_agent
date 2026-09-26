@@ -93,14 +93,14 @@ FastAPI
 | `severity` | `INFO`、`WARNING`、`CRITICAL` |
 | `status` | `ACTIVE`、`RESOLVED`、`FALSE_ALARM` |
 | `occurred_at_utc` | ISO 8601 UTC 时间，用于 MySQL、Web 日期查询与日报 |
-| `duration_seconds` | CV 用单调时钟或视频时间戳计算后传递 |
+| `duration_seconds` | CV 使用与会话 `TimeAnchor` 同一时钟域的单调时钟计算后传递；视频 FPS/PTS 不得直接作为审计时间锚点 |
 | `snapshot_uri` | 相对媒体 key 或对象存储 key；禁止传 CV 主机绝对路径 |
 
-CV 当前的单调时间适合计算时长，但不适合数据库审计：
+CV 的单调时间经会话 `TimeAnchor` 映射后可作为数据库审计时间；两者必须来自同一单调时钟域：
 
 ```text
-内部计时：monotonic / frame_timestamp → duration_seconds
-业务审计：UTC wall-clock → occurred_at_utc / resolved_at_utc
+内部计时：event_monotonic - session_started_monotonic → duration_seconds
+业务审计：session_started_at_utc + 上述单调时钟差值 → occurred_at_utc / resolved_at_utc
 ```
 
 ## 5. 摄像头与危险区域配置契约
@@ -141,18 +141,22 @@ MySQL 是摄像头和围栏配置的唯一事实来源。CV 可以缓存，但�
 | `POST` | `/control/v1/sessions` | Agent → CV | 节点专属令牌启动会话，返回会话 ID |
 | `DELETE` | `/control/v1/sessions/{camera_id}` | Agent → CV | 停止会话 |
 | `GET` | `/control/v1/sessions/{camera_id}/preview.mjpeg` | Agent → CV | 读取节点 MJPEG，供 Agent 代理 |
+| `GET` | `/control/v1/sessions/{camera_id}/preview.jpg` | Agent → CV | 读取节点最新 JPEG 帧，供围栏标定暂停画面 |
 | `GET` | `/control/v1/media-files` | Agent → CV | 仅浏览 `CV_ALLOWED_MEDIA_ROOTS` 内的视频文件 |
 | `GET` | `/api/v1/cv-nodes/{node_id}/media-files` | Web → Agent → CV | 管理员通过 Agent 代理浏览节点本地视频文件 |
 | `PUT` | `/api/v1/managed-cameras/{camera_id}/source` | Web → Agent | 修改停止状态摄像头的显示名、节点或视频源 |
 | `POST` | `/api/v1/cameras/{camera_id}/monitoring:start` | Web → Agent → CV | 异步启动，返回监控会话 ID |
 | `POST` | `/api/v1/cameras/{camera_id}/monitoring:stop` | Web → Agent → CV | 停止监控 |
+| `GET` | `/api/v1/cameras/{camera_id}/preview.jpg` | Web → Agent → CV | Agent 代理的最新 JPEG 帧；不暴露节点令牌或源地址 |
 | `GET` | `/api/v1/violations` | Web/Agent | 分页查询违规事件 |
 | `GET` | `/api/v1/violations/statistics` | Agent | 查询报告统计 |
 | `PUT` | `/api/v1/cameras/{camera_id}/zones` | Web/Agent | 校验并更新围栏，产生新配置版本 |
 
 启动视频监控必须是异步任务。请求响应只返回 `monitor_session_id` 与状态，不能在 HTTP 请求线程中持续进行视频推理。
 
-CV Control 服务通过 `python3 -m uvicorn perception.control_api:create_control_app --factory --port 8100` 运行。它只接受 Agent 的节点专属 Bearer Token；本地文件源须位于 `CV_ALLOWED_MEDIA_ROOTS`，浏览器只访问 Agent 的预览代理。Web 的“选择文件”弹窗展示的是所选 **CV 节点** 的允许目录，而不是操作员浏览器所在电脑的文件系统；选择结果由 Agent 加密保存为节点本地路径。
+CV Control 服务通过 `python3 -m uvicorn perception.control_api:create_control_app --factory --port 8100` 运行。它只接受 Agent 的节点专属 Bearer Token；本地文件源须位于 `CV_ALLOWED_MEDIA_ROOTS`，浏览器只访问 Agent 的预览代理。Web 的“选择文件”弹窗展示的是所选 **CV 节点** 的允许目录，而不是操作员浏览器所在电脑的文件系统；选择结果由 Agent 加密保存为节点本地路径。证据截图必须将 CV 的 `CV_SNAPSHOT_DIR` 与 Agent 的 `AGENT_MEDIA_ROOT/snapshots` 配置为同一共享/挂载目录，避免事件已入库但 `/media/snapshots/...` 找不到文件。
+
+对于本地文件源，CV 可以按媒体 FPS 节流回放，但 `SafetyPerceptionPipeline.process_frame()` 的时间参数必须传入 `time.monotonic()` 的当前值，不能传入 `frame_index / fps` 或媒体 PTS。否则 `TimeAnchor` 会把相对视频秒数误当作系统单调时钟，造成新违规事件显示为历史日期，进而因列表按 `occurred_at_utc` 排序而看似“没有新记录”。
 
 ## 7. 存储与媒体规则
 

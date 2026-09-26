@@ -84,6 +84,24 @@ def test_chat_queries_camera_status_and_rejects_blank_question(client: TestClien
     assert blank.status_code == 422
 
 
+def test_chat_queries_all_camera_statuses_without_inventing_a_camera_id(client: TestClient) -> None:
+    for camera_id, fps in (("cam-east-01", 24.5), ("cam-west-02", 18.0)):
+        report = {
+            "camera_id": camera_id, "monitor_session_id": f"session-{camera_id}", "is_online": True,
+            "fps": fps, "processed_frame_id": 99, "active_workers_count": 1,
+            "reported_at_utc": datetime.now(timezone.utc).isoformat(), "extra_details": {},
+        }
+        assert client.put(f"/internal/v1/perception/cameras/{camera_id}/status", json=report, headers=_headers()).status_code == 200
+
+    response = client.post("/api/v1/agent/chat", json={"question": "查询当前所有摄像头的综合运行状态与帧率"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["degraded"] is False
+    assert [item["tool_name"] for item in body["tool_trace"]] == ["get_all_camera_statuses"]
+    assert "当前共 2 路摄像头" in body["answer"]
+    assert "cam-east-01 在线，FPS 24.5" in body["answer"]
+
+
 def test_chat_preserves_multi_segment_camera_id(client: TestClient) -> None:
     event_uuid = str(uuid4())
     payload = _event(event_uuid)

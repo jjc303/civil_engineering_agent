@@ -7,6 +7,7 @@ import json
 import tempfile
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -53,6 +54,39 @@ class MockReplayDetector(BaseDetector):
             boxes=self.boxes,
             inference_time_ms=5.0,
         )
+
+
+def test_file_source_uses_monotonic_timestamps_for_time_anchor():
+    """File playback must not pass frame-relative seconds into TimeAnchor."""
+    video_path = FIXTURES_DIR / "sample_walk.mp4"
+    received_timestamps: list[float] = []
+
+    class CapturingPipeline:
+        def __init__(self, **_kwargs):
+            self.frame_counter = 0
+            self.active_violations = []
+
+        def process_frame(self, _frame, timestamp):
+            self.frame_counter += 1
+            received_timestamps.append(timestamp)
+            return SimpleNamespace(tracked_persons=[])
+
+    runner = CameraSessionRunner(
+        camera_id="cam_file_clock_01",
+        source=str(video_path),
+        detector=MockReplayDetector(),
+        heartbeat_interval=0.05,
+    )
+
+    with patch("perception.services.session_runner.SafetyPerceptionPipeline", CapturingPipeline):
+        runner.start()
+        time.sleep(0.1)
+        runner.stop(timeout=2.0)
+
+    assert received_timestamps
+    assert runner.time_anchor is not None
+    # Video time starts close to zero; monotonic time shares the anchor's epoch.
+    assert min(received_timestamps) >= runner.time_anchor.session_started_monotonic
 
 
 def test_session_runner_lifecycle_and_heartbeat():

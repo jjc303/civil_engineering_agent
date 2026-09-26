@@ -319,11 +319,14 @@ class CameraSessionRunner:
                         logger.info(f"[SessionRunner] Video stream ended or read returned False (cam: {self.camera_id})")
                         break
 
+                # SafetyPerceptionPipeline timestamps are consumed by TimeAnchor,
+                # whose reference is ``time.monotonic()`` at session startup.
+                # A file video's frame position (0, 1/fps, ...) is *not* in that
+                # clock domain. Passing it here made TimeAnchor subtract the
+                # machine's large monotonic uptime and backdate file-source
+                # violations. Use the same monotonic clock for every source.
                 now_monotonic = time.monotonic()
-                if is_file_source:
-                    ts = self.pipeline.frame_counter / video_fps
-                else:
-                    ts = now_monotonic - loop_start_monotonic
+                ts = now_monotonic
 
                 # Process perception frame
                 result = self.pipeline.process_frame(frame, timestamp=ts)

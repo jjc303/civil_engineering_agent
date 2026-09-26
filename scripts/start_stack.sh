@@ -52,6 +52,11 @@ export CV_NODE_CAPACITY="$cv_capacity"
 export CV_NODE_TOKEN
 export AGENT_URL="${AGENT_URL:-http://127.0.0.1:8000}"
 export CV_ALLOWED_MEDIA_ROOTS="${CV_ALLOWED_MEDIA_ROOTS:-$project_root}"
+# Agent mounts this directory at /media; CV archives evidence beneath its
+# snapshots child so snapshot_uri=snapshots/YYYYMMDD/*.jpg resolves directly.
+export AGENT_MEDIA_ROOT="${AGENT_MEDIA_ROOT:-$project_root/runs/media}"
+export CV_SNAPSHOT_DIR="${CV_SNAPSHOT_DIR:-$AGENT_MEDIA_ROOT/snapshots}"
+mkdir -p "$CV_SNAPSHOT_DIR"
 
 if curl --noproxy '*' --silent --fail http://127.0.0.1:8000/docs >/dev/null 2>&1; then
     echo "Agent port 8000 is already serving a process; stop it before running start_stack.sh." >&2

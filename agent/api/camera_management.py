@@ -4,7 +4,7 @@ from collections.abc import Iterator
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials
 
 from agent.api.dependencies import get_camera_management_service
@@ -108,6 +108,23 @@ def proxy_preview(camera_id: str, service: CameraManagementService = Depends(get
             return
 
     return StreamingResponse(stream(), media_type="multipart/x-mixed-replace; boundary=frame", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/cameras/{camera_id}/preview.jpg")
+def proxy_preview_jpeg(camera_id: str, service: CameraManagementService = Depends(get_camera_management_service)) -> Response:
+    """Proxy one newest CV frame; used by the zone editor's pause action."""
+    try:
+        _, node = service.get_camera_and_node(camera_id)
+        token = service._decrypt(node.control_token_encrypted)
+        with httpx.Client(trust_env=False, timeout=service.control_timeout_seconds) as client:
+            upstream = client.get(
+                f"{node.control_url}/control/v1/sessions/{camera_id}/preview.jpg",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            upstream.raise_for_status()
+    except Exception as exc:
+        raise _http_error(exc) from exc
+    return Response(content=upstream.content, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @internal_router.put("/{node_id}/heartbeat", response_model=CvNodeResponse)

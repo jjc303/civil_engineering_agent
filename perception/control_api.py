@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import requests
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
@@ -33,6 +33,9 @@ class CvControlSettings:
     allowed_media_roots: tuple[Path, ...]
     capacity: int = 8
     heartbeat_interval_seconds: float = 5.0
+    # This must be the same shared/mounted directory as
+    # AGENT_MEDIA_ROOT/snapshots on the Agent host.
+    snapshot_dir: Path | None = None
 
     @classmethod
     def from_env(cls) -> "CvControlSettings":
@@ -43,6 +46,7 @@ class CvControlSettings:
             internal_perception_token=os.getenv("INTERNAL_PERCEPTION_TOKEN", ""), allowed_media_roots=roots,
             capacity=int(os.getenv("CV_NODE_CAPACITY", "8")),
             heartbeat_interval_seconds=float(os.getenv("CV_NODE_HEARTBEAT_INTERVAL_SECONDS", "5")),
+            snapshot_dir=Path(os.getenv("CV_SNAPSHOT_DIR", str(Path(os.getenv("AGENT_MEDIA_ROOT", "runs/media")) / "snapshots"))).resolve(),
         )
 
 
@@ -125,6 +129,17 @@ def create_control_app(settings: CvControlSettings | None = None, service: Civil
 
         return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame", headers={"Cache-Control": "no-store"})
 
+    @app.get("/control/v1/sessions/{camera_id}/preview.jpg", dependencies=[Depends(require_node_token)])
+    def preview_jpeg(camera_id: str) -> Response:
+        """Return the latest decoded frame for a stable calibration background."""
+        runner = app.state.service.runners.get(camera_id)
+        if runner is None:
+            raise HTTPException(status_code=404, detail="monitoring session not found")
+        frame = runner.latest_preview_jpeg()
+        if frame is None:
+            raise HTTPException(status_code=503, detail="preview frame is not ready")
+        return Response(content=frame, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
     @app.on_event("startup")
     def start_heartbeat() -> None:
         thread = threading.Thread(target=_heartbeat_loop, args=(app,), daemon=True, name="cv-node-heartbeat")
@@ -138,9 +153,10 @@ def _build_service(settings: CvControlSettings) -> CivilSafetyPerceptionService:
         outbox_store=OutboxStore(db_path=f"data/outbox-{settings.node_id}.db"), agent_base_url=settings.agent_url,
         bearer_token=settings.internal_perception_token,
     )
+    snapshot_dir = settings.snapshot_dir or Path(os.getenv("CV_SNAPSHOT_DIR", str(Path(os.getenv("AGENT_MEDIA_ROOT", "runs/media")) / "snapshots"))).resolve()
     return CivilSafetyPerceptionService(
         event_publisher=publisher,
-        event_store=EventStore(db_path=f"data/events-{settings.node_id}.db"),
+        event_store=EventStore(db_path=f"data/events-{settings.node_id}.db", snapshot_dir=snapshot_dir),
     )
 
 

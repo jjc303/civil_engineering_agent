@@ -94,7 +94,7 @@ export interface ChatEvidence {
 }
 
 export interface ToolTraceItem {
-  tool_name: "query_violations" | "get_violation_statistics" | "get_camera_status" | "get_current_weather";
+  tool_name: "query_violations" | "get_violation_statistics" | "get_camera_status" | "get_all_camera_statuses" | "get_current_weather";
   success: boolean;
   purpose: string;
   duration_ms: number;

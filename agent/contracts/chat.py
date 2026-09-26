@@ -8,7 +8,10 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from .query import ViolationQuery
 
 
-ToolName = Literal["query_violations", "get_violation_statistics", "get_camera_status", "get_current_weather"]
+ToolName = Literal[
+    "query_violations", "get_violation_statistics", "get_camera_status",
+    "get_all_camera_statuses", "get_current_weather",
+]
 
 
 class ChatRequest(BaseModel):

@@ -82,6 +82,8 @@ def test_cv_node_camera_source_and_heartbeat_are_protected(monkeypatch) -> None:
 
             def get(self, url: str, **_kwargs):
                 called["media_url"] = url
+                if url.endswith("/preview.jpg"):
+                    return _JpegResponse()
                 return _MediaResponse()
 
         class _MediaResponse:
@@ -94,6 +96,12 @@ def test_cv_node_camera_source_and_heartbeat_are_protected(monkeypatch) -> None:
                     "directories": [{"name": "demo", "path": "/srv/videos/demo"}],
                     "files": [{"name": "walk.mp4", "path": "/srv/videos/walk.mp4"}],
                 }
+
+        class _JpegResponse:
+            content = b"jpeg-frame"
+
+            def raise_for_status(self) -> None:
+                return None
 
         monkeypatch.setattr("agent.services.camera_management.httpx.Client", FakeClient)
         started = client.post("/api/v1/cameras/cam-field-01/monitoring:start", headers=headers)
@@ -110,6 +118,11 @@ def test_cv_node_camera_source_and_heartbeat_are_protected(monkeypatch) -> None:
         assert media.status_code == 200
         assert media.json()["files"][0]["path"] == "/srv/videos/walk.mp4"
         assert called["media_url"] == "http://cv-east.local:8100/control/v1/media-files"
+
+        preview = client.get("/api/v1/cameras/cam-field-01/preview.jpg")
+        assert preview.status_code == 200
+        assert preview.headers["content-type"] == "image/jpeg"
+        assert preview.content == b"jpeg-frame"
 
         blocked_update = client.put("/api/v1/managed-cameras/cam-field-01/source", headers=headers, json={
             "display_name": "运行中不能改", "node_id": "cv-east-01", "source_type": "rtsp",
