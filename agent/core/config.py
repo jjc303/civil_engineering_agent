@@ -25,6 +25,22 @@ class Settings:
     admin_token: str = ""
     credential_encryption_key: str = ""
     cv_control_timeout_seconds: float = 10.0
+    memory_enabled: bool = True
+    memory_ttl_hours: int = 24
+    memory_recent_turns: int = 6
+    rag_enabled: bool = False
+    rag_persist_directory: str = "./runs/chroma"
+    rag_document_directory: str = "./runs/knowledge"
+    rag_embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
+    rag_chunk_size: int = 800
+    rag_chunk_overlap: int = 120
+    rag_top_k: int = 4
+    rag_top_k_max: int = 8
+    rag_max_upload_bytes: int = 20 * 1024 * 1024
+    rag_allowed_extensions: str = ".pdf,.docx,.md,.txt"
+    bind_host: str = ""
+    port: int = 0
+    cors_origins: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -42,6 +58,22 @@ class Settings:
             admin_token=os.getenv("AGENT_ADMIN_TOKEN", ""),
             credential_encryption_key=os.getenv("AGENT_CREDENTIAL_ENCRYPTION_KEY", ""),
             cv_control_timeout_seconds=float(os.getenv("AGENT_CV_CONTROL_TIMEOUT_SECONDS", "10")),
+            memory_enabled=os.getenv("AGENT_MEMORY_ENABLED", "true").lower() == "true",
+            memory_ttl_hours=int(os.getenv("AGENT_MEMORY_TTL_HOURS", "24")),
+            memory_recent_turns=int(os.getenv("AGENT_MEMORY_RECENT_TURNS", "6")),
+            rag_enabled=os.getenv("AGENT_RAG_ENABLED", "false").lower() == "true",
+            rag_persist_directory=os.getenv("AGENT_RAG_PERSIST_DIRECTORY", "./runs/chroma"),
+            rag_document_directory=os.getenv("AGENT_RAG_DOCUMENT_DIRECTORY", "./runs/knowledge"),
+            rag_embedding_model=os.getenv("AGENT_RAG_EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2"),
+            rag_chunk_size=int(os.getenv("AGENT_RAG_CHUNK_SIZE", "800")),
+            rag_chunk_overlap=int(os.getenv("AGENT_RAG_CHUNK_OVERLAP", "120")),
+            rag_top_k=int(os.getenv("AGENT_RAG_TOP_K", "4")),
+            rag_top_k_max=int(os.getenv("AGENT_RAG_TOP_K_MAX", "8")),
+            rag_max_upload_bytes=int(os.getenv("AGENT_RAG_MAX_UPLOAD_BYTES", str(20 * 1024 * 1024))),
+            rag_allowed_extensions=os.getenv("AGENT_RAG_ALLOWED_EXTENSIONS", ".pdf,.docx,.md,.txt"),
+            bind_host=_required("AGENT_BIND_HOST"),
+            port=int(_required("AGENT_PORT")),
+            cors_origins=tuple(origin.strip() for origin in _required("AGENT_CORS_ORIGINS").split(",") if origin.strip()),
         )
 
     def validate_for_runtime(self) -> None:
@@ -59,3 +91,18 @@ class Settings:
             raise RuntimeError("AGENT_LLM_TIMEOUT_SECONDS must be positive")
         if self.cv_control_timeout_seconds <= 0:
             raise RuntimeError("AGENT_CV_CONTROL_TIMEOUT_SECONDS must be positive")
+        if self.memory_ttl_hours <= 0 or self.memory_recent_turns < 0:
+            raise RuntimeError("AGENT_MEMORY_TTL_HOURS must be positive and AGENT_MEMORY_RECENT_TURNS non-negative")
+        if self.rag_chunk_size <= 0 or not 0 <= self.rag_chunk_overlap < self.rag_chunk_size:
+            raise RuntimeError("AGENT_RAG_CHUNK_OVERLAP must be non-negative and smaller than AGENT_RAG_CHUNK_SIZE")
+        if not 1 <= self.rag_top_k <= self.rag_top_k_max:
+            raise RuntimeError("AGENT_RAG_TOP_K must be between 1 and AGENT_RAG_TOP_K_MAX")
+        if not self.auto_create_schema and (not self.bind_host or not 1 <= self.port <= 65535 or not self.cors_origins):
+            raise RuntimeError("AGENT_BIND_HOST, AGENT_PORT and AGENT_CORS_ORIGINS must be configured")
+
+
+def _required(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"{name} must be configured")
+    return value

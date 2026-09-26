@@ -10,7 +10,7 @@ from .query import ViolationQuery
 
 ToolName = Literal[
     "query_violations", "get_violation_statistics", "get_camera_status",
-    "get_all_camera_statuses", "get_current_weather",
+    "get_all_camera_statuses", "get_workforce_summary", "get_current_weather", "search_knowledge",
 ]
 
 
@@ -33,6 +33,8 @@ class ToolDecision(BaseModel):
     query: ViolationQuery = Field(default_factory=lambda: ViolationQuery(limit=20))
     camera_id: str | None = Field(default=None, max_length=128)
     weather_location: str | None = Field(default=None, min_length=2, max_length=128)
+    knowledge_query: str | None = Field(default=None, min_length=1, max_length=1000)
+    top_k: int = Field(default=4, ge=1, le=8)
     purpose: str = Field(min_length=1, max_length=256)
 
     @model_validator(mode="after")
@@ -48,6 +50,8 @@ class ToolDecision(BaseModel):
             raise ValueError("camera_id is required for get_camera_status")
         if self.tool_name == "get_current_weather" and not self.weather_location:
             raise ValueError("weather_location is required for get_current_weather")
+        if self.tool_name == "search_knowledge" and not self.knowledge_query:
+            raise ValueError("knowledge_query is required for search_knowledge")
         return self
 
 
@@ -64,10 +68,20 @@ class Evidence(BaseModel):
     snapshot_uri: str | None = None
 
 
+class KnowledgeCitation(BaseModel):
+    document_id: str
+    version_no: int
+    title: str
+    page_or_section: str
+    chunk_id: str
+    relevance_score: float = Field(ge=0, le=1)
+
+
 class ChatResponse(BaseModel):
     request_id: str
     answer: str
     evidence: list[Evidence] = Field(default_factory=list)
+    knowledge_citations: list[KnowledgeCitation] = Field(default_factory=list)
     tool_trace: list[ToolTraceItem] = Field(default_factory=list)
     degraded: bool = False
     error_code: str | None = None

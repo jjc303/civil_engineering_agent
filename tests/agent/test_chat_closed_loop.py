@@ -102,6 +102,23 @@ def test_chat_queries_all_camera_statuses_without_inventing_a_camera_id(client: 
     assert "cam-east-01 在线，FPS 24.5" in body["answer"]
 
 
+def test_chat_routes_site_wide_worker_count_to_aggregate_camera_statuses(client: TestClient) -> None:
+    for camera_id, online, workers in (("cam-east-01", True, 3), ("cam-west-02", False, 0)):
+        report = {
+            "camera_id": camera_id, "monitor_session_id": f"session-{camera_id}", "is_online": online,
+            "fps": 24.0 if online else 0.0, "processed_frame_id": 99, "active_workers_count": workers,
+            "reported_at_utc": datetime.now(timezone.utc).isoformat(), "extra_details": {},
+        }
+        assert client.put(f"/internal/v1/perception/cameras/{camera_id}/status", json=report, headers=_headers()).status_code == 200
+
+    response = client.post("/api/v1/agent/chat", json={"question": "有多少工人在线？"})
+
+    assert response.status_code == 200
+    assert response.json()["degraded"] is False
+    assert response.json()["tool_trace"][0]["tool_name"] == "get_all_camera_statuses"
+    assert "活跃作业人数合计为 3" in response.json()["answer"]
+
+
 def test_chat_preserves_multi_segment_camera_id(client: TestClient) -> None:
     event_uuid = str(uuid4())
     payload = _event(event_uuid)

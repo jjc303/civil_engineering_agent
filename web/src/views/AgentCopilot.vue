@@ -2,8 +2,7 @@
   <div class="copilot-page">
     <div class="header-section">
       <div class="title-area">
-        <h2>施工安全智能助手 (Agent Copilot)</h2>
-        <p class="subtitle">基于 LangGraph 工具编排与真实业务事实库的可信问答推理助手</p>
+        <h2>{{ uiConfig?.assistant_name || '智能助手' }}</h2>
       </div>
       <el-tag type="success" effect="plain">
         <el-icon><Cpu /></el-icon> 事实依据驱动 · 防幻觉架构
@@ -22,7 +21,7 @@
 
           <!-- 消息内容 -->
           <div class="message-content">
-            <div class="sender-name">{{ msg.role === 'user' ? '安全管理员' : '施工安全智能体' }}</div>
+            <div class="sender-name">{{ msg.role === 'user' ? '用户' : (uiConfig?.assistant_name || '智能助手') }}</div>
 
             <!-- 用户气泡 -->
             <div v-if="msg.role === 'user'" class="user-bubble">
@@ -45,7 +44,7 @@
               <div class="markdown-body" v-html="renderMarkdown(msg.text)"></div>
 
               <!-- 证据卡片区 -->
-              <div v-if="msg.evidence && msg.evidence.length > 0" class="evidence-section">
+              <div v-if="uiConfig?.show_evidence && msg.evidence && msg.evidence.length > 0" class="evidence-section">
                 <div class="evidence-header">
                   <el-icon><Picture /></el-icon>
                   <span>关联证据快照 ({{ msg.evidence.length }} 项):</span>
@@ -63,6 +62,14 @@
                       <span class="ev-uuid font-mono">{{ ev.event_uuid.substring(0, 8) }}...</span>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              <div v-if="msg.knowledgeCitations && msg.knowledgeCitations.length > 0" class="evidence-section">
+                <div class="evidence-header"><el-icon><Document /></el-icon><span>知识资料引用 ({{ msg.knowledgeCitations.length }} 项):</span></div>
+                <div v-for="citation in msg.knowledgeCitations" :key="citation.chunk_id" class="tool-item">
+                  <span>{{ citation.title }}（v{{ citation.version_no }}，{{ citation.page_or_section }}）</span>
+                  <el-tag size="small" type="info">相关度 {{ citation.relevance_score.toFixed(2) }}</el-tag>
                 </div>
               </div>
 
@@ -103,7 +110,7 @@
             <el-avatar :icon="Service" :size="36" />
           </div>
           <div class="message-content">
-            <div class="sender-name">施工安全智能体</div>
+            <div class="sender-name">{{ uiConfig?.assistant_name || '智能助手' }}</div>
             <div class="agent-bubble thinking-bubble">
               <el-icon class="is-loading"><Loading /></el-icon>
               <span>正在分析施工安全数据与调用工具中...</span>
@@ -114,7 +121,7 @@
 
       <!-- 快捷提问推荐 -->
       <div class="quick-prompts">
-        <span class="prompt-hint">快捷提问：</span>
+        <span v-if="quickQuestions.length" class="prompt-hint">快捷提问：</span>
         <el-tag
           v-for="(q, qIdx) in quickQuestions"
           :key="qIdx"
@@ -130,7 +137,7 @@
       <div class="input-area">
         <el-input
           v-model="inputQuestion"
-          placeholder="以自然语言向安全智能体提问（如：今天 A01 摄像头有多少严重违规？按 Enter 发送）"
+          :placeholder="uiConfig?.input_placeholder || '请输入问题'"
           size="large"
           clearable
           :disabled="thinking"
@@ -156,20 +163,23 @@ import {
   UserFilled,
   Service,
   Picture,
+  Document,
   Operation,
   Loading,
   Cpu,
 } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import { sendChatMessage } from '@/api/chat'
+import { fetchAssistantUiConfig } from '@/api/uiConfig'
 import { resolveMediaUrl } from '@/api/client'
-import type { ChatEvidence, ToolTraceItem, ViolationRecord } from '@/types/contract'
+import type { AssistantUiConfig, ChatEvidence, ToolTraceItem, ViolationRecord } from '@/types/contract'
 import EvidenceModal from '@/components/EvidenceModal.vue'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
   text: string
   evidence?: ChatEvidence[]
+  knowledgeCitations?: import('@/types/contract').KnowledgeCitation[]
   toolTrace?: ToolTraceItem[]
   degraded?: boolean
 }
@@ -187,18 +197,12 @@ const thinking = ref(false)
 const modalVisible = ref(false)
 const selectedViolation = ref<ViolationRecord | null>(null)
 
-const quickQuestions = [
-  '今天 A01 摄像头有多少严重违规？最近一条是什么？',
-  '西侧进出闸口今天有未戴安全帽的行为吗？',
-  '查询当前所有摄像头的综合运行状态与帧率',
-]
+const uiConfig = ref<AssistantUiConfig | null>(null)
+const quickQuestions = ref<string[]>([])
 
-const messages = reactive<ChatMessage[]>([
-  {
-    role: 'assistant',
-    text: '您好！我是**智慧工地施工安全管理智能体**。基于多摄像头实时事件流与 LangGraph 工具编排，我可为您提供精准可追溯的安全态势诊断。\n\n请直接提出您关心的安全问题。',
-  },
-])
+const messages = reactive<ChatMessage[]>([])
+
+const chatHistoryKey = 'agent_chat_messages'
 
 function renderMarkdown(content: string): string {
   return md.render(content || '')
@@ -214,6 +218,7 @@ async function handleSend() {
   if (!q || thinking.value) return
 
   messages.push({ role: 'user', text: q })
+  saveMessages()
   inputQuestion.value = ''
   thinking.value = true
   scrollToBottom()
@@ -221,50 +226,59 @@ async function handleSend() {
   try {
     const res = await sendChatMessage({
       question: q,
-      conversation_id: 'web-session-' + Date.now(),
+      conversation_id: getConversationId(),
     })
 
     messages.push({
       role: 'assistant',
       text: res.answer,
       evidence: res.evidence,
+      knowledgeCitations: res.knowledge_citations,
       toolTrace: res.tool_trace,
       degraded: res.degraded,
     })
+    saveMessages()
   } catch (err: any) {
     messages.push({
       role: 'assistant',
       text: `请求未能正常完成: ${err.message || '网络连接超时'}`,
       degraded: true,
     })
+    saveMessages()
   } finally {
     thinking.value = false
     scrollToBottom()
   }
 }
 
-function viewEvidence(ev: ChatEvidence) {
-  selectedViolation.value = {
-    event_uuid: ev.event_uuid,
-    camera_id: 'cam-crane-01',
-    monitor_session_id: 'sess-preview',
-    track_id: 1,
-    violation_type: 'DANGER_ZONE_INTRUSION',
-    severity: 'CRITICAL',
-    status: 'ACTIVE',
-    zone_id: 'zone-crane-01',
-    zone_name: '关联危险区域',
-    occurred_at_utc: ev.occurred_at_utc,
-    resolved_at_utc: null,
-    duration_seconds: 15.0,
-    snapshot_uri: ev.snapshot_uri,
-    model_name: 'helmet_head_person_m',
-    model_version: 'v1.0',
-    extra_details: {
-      bbox: [400, 300, 550, 650],
-      feet_point: [475, 650],
-    },
+function getConversationId(): string {
+  const key = 'agent_conversation_id'
+  const existing = sessionStorage.getItem(key)
+  if (existing) return existing
+  const created = crypto.randomUUID()
+  sessionStorage.setItem(key, created)
+  return created
+}
+
+function saveMessages() {
+  // Browser-session display history is intentionally separate from the
+  // server-side 24-hour summarized context and never leaves this tab.
+  sessionStorage.setItem(chatHistoryKey, JSON.stringify(messages))
+}
+
+function restoreMessages() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(chatHistoryKey) || '[]')
+    if (Array.isArray(saved) && saved.length > 0) {
+      messages.splice(0, messages.length, ...saved)
+    }
+  } catch {
+    sessionStorage.removeItem(chatHistoryKey)
   }
+}
+
+function viewEvidence(ev: ChatEvidence) {
+  selectedViolation.value = ev as unknown as ViolationRecord
   modalVisible.value = true
 }
 
@@ -282,6 +296,13 @@ function scrollToBottom() {
 }
 
 onMounted(() => {
+  getConversationId()
+  restoreMessages()
+  fetchAssistantUiConfig().then((config) => {
+    uiConfig.value = config
+    quickQuestions.value = config.quick_questions
+    if (!messages.length) messages.push({ role: 'assistant', text: config.welcome_message })
+  }).catch(() => undefined)
   scrollToBottom()
 })
 </script>

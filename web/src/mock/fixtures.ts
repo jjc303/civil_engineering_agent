@@ -179,6 +179,7 @@ export const mockChatResponse: ChatResponse = {
       snapshot_uri: 'snapshots/sample_gate.jpg',
     },
   ],
+  knowledge_citations: [],
   tool_trace: [
     {
       tool_name: 'get_violation_statistics',

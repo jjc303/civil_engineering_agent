@@ -137,6 +137,15 @@ class ViolationRepository:
 
         return sorted(results, key=lambda item: (not item.is_online, item.camera_id))
 
+    def get_workforce_summary(self) -> dict[str, object]:
+        statuses = self.list_camera_statuses()
+        online = [item for item in statuses if item.is_online]
+        return {
+            "active_workers_count": sum(item.active_workers_count for item in online),
+            "online_camera_count": len(online),
+            "camera_counts": [{"camera_id": item.camera_id, "active_workers_count": item.active_workers_count} for item in online],
+        }
+
     @staticmethod
     def _to_record(model: ViolationEventModel) -> ViolationRecord:
         return ViolationRecord(

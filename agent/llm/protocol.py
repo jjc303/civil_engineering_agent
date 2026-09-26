@@ -10,8 +10,8 @@ class ChatModelPort(Protocol):
 
     model_name: str
 
-    def decide(self, question: str, previous_results: Sequence[ToolResult]) -> ToolDecision | None:
+    def decide(self, question: str, previous_results: Sequence[ToolResult], memory_context: str = "", tool_catalog: Sequence[dict[str, str]] = ()) -> ToolDecision | None:
         """Return a validated tool decision, or None when enough facts are available."""
 
-    def respond(self, question: str, results: Sequence[ToolResult]) -> str:
+    def respond(self, question: str, results: Sequence[ToolResult], memory_context: str = "") -> str:
         """Create a user-facing answer only from the validated tool results."""

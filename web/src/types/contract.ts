@@ -93,8 +93,17 @@ export interface ChatEvidence {
   snapshot_uri: string | null;
 }
 
+export interface KnowledgeCitation {
+  document_id: string;
+  version_no: number;
+  title: string;
+  page_or_section: string;
+  chunk_id: string;
+  relevance_score: number;
+}
+
 export interface ToolTraceItem {
-  tool_name: "query_violations" | "get_violation_statistics" | "get_camera_status" | "get_all_camera_statuses" | "get_current_weather";
+  tool_name: "query_violations" | "get_violation_statistics" | "get_camera_status" | "get_all_camera_statuses" | "get_workforce_summary" | "get_current_weather" | "search_knowledge";
   success: boolean;
   purpose: string;
   duration_ms: number;
@@ -109,9 +118,20 @@ export interface ChatResponse {
   request_id: string;
   answer: string;
   evidence: ChatEvidence[];
+  knowledge_citations: KnowledgeCitation[];
   tool_trace: ToolTraceItem[];
   degraded: boolean;
   error_code?: string | null;
+}
+
+export interface AssistantUiConfig {
+  version: number;
+  assistant_name: string;
+  welcome_message: string;
+  input_placeholder: string;
+  quick_questions: string[];
+  show_evidence: boolean;
+  updated_at_utc: string;
 }
 
 export interface ApiErrorResponse {

@@ -19,6 +19,7 @@
 - [智能体服务子系统 (Agent)](./agent/README.md)
   - [Agent 阶段一进展报告 (Agent_Phase_1_Progress.md)](./agent/Agent_Phase_1_Progress.md)：涵盖 FastAPI 服务、工具注册、MySQL 幂等存储与 LangGraph 状态编排。
   - [DeepSeek 接入与模型适配报告 (DeepSeek_Integration.md)](./agent/DeepSeek_Integration.md)：官方 DeepSeek-V3 / R1 协议适配与离线测试桩。
+  - [会话记忆与 RAG 向量库管理规范 (Agent_Memory_RAG_Management.md)](./agent/Agent_Memory_RAG_Management.md)：首版记忆、资料知识库、向量索引、运维和验收的唯一实施准绳（尚未上线）。
 
 ## 2. 文档组织架构
 
@@ -34,7 +35,8 @@ docs/
 ├── agent/                         # Agent 智能体系统专区
 │   ├── README.md
 │   ├── Agent_Phase_1_Progress.md
-│   └── DeepSeek_Integration.md
+│   ├── DeepSeek_Integration.md
+│   └── Agent_Memory_RAG_Management.md
 └── perception/                    # 视觉安全感知子系统专区
     ├── README.md                  # 感知专区目录导航
     ├── PROGRESS.md                # 阶段进展与现状报告 (v5.0 持续更新)

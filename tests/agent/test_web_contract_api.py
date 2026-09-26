@@ -40,6 +40,7 @@ def test_media_mount_and_cors_preflight(tmp_path) -> None:
         llm_provider="fake",
         auto_create_schema=True,
         media_root=str(media_root),
+        cors_origins=("http://localhost:5173",),
     )
     with TestClient(create_app(settings)) as client:
         media = client.get("/media/snapshots/20260925/evidence.jpg")

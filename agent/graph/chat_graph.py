@@ -1,44 +1,35 @@
 from __future__ import annotations
 
+import logging
 from time import perf_counter
 from typing import Literal
 
 from langgraph.graph import END, START, StateGraph
 
-from agent.contracts.chat import Evidence, ToolDecision, ToolResult, ToolTraceItem
+from agent.contracts.chat import Evidence, KnowledgeCitation, ToolDecision, ToolResult, ToolTraceItem
 from agent.llm.protocol import ChatModelPort
 from agent.repositories.violations import ViolationRepository
 from agent.tools.safety_tools import register_safety_tools
-from agent.tools.weather import extract_weather_location
 from .chat_state import ChatGraphState
+from agent.services.knowledge_service import KnowledgeService
+
+logger = logging.getLogger(__name__)
 
 
-def build_chat_graph(repository: ViolationRepository, model: ChatModelPort, max_tool_calls: int = 2):
+def build_chat_graph(repository: ViolationRepository, model: ChatModelPort, max_tool_calls: int = 2, knowledge_service: KnowledgeService | None = None):
     tools = register_safety_tools(repository)
 
     def select_tool(state: ChatGraphState) -> dict:
         previous = state.get("tool_results", [])
         if len(previous) >= max_tool_calls:
             return {"decision": None}
-        # Weather is an isolated public-data request.  Route it deterministically
-        # before asking an LLM so a provider cannot accidentally query violations.
-        if not previous and (location := extract_weather_location(state["question"])):
-            return {"decision": ToolDecision(
-                tool_name="get_current_weather",
-                weather_location=location,
-                purpose=f"查询 {location} 的当前天气",
-            )}
-        # This is an operational query with an unambiguous scope.  Do not ask
-        # an LLM to invent a camera ID and accidentally invoke the single-
-        # camera tool, which previously caused a false degraded response.
-        if not previous and _asks_for_all_camera_statuses(state["question"]):
-            return {"decision": ToolDecision(
-                tool_name="get_all_camera_statuses",
-                purpose="查询全部摄像头的综合运行状态与帧率",
-            )}
         try:
-            return {"decision": model.decide(state["question"], previous)}
+            catalog = tools.catalog()
+            if knowledge_service:
+                catalog.append({"name": "search_knowledge", "description": "检索当前有效的安全制度与方案资料。", "parameters": "knowledge_query: string, top_k: integer"})
+            return {"decision": model.decide(state["question"], previous, state.get("memory_context", ""), catalog)}
         except Exception:
+            logger.exception("chat model failed to produce a validated tool decision")
             return {"error_code": "MODEL_DECISION_FAILED", "degraded": True}
 
     def next_after_selection(state: ChatGraphState) -> Literal["execute_tool", "respond", "fallback"]:
@@ -54,18 +45,27 @@ def build_chat_graph(repository: ViolationRepository, model: ChatModelPort, max_
                 data = tools.invoke(decision.tool_name, camera_id=decision.camera_id)
             elif decision.tool_name == "get_all_camera_statuses":
                 data = tools.invoke(decision.tool_name)
+            elif decision.tool_name == "get_workforce_summary":
+                data = tools.invoke(decision.tool_name)
             elif decision.tool_name == "get_current_weather":
                 data = tools.invoke(decision.tool_name, location=decision.weather_location)
+            elif decision.tool_name == "search_knowledge":
+                if not knowledge_service:
+                    raise RuntimeError("knowledge search is disabled")
+                data, citations = knowledge_service.search(decision.knowledge_query or "", decision.top_k)
             else:
                 data = tools.invoke(decision.tool_name, query=decision.query.model_dump(mode="json"))
             result = ToolResult(tool_name=decision.tool_name, data=data)
             trace = ToolTraceItem(tool_name=decision.tool_name, success=True, purpose=decision.purpose, duration_ms=int((perf_counter() - started_at) * 1000))
-            return {
+            response = {
                 "decision": None,
                 "tool_results": [*state.get("tool_results", []), result],
                 "tool_trace": [*state.get("tool_trace", []), trace],
                 "evidence": [*state.get("evidence", []), *_extract_evidence(data)],
             }
+            if decision.tool_name == "search_knowledge":
+                response["knowledge_citations"] = [*state.get("knowledge_citations", []), *citations]
+            return response
         except Exception:
             trace = ToolTraceItem(tool_name=decision.tool_name, success=False, purpose=decision.purpose, duration_ms=int((perf_counter() - started_at) * 1000))
             return {"tool_trace": [*state.get("tool_trace", []), trace], "error_code": "TOOL_EXECUTION_FAILED", "degraded": True}
@@ -77,8 +77,9 @@ def build_chat_graph(repository: ViolationRepository, model: ChatModelPort, max_
 
     def respond(state: ChatGraphState) -> dict:
         try:
-            return {"answer": model.respond(state["question"], state.get("tool_results", []))}
+            return {"answer": model.respond(state["question"], state.get("tool_results", []), state.get("memory_context", ""))}
         except Exception:
+            logger.exception("chat model failed to produce an answer")
             return {"answer": "安全问答服务暂时不可用，请稍后重试。", "error_code": "MODEL_RESPONSE_FAILED", "degraded": True}
 
     def fallback(_: ChatGraphState) -> dict:
@@ -106,10 +107,3 @@ def _extract_evidence(data: object) -> list[Evidence]:
             continue
         evidence.append(Evidence(event_uuid=row["event_uuid"], occurred_at_utc=row["occurred_at_utc"], snapshot_uri=row.get("snapshot_uri")))
     return evidence
-
-
-def _asks_for_all_camera_statuses(question: str) -> bool:
-    normalized = question.lower()
-    asks_all = any(token in question for token in ("所有摄像头", "全部摄像头", "全体摄像头", "所有相机", "全部相机"))
-    asks_status = any(token in normalized for token in ("状态", "在线", "运行", "fps", "帧率"))
-    return asks_all and asks_status
