@@ -94,7 +94,7 @@ export interface ChatEvidence {
 }
 
 export interface ToolTraceItem {
-  tool_name: "query_violations" | "get_violation_statistics" | "get_camera_status";
+  tool_name: "query_violations" | "get_violation_statistics" | "get_camera_status" | "get_current_weather";
   success: boolean;
   purpose: string;
   duration_ms: number;
@@ -116,4 +116,24 @@ export interface ChatResponse {
 
 export interface ApiErrorResponse {
   detail: string | Array<{ loc: (string | number)[]; msg: string; type: string }>;
+}
+
+export interface CvNodeResponse {
+  node_id: string;
+  display_name: string;
+  control_url: string;
+  is_online: boolean;
+  active_sessions: number;
+  capacity: number;
+  last_heartbeat_at_utc: string | null;
+}
+
+export interface ManagedCameraResponse {
+  camera_id: string;
+  display_name: string;
+  node_id: string;
+  source_type: 'rtsp' | 'file';
+  source_uri_masked: string;
+  desired_state: 'RUNNING' | 'STOPPED';
+  monitor_session_id: string | null;
 }

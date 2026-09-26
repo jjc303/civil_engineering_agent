@@ -80,7 +80,7 @@ flowchart TD
 1. **写边界隔离**：感知端不直接连接 Agent 数据库；事件和状态经 FastAPI 内部接口投递，且接口要求 Bearer 令牌。
 2. **媒体引用约束**：服务端仅接受相对 `snapshot_uri`（例如 `snapshots/20260925/{event_uuid}.jpg`），拒绝绝对路径和包含 `..` 的路径。
 3. **事件幂等**：同一 `event_uuid` 可从活动状态更新为已解决状态；`RESOLVED` 必须提供不早于发生时间的 `resolved_at_utc`。
-4. **问答边界**：问答图只能调用违规查询、统计和相机状态工具；默认使用 DeepSeek，必须配置 `AGENT_LLM_API_KEY`；离线开发和测试可显式设置 `AGENT_LLM_PROVIDER=fake`。
+4. **问答边界**：问答图只能调用违规查询、统计、相机状态和当前天气工具；默认使用 DeepSeek，必须配置 `AGENT_LLM_API_KEY`；离线开发和测试可显式设置 `AGENT_LLM_PROVIDER=fake`。天气工具固定访问 Open-Meteo，模型仅能提供受长度限制的地点名称。
 
 ---
 
@@ -155,11 +155,18 @@ Agent 层代码位于 `agent/` 目录下，负责事件接收校验、关系数�
 ### 3.3 LangGraph 对话图与事实驱动原则
 - **结构化图状态**：在 `agent/graph/chat_graph.py` 中编排模型决策、受限工具调用和回复生成；工具调用次数受 `AGENT_TOOL_MAX_CALLS`（1–2）限制；
 - **证据接地**：对话响应可附带查询到的 `event_uuid`、发生时间和 `snapshot_uri`。媒体文件的实际托管与前端渲染由调用方部署负责。
+- **当前天气查询**：当问题包含地点与天气、气温、降雨或风速时，Agent 可调用 `get_current_weather`。该工具先通过 Open-Meteo 地理编码解析地点，再获取当前实况；失败时按聊天接口既有降级语义返回，不会编造结果。
 
 ### 3.4 LLM 适配器与可配置模型选择 (DeepSeek)
 - **协议端口 [`ChatModelPort`](../../agent/llm/protocol.py)**：定义统一的聊天接口契约；
 - **DeepSeek 适配 [`DeepSeekChatModel`](../../agent/llm/deepseek_adapter.py)**：通过可配置的兼容接口访问 DeepSeek 模型；
 - **离线测试桩 [`FakeChatModel`](../../agent/llm/fake_adapter.py)**：支持无网络、无 API Key 的本地测试。
+
+### 3.5 Phase 2：远程 CV 节点调度与视频预览
+- **节点管理**：Agent 维护多个 CV Control 节点的在线心跳、容量和专属控制令牌；摄像头由管理员手动分配节点。
+- **源配置安全**：支持 RTSP 与 CV 节点本地文件；完整源地址使用 `AGENT_CREDENTIAL_ENCRYPTION_KEY` 加密存储，Web 只可见脱敏地址。
+- **会话与预览**：Agent 通过 HTTP 启停 CV 会话；CV 输出最新帧 MJPEG，Web 通过 Agent 的 `/api/v1/cameras/{camera_id}/preview` 预览，绝不直连 CV。
+- **配置编辑与文件选择**：已绑定摄像头可编辑。若会话正在运行，Web 会先提示并停止会话；“选择文件”弹窗浏览的是目标 CV 节点的 `CV_ALLOWED_MEDIA_ROOTS`，并非浏览器电脑的任意文件系统。
 
 ---
 
@@ -186,9 +193,42 @@ export AGENT_AUTO_CREATE_SCHEMA=true       # 仅适合本地验证
 export INTERNAL_PERCEPTION_TOKEN='replace-with-a-secret'
 export AGENT_LLM_PROVIDER=deepseek          # 默认值；必须同时配置 AGENT_LLM_API_KEY
 export AGENT_LLM_API_KEY='your-deepseek-api-key'
+export AGENT_ADMIN_TOKEN='admin-secret-for-camera-management'
+export AGENT_CREDENTIAL_ENCRYPTION_KEY='a-valid-fernet-key'
+```
+
+可使用以下命令生成一次 Fernet 加密密钥：
+
+```bash
+python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
 ```
 
 生产环境应通过 Alembic 执行 `agent/db/migrations/` 中的迁移，不应依赖 `AGENT_AUTO_CREATE_SCHEMA=true`。
+
+#### 命令：启动 CV Control 节点（Phase 2）
+
+先由管理员调用 `POST /api/v1/cv-nodes` 创建节点并安全保存一次性返回的 `control_token`，然后在 CV 主机配置：
+
+```bash
+export CV_NODE_ID='cv-east-01'
+export CV_NODE_TOKEN='node-control-token'
+export AGENT_URL='http://agent-host:8000'
+export CV_ALLOWED_MEDIA_ROOTS='/srv/cv-media'
+export INTERNAL_PERCEPTION_TOKEN='same-internal-token'
+python3 -m uvicorn perception.control_api:create_control_app --factory --host 0.0.0.0 --port 8100
+```
+
+节点每 5 秒向 Agent 心跳。Web 使用 `VITE_AGENT_ADMIN_TOKEN` 访问摄像头与节点管理页；MJPEG 预览不向浏览器暴露该令牌或节点地址。
+
+#### 本机一键 Phase 2 启动
+
+项目根目录 `.env` 配置 `CV_NODE_ID`、`CV_NODE_TOKEN`、`CV_CONTROL_PORT`、`CV_NODE_CAPACITY` 和 `CV_ALLOWED_MEDIA_ROOTS` 后，统一脚本会自动登记本机节点、启动 CV Control、等待心跳上线，并以默认样例视频创建和启动 `cam_field_01`：
+
+```bash
+./scripts/start_stack.sh
+```
+
+脚本只管理它自身启动的进程；若 8000 已有 Agent 服务，它会安全退出，必须先停止旧脚本实例再重新启动。
 
 ---
 

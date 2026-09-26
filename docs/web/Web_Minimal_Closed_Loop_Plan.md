@@ -1,7 +1,7 @@
 # Web 前端最小闭环开发计划 (Web Minimal Closed Loop Plan)
 
 > **版本**：v1.0  
-> **基准契约**：[`docs/integration/Web_Agent_Freeze_Contract.md`](../integration/Web_Agent_Freeze_Contract.md) (v1.1.1)  
+> **基准契约**：[`docs/integration/Web_Agent_Freeze_Contract.md`](../integration/Web_Agent_Freeze_Contract.md) (v1.1.3)
 > **核心原则**：**拥抱成熟开源生态（Vue 3 + Element Plus + ECharts + Konva + markdown-it），决不手搓基础轮子；以契约驱动独立开发，实现无阻碍最小闭环。**
 
 ---
@@ -75,7 +75,7 @@ flowchart TD
   - 构造 Agent Copilot 智能问答典型回答、证据卡片与工具轨迹。
 - [ ] **M1.3 统一 API 客户端 (`src/api/client.ts`)**：
   - 封装 Axios 请求拦截器与响应拦截器。
-  - 读取环境变量 `VITE_USE_MOCK=true/false`；为 `true` 时由本地 Mock 适配器直接返回数据，为 `false` 时走 Vite 代理请求后端。
+  - 读取环境变量 `VITE_USE_MOCK=true/false`；为 `true` 时由本地 Mock 适配器直接返回数据，为 `false` 时只走 Vite 代理请求后端。两种模式严格互斥：真实请求失败必须抛出并提示，禁止回退或混用 Mock 数据。
   - 针对 `409 Conflict` 错误进行全局识别，抛出业务级异常。
 
 ### Milestone 2: 态势看板与违规检索列表
@@ -99,6 +99,7 @@ flowchart TD
 - [ ] **M3.1 标定工作台 (`views/ZoneEditor/`)**：
   - 相机选择与配置拉取（调用 `GET /api/v1/cameras/{id}/zones`）。
   - 捕获 404 处理：弹出提示并以默认模板（`zones: []`，1920×1080）进入首次创建模式。
+  - 网络、鉴权或服务端错误不是首次创建条件；应保留当前配置并显示连接错误。
 - [ ] **M3.2 基于 `vue-konva` 的画布标定交互**：
   - 载入相机最新静态帧或背景图作为画布底图。
   - 渲染已有多边形，并为每个顶点渲染可拖拽的控制锚点（Anchor Point）。
@@ -108,7 +109,7 @@ flowchart TD
   - 缩放比计算：`scaleX = canvasWidth / sourceWidth`, `scaleY = canvasHeight / sourceHeight`。
   - 渲染时正向映射，保存时除以缩放比取整转换为原始视频物理像素。
 - [ ] **M3.4 乐观并发锁机制落地**：
-  - 保存时提交 `expected_version`。
+  - 保存时仅提交实时 GET 成功读取到的 `expected_version`；仅 GET 404 的首次创建提交 `null`。
   - 若收到 `409 Conflict`，弹出 Element Plus `ElMessageBox` 警示窗：“配置已在其他终端更新，请重新获取最新版本”，一键刷新并重新加载。
 
 ### Milestone 4: 施工安全智能问答 Copilot (Chat)
@@ -128,6 +129,7 @@ flowchart TD
 
 ### Milestone 5: 真实后端对接与联调门禁验收
 - [ ] **M5.1 环境切换**：配置 `.env.production` 或修改 `.env.development` 为 `VITE_USE_MOCK=false`。
+  - 确认实时模式不会显示任何 fixture 数据；Agent 不可用时应出现明确错误提示。
 - [ ] **M5.2 执行门禁验证**：
   - **GATE-01**：多摄矩阵正常拉取 `GET /api/v1/cameras`。
   - **GATE-02**：违规列表检索、严重度筛选与分页加载顺畅。

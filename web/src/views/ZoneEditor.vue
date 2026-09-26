@@ -137,7 +137,7 @@ import type { CameraStatusResponse, DangerZoneConfig } from '@/types/contract'
 const route = useRoute()
 
 const cameras = ref<CameraStatusResponse[]>([])
-const selectedCameraId = ref<string>('cam-crane-01')
+const selectedCameraId = ref<string>('')
 const currentVersion = ref<number>(0)
 const saving = ref(false)
 
@@ -181,37 +181,52 @@ const scaleRatioText = computed(() => {
 })
 
 async function init() {
-  const cList = await fetchCameras()
-  cameras.value = cList
-  const queryCam = route.query.camera_id as string
-  if (queryCam && cList.some((c) => c.camera_id === queryCam)) {
-    selectedCameraId.value = queryCam
-  } else if (cList.length > 0) {
-    selectedCameraId.value = cList[0].camera_id
+  try {
+    const cList = await fetchCameras()
+    cameras.value = cList
+    const queryCam = route.query.camera_id as string
+    if (queryCam && cList.some((c) => c.camera_id === queryCam)) {
+      selectedCameraId.value = queryCam
+    } else if (cList.length > 0) {
+      selectedCameraId.value = cList[0].camera_id
+    }
+    if (selectedCameraId.value) {
+      await loadCameraConfig()
+    } else {
+      ElMessage.info('暂无可用摄像头，请先启动 CV 会话或选择 Mock 模式。')
+    }
+  } catch {
+    cameras.value = []
+    ElMessage.error('无法获取 Agent 摄像头列表；实时联调模式不会回退到 Mock 数据。')
   }
-  await loadCameraConfig()
 }
 
 async function loadCameraConfig() {
-  const res = await fetchCameraZones(selectedCameraId.value)
-  if (res) {
-    currentVersion.value = res.config_version
-    form.enter_debounce_frames = res.enter_debounce_frames
-    form.exit_debounce_frames = res.exit_debounce_frames
-    form.helmet_debounce_frames = res.helmet_debounce_frames
+  if (!selectedCameraId.value) return
+  try {
+    const res = await fetchCameraZones(selectedCameraId.value)
+    if (res) {
+      currentVersion.value = res.config_version
+      form.enter_debounce_frames = res.enter_debounce_frames
+      form.exit_debounce_frames = res.exit_debounce_frames
+      form.helmet_debounce_frames = res.helmet_debounce_frames
 
-    if (res.zones && res.zones.length > 0) {
-      const z = res.zones[0]
-      zoneConfig.zone_id = z.zone_id
-      zoneConfig.zone_name = z.zone_name
-      zoneConfig.enabled = z.enabled
-      zoneConfig.alarm_dwell_threshold_seconds = z.alarm_dwell_threshold_seconds
-      polygonPoints.value = JSON.parse(JSON.stringify(z.polygon))
+      if (res.zones && res.zones.length > 0) {
+        const z = res.zones[0]
+        zoneConfig.zone_id = z.zone_id
+        zoneConfig.zone_name = z.zone_name
+        zoneConfig.enabled = z.enabled
+        zoneConfig.alarm_dwell_threshold_seconds = z.alarm_dwell_threshold_seconds
+        polygonPoints.value = JSON.parse(JSON.stringify(z.polygon))
+      }
+    } else {
+      // 404 说明未配置，首次创建
+      currentVersion.value = 0
+      resetToDefaultZone()
     }
-  } else {
-    // 404 说明未配置，首次创建
-    currentVersion.value = 0
-    resetToDefaultZone()
+  } catch {
+    ElMessage.error('无法读取围栏配置，请检查 Agent 服务连接后重试。')
+    return
   }
   nextTick(() => {
     resizeCanvas()
@@ -383,6 +398,10 @@ function onMouseUp() {
 }
 
 async function saveConfiguration() {
+  if (!selectedCameraId.value) {
+    ElMessage.warning('请先选择一个真实摄像头。')
+    return
+  }
   if (polygonPoints.value.length < 3) {
     ElMessage.error('围栏多边形至少需要 3 个有效顶点')
     return

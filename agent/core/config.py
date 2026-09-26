@@ -22,6 +22,9 @@ class Settings:
     llm_api_key: str = ""
     llm_timeout_seconds: float = 20.0
     media_root: str = "./runs/media"
+    admin_token: str = ""
+    credential_encryption_key: str = ""
+    cv_control_timeout_seconds: float = 10.0
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -36,6 +39,9 @@ class Settings:
             internal_perception_token=os.getenv("INTERNAL_PERCEPTION_TOKEN", ""),
             auto_create_schema=os.getenv("AGENT_AUTO_CREATE_SCHEMA", "false").lower() == "true",
             media_root=os.getenv("AGENT_MEDIA_ROOT", "./runs/media"),
+            admin_token=os.getenv("AGENT_ADMIN_TOKEN", ""),
+            credential_encryption_key=os.getenv("AGENT_CREDENTIAL_ENCRYPTION_KEY", ""),
+            cv_control_timeout_seconds=float(os.getenv("AGENT_CV_CONTROL_TIMEOUT_SECONDS", "10")),
         )
 
     def validate_for_runtime(self) -> None:
@@ -51,3 +57,5 @@ class Settings:
             raise RuntimeError("AGENT_LLM_API_KEY must be configured for DeepSeek")
         if self.llm_timeout_seconds <= 0:
             raise RuntimeError("AGENT_LLM_TIMEOUT_SECONDS must be positive")
+        if self.cv_control_timeout_seconds <= 0:
+            raise RuntimeError("AGENT_CV_CONTROL_TIMEOUT_SECONDS must be positive")

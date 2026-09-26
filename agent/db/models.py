@@ -63,3 +63,33 @@ class CameraConfigModel(Base):
     alarm_dwell_threshold_seconds: Mapped[float] = mapped_column(Float, nullable=False)
     zones: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
     updated_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class CvNodeModel(Base):
+    __tablename__ = "cv_nodes"
+
+    node_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    control_url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    control_token_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    is_online: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    active_sessions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    capacity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    last_heartbeat_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class ManagedCameraModel(Base):
+    __tablename__ = "managed_cameras"
+
+    camera_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    node_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    source_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    source_uri_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    source_uri_masked: Mapped[str] = mapped_column(String(1024), nullable=False)
+    desired_state: Mapped[str] = mapped_column(String(16), nullable=False, default="STOPPED")
+    monitor_session_id: Mapped[str | None] = mapped_column(String(128))
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

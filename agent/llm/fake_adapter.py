@@ -6,6 +6,7 @@ from typing import Any
 
 from agent.contracts.chat import ToolDecision, ToolResult
 from agent.contracts.query import ViolationQuery
+from agent.tools.weather import extract_weather_location
 from .protocol import ChatModelPort
 
 
@@ -23,6 +24,15 @@ class FakeChatModel(ChatModelPort):
                     tool_name="query_violations",
                     query=self._query(camera_id, normalized),
                     purpose="补充最近的违规事件作为统计依据",
+                )
+            return None
+        if any(token in normalized for token in ("天气", "气温", "温度", "降雨", "下雨", "风速")):
+            location = extract_weather_location(question)
+            if location:
+                return ToolDecision(
+                    tool_name="get_current_weather",
+                    weather_location=location,
+                    purpose=f"查询 {location} 的当前天气",
                 )
             return None
         if "状态" in question or "在线" in question or "fps" in normalized:
@@ -52,6 +62,16 @@ class FakeChatModel(ChatModelPort):
                     fragments.append(f"摄像头 {payload.get('camera_id')} 当前{'在线' if payload.get('is_online') else '离线'}，FPS 为 {payload.get('fps')}。")
                 else:
                     fragments.append("未找到该摄像头的状态上报。")
+            elif result.tool_name == "get_current_weather":
+                payload = result.data if isinstance(result.data, dict) else {}
+                if payload:
+                    fragments.append(
+                        f"{payload.get('location', '该地点')}当前{payload.get('weather_summary', '天气未知')}，"
+                        f"气温 {payload.get('temperature_c', '未知')}°C，"
+                        f"风速 {payload.get('wind_speed_kmh', '未知')} km/h。"
+                    )
+                else:
+                    fragments.append("未查询到该地点的天气信息。")
         return "".join(fragments)
 
     @staticmethod

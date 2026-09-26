@@ -15,7 +15,7 @@
 
 ## 1. 里程碑概览与交付物全景
 
-本工程根据 [`docs/integration/Web_Agent_Freeze_Contract.md`](../integration/Web_Agent_Freeze_Contract.md) (v1.1.1 冻结契约) 与 [`docs/web/Web_Minimal_Closed_Loop_Plan.md`](./Web_Minimal_Closed_Loop_Plan.md) 规划，以**“拥抱成熟开源生态，决不手搓基础轮子”**为核心原则，在 `web/` 目录下从零构建了一套工业级、高颜值、高可靠的施工安全前端控制台。
+本工程根据 [`docs/integration/Web_Agent_Freeze_Contract.md`](../integration/Web_Agent_Freeze_Contract.md) (v1.1.3 冻结契约) 与 [`docs/web/Web_Minimal_Closed_Loop_Plan.md`](./Web_Minimal_Closed_Loop_Plan.md) 规划，以**“拥抱成熟开源生态，决不手搓基础轮子”**为核心原则，在 `web/` 目录下从零构建了一套工业级、高颜值、高可靠的施工安全前端控制台。
 
 ```mermaid
 flowchart TD
@@ -41,10 +41,10 @@ flowchart TD
 - **严格契约 TypeScript 类型 (`src/types/contract.ts`)**：
   - 1:1 映射后端 Pydantic 数据模型（`ViolationRecord`, `ViolationPageResponse`, `CameraStatusResponse`, `CameraRunConfig`, `ChatResponse`, `ToolTraceItem` 等）；
   - `ViolationStatistics` 类型准确采用 `Partial<Record<ViolationType, number>>`，完美兼容服务端键值缺省特性。
-- **高韧性 API 客户端 (`src/api/client.ts`)**：
+- **严格模式 API 客户端 (`src/api/client.ts`)**：
   - 统一封装 Axios 实例，内置 20 秒超时与请求拦截器；
   - 全局拦截 `409 Conflict` 乐观并发锁异常，向用户展示明确友好的版本失效警示；
-  - 封装 `resolveMediaUrl(snapshot_uri)` 工具函数，将后端相对路径转换为 `/media/{snapshot_uri}`。
+  - 封装 `resolveMediaUrl(snapshot_uri)` 工具函数，将后端相对路径转换为 `/media/{snapshot_uri}`；实时模式请求失败直接显示错误，绝不回退 Mock 数据。
 - **高保真 Mock 桩体系 (`src/mock/fixtures.ts`)**：
   - 预设 3 路多摄状态（包含正常推流与离线通道）、典型违规记录流、统计分布与智能问答推理样本；
   - 通过环境变量 `VITE_USE_MOCK=true/false` 支持零秒无缝切换 Mock 与生产后端。
@@ -76,7 +76,7 @@ flowchart TD
   - 确保不论在任何尺寸的屏幕上操作，存入 MySQL 的几何数据始终为标准 1080P 物理像素。
 - **异常与并发控制状态机**：
   - 捕获 404：自动进入“未标定（首次创建）”模式，保存时传 `expected_version: null`；
-  - 捕获 409：拦截版本冲突，弹出 `ElMessageBox` 引导用户重新拉取最新版本。
+  - 捕获 409：拦截版本冲突，弹出 `ElMessageBox` 引导用户重新拉取最新版本；网络与其他 HTTP 错误不触发首次创建，也不使用 Mock 版本号。
 
 ### 2.5 施工安全智能助手 (`src/views/AgentCopilot.vue`)
 - **智能对话流交互**：

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from agent.core.config import Settings
 from agent.main import create_app
+from agent.tools.weather import CurrentWeather
 
 
 @pytest.fixture
@@ -92,3 +93,25 @@ def test_chat_preserves_multi_segment_camera_id(client: TestClient) -> None:
     response = client.post("/api/v1/agent/chat", json={"question": "cam_e2e_01 有多少严重违规？"})
     assert response.status_code == 200
     assert "共有 1 条违规" in response.json()["answer"]
+
+
+def test_chat_uses_weather_tool(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "agent.tools.safety_tools.get_current_weather",
+        lambda location: CurrentWeather(
+            location=location,
+            country="中国",
+            observed_at="2026-09-26T10:00",
+            temperature_c=22.4,
+            wind_speed_kmh=13.1,
+            weather_summary="局部多云",
+        ),
+    )
+
+    response = client.post("/api/v1/agent/chat", json={"question": "北京天气怎么样？"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["degraded"] is False
+    assert [item["tool_name"] for item in body["tool_trace"]] == ["get_current_weather"]
+    assert "北京当前局部多云，气温 22.4°C，风速 13.1 km/h。" == body["answer"]

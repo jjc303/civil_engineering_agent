@@ -1,9 +1,9 @@
 # CV—Agent—Web 协商与集成契约
 
-> **版本**：v1.0 (基础协议)  
-> **状态**：架构已确定；实现前由 CV 与 Agent 开发方确认本文待确认项。  
+> **版本**：v1.2 (Phase 2 已实现)
+> **状态**：Agent HTTP 调度、CV 节点心跳与 Agent 代理 MJPEG 已实现。
 > **适用范围**：`perception/` 感知层、Agent/FastAPI 服务与 Web 前端。  
-> **文档优先级声明**：Web–Agent 之间的具体 HTTP API、数据结构、前端类型与联调标准**统一以 [Web_Agent_Freeze_Contract.md](./Web_Agent_Freeze_Contract.md) (v1.1.0+) 为最终准绳**。本文第 6 节中提及的 `monitoring:start/stop` 在当前阶段为 Phase 2 预留接口，Phase 1 监控运行与状态以心跳为准。
+> **文档优先级声明**：Web–Agent 之间的具体 HTTP API、数据结构、前端类型与联调标准**统一以 [Web_Agent_Freeze_Contract.md](./Web_Agent_Freeze_Contract.md) (v1.2.0+) 为最终准绳**。
 
 
 ## 1. 目标与基本原则
@@ -137,13 +137,22 @@ MySQL 是摄像头和围栏配置的唯一事实来源。CV 可以缓存，但�
 | `POST` | `/internal/v1/perception/events` | CV → Agent | 幂等创建或更新违规事件 |
 | `PUT` | `/internal/v1/perception/cameras/{camera_id}/status` | CV → Agent | 上报在线、FPS、人数和模型信息 |
 | `GET` | `/internal/v1/perception/cameras/{camera_id}/config` | CV → Agent | 获取围栏和运行配置 |
-| `POST` | `/api/v1/cameras/{camera_id}/monitoring:start` | Agent/Web → CV 调度层 | 异步启动，返回监控会话 ID |
-| `POST` | `/api/v1/cameras/{camera_id}/monitoring:stop` | Agent/Web → CV 调度层 | 停止监控 |
+| `PUT` | `/internal/v1/cv-nodes/{node_id}/heartbeat` | CV → Agent | 节点专属令牌心跳、活动会话数与容量 |
+| `POST` | `/control/v1/sessions` | Agent → CV | 节点专属令牌启动会话，返回会话 ID |
+| `DELETE` | `/control/v1/sessions/{camera_id}` | Agent → CV | 停止会话 |
+| `GET` | `/control/v1/sessions/{camera_id}/preview.mjpeg` | Agent → CV | 读取节点 MJPEG，供 Agent 代理 |
+| `GET` | `/control/v1/media-files` | Agent → CV | 仅浏览 `CV_ALLOWED_MEDIA_ROOTS` 内的视频文件 |
+| `GET` | `/api/v1/cv-nodes/{node_id}/media-files` | Web → Agent → CV | 管理员通过 Agent 代理浏览节点本地视频文件 |
+| `PUT` | `/api/v1/managed-cameras/{camera_id}/source` | Web → Agent | 修改停止状态摄像头的显示名、节点或视频源 |
+| `POST` | `/api/v1/cameras/{camera_id}/monitoring:start` | Web → Agent → CV | 异步启动，返回监控会话 ID |
+| `POST` | `/api/v1/cameras/{camera_id}/monitoring:stop` | Web → Agent → CV | 停止监控 |
 | `GET` | `/api/v1/violations` | Web/Agent | 分页查询违规事件 |
 | `GET` | `/api/v1/violations/statistics` | Agent | 查询报告统计 |
 | `PUT` | `/api/v1/cameras/{camera_id}/zones` | Web/Agent | 校验并更新围栏，产生新配置版本 |
 
 启动视频监控必须是异步任务。请求响应只返回 `monitor_session_id` 与状态，不能在 HTTP 请求线程中持续进行视频推理。
+
+CV Control 服务通过 `python3 -m uvicorn perception.control_api:create_control_app --factory --port 8100` 运行。它只接受 Agent 的节点专属 Bearer Token；本地文件源须位于 `CV_ALLOWED_MEDIA_ROOTS`，浏览器只访问 Agent 的预览代理。Web 的“选择文件”弹窗展示的是所选 **CV 节点** 的允许目录，而不是操作员浏览器所在电脑的文件系统；选择结果由 Agent 加密保存为节点本地路径。
 
 ## 7. 存储与媒体规则
 

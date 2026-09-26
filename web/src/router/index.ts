@@ -26,6 +26,12 @@ const router = createRouter({
       meta: { title: '危险区域标定' },
     },
     {
+      path: '/cameras',
+      name: 'CameraManagement',
+      component: () => import('@/views/CameraManagement.vue'),
+      meta: { title: '摄像头与 CV 节点' },
+    },
+    {
       path: '/copilot',
       name: 'AgentCopilot',
       component: () => import('@/views/AgentCopilot.vue'),

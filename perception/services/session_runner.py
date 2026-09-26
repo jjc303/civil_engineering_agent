@@ -93,6 +93,8 @@ class CameraSessionRunner:
         self.pipeline: Optional[SafetyPerceptionPipeline] = None
         self.last_status: Optional[CameraStatusContractV1] = None
         self.last_frame_result: Optional[PipelineFrameResult] = None
+        self._preview_lock = threading.Lock()
+        self._preview_jpeg: bytes | None = None
 
     def start(self) -> str:
         """Starts the video perception runner in a background thread."""
@@ -151,6 +153,11 @@ class CameraSessionRunner:
             "helmet_compliance_rate": self.last_status.helmet_compliance_rate if self.last_status else 1.0,
             "active_violations_count": active_viols,
         }
+
+    def latest_preview_jpeg(self) -> bytes | None:
+        """Return a thread-safe copy of the latest decoded frame for HTTP preview."""
+        with self._preview_lock:
+            return self._preview_jpeg
 
     def _fetch_or_fallback_zones(self) -> List[DangerZone]:
         """
@@ -321,6 +328,10 @@ class CameraSessionRunner:
                 # Process perception frame
                 result = self.pipeline.process_frame(frame, timestamp=ts)
                 self.last_frame_result = result
+                ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                if ok:
+                    with self._preview_lock:
+                        self._preview_jpeg = encoded.tobytes()
                 frames_in_hb_window += 1
 
                 if self.fps_throttle:

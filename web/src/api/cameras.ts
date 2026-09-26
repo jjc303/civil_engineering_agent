@@ -6,13 +6,8 @@ export async function fetchCameras(): Promise<CameraStatusResponse[]> {
   if (isMockEnabled) {
     return Promise.resolve([...mockCameras])
   }
-  try {
-    const res = await apiClient.get<CameraStatusResponse[]>('/api/v1/cameras')
-    return res.data
-  } catch (err) {
-    console.warn('Real cameras API failed, fallback to mock in dev:', err)
-    return mockCameras
-  }
+  const res = await apiClient.get<CameraStatusResponse[]>('/api/v1/cameras')
+  return res.data
 }
 
 export async function fetchCameraStatus(cameraId: string): Promise<CameraStatusResponse> {

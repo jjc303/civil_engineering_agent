@@ -26,6 +26,11 @@
           <span>危险区域标定</span>
         </router-link>
 
+        <router-link to="/cameras" class="nav-item" active-class="active">
+          <el-icon><VideoCamera /></el-icon>
+          <span>摄像头与 CV 节点</span>
+        </router-link>
+
         <router-link to="/copilot" class="nav-item" active-class="active">
           <el-icon><ChatDotRound /></el-icon>
           <span>安全智能助手</span>
@@ -38,7 +43,7 @@
           <span class="dot" :class="isMock ? 'mock' : 'live'"></span>
           <span class="mode-text">{{ isMock ? '本地 Mock 桩模式' : 'Agent 实时联调' }}</span>
         </div>
-        <div class="version-tag">契约版本: v1.1.1</div>
+        <div class="version-tag">契约版本: v1.2.0</div>
       </div>
     </aside>
 
@@ -79,6 +84,7 @@ import {
   Warning,
   Crop,
   ChatDotRound,
+  VideoCamera,
   Timer,
 } from '@element-plus/icons-vue'
 import { isMockEnabled } from '@/api/client'

@@ -24,24 +24,19 @@ export async function fetchViolations(params: ViolationQueryParams = {}): Promis
   if (isMockEnabled) {
     return Promise.resolve(mockPageResponse)
   }
-  try {
-    const res = await apiClient.get<ViolationPageResponse | ViolationRecord[]>('/api/v1/violations', {
-      params,
-    })
-    // 兼容可能返回的裸数组形式
-    if (Array.isArray(res.data)) {
-      return {
-        items: res.data,
-        total: res.data.length,
-        limit: params.limit || 100,
-        offset: params.offset || 0,
-      }
+  const res = await apiClient.get<ViolationPageResponse | ViolationRecord[]>('/api/v1/violations', {
+    params,
+  })
+  // 兼容可能返回的裸数组形式
+  if (Array.isArray(res.data)) {
+    return {
+      items: res.data,
+      total: res.data.length,
+      limit: params.limit || 100,
+      offset: params.offset || 0,
     }
-    return res.data
-  } catch (err) {
-    console.warn('Real violations API failed, fallback to mock in dev:', err)
-    return mockPageResponse
   }
+  return res.data
 }
 
 export async function fetchViolationStatistics(params: {
@@ -52,13 +47,8 @@ export async function fetchViolationStatistics(params: {
   if (isMockEnabled) {
     return Promise.resolve(mockStatistics)
   }
-  try {
-    const res = await apiClient.get<ViolationStatistics>('/api/v1/violations/statistics', {
-      params,
-    })
-    return res.data
-  } catch (err) {
-    console.warn('Real statistics API failed, fallback to mock in dev:', err)
-    return mockStatistics
-  }
+  const res = await apiClient.get<ViolationStatistics>('/api/v1/violations/statistics', {
+    params,
+  })
+  return res.data
 }

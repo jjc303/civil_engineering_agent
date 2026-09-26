@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from .query import ViolationQuery
 
 
-ToolName = Literal["query_violations", "get_violation_statistics", "get_camera_status"]
+ToolName = Literal["query_violations", "get_violation_statistics", "get_camera_status", "get_current_weather"]
 
 
 class ChatRequest(BaseModel):
@@ -29,6 +29,7 @@ class ToolDecision(BaseModel):
     tool_name: ToolName
     query: ViolationQuery = Field(default_factory=lambda: ViolationQuery(limit=20))
     camera_id: str | None = Field(default=None, max_length=128)
+    weather_location: str | None = Field(default=None, min_length=2, max_length=128)
     purpose: str = Field(min_length=1, max_length=256)
 
     @model_validator(mode="after")
@@ -42,6 +43,8 @@ class ToolDecision(BaseModel):
                 raise ValueError("chat tool time range may not exceed 31 days")
         if self.tool_name == "get_camera_status" and not self.camera_id:
             raise ValueError("camera_id is required for get_camera_status")
+        if self.tool_name == "get_current_weather" and not self.weather_location:
+            raise ValueError("weather_location is required for get_current_weather")
         return self
 
 

@@ -9,6 +9,7 @@ from agent.contracts.chat import Evidence, ToolDecision, ToolResult, ToolTraceIt
 from agent.llm.protocol import ChatModelPort
 from agent.repositories.violations import ViolationRepository
 from agent.tools.safety_tools import register_safety_tools
+from agent.tools.weather import extract_weather_location
 from .chat_state import ChatGraphState
 
 
@@ -19,6 +20,14 @@ def build_chat_graph(repository: ViolationRepository, model: ChatModelPort, max_
         previous = state.get("tool_results", [])
         if len(previous) >= max_tool_calls:
             return {"decision": None}
+        # Weather is an isolated public-data request.  Route it deterministically
+        # before asking an LLM so a provider cannot accidentally query violations.
+        if not previous and (location := extract_weather_location(state["question"])):
+            return {"decision": ToolDecision(
+                tool_name="get_current_weather",
+                weather_location=location,
+                purpose=f"查询 {location} 的当前天气",
+            )}
         try:
             return {"decision": model.decide(state["question"], previous)}
         except Exception:
@@ -35,6 +44,8 @@ def build_chat_graph(repository: ViolationRepository, model: ChatModelPort, max_
         try:
             if decision.tool_name == "get_camera_status":
                 data = tools.invoke(decision.tool_name, camera_id=decision.camera_id)
+            elif decision.tool_name == "get_current_weather":
+                data = tools.invoke(decision.tool_name, location=decision.weather_location)
             else:
                 data = tools.invoke(decision.tool_name, query=decision.query.model_dump(mode="json"))
             result = ToolResult(tool_name=decision.tool_name, data=data)

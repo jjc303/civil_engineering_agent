@@ -15,8 +15,8 @@ export async function fetchCameraZones(cameraId: string): Promise<CameraRunConfi
       // 404 说明尚未配置围栏
       return null
     }
-    console.warn(`Fetch zones for ${cameraId} failed, fallback to mock:`, err)
-    return mockCameraZones[cameraId] || null
+    // 实时联调模式绝不能使用 Mock 版本号保存到真实后端，否则会造成伪造的 409 冲突。
+    throw err
   }
 }
 

@@ -69,7 +69,5 @@ web/
 ## 4. 相关文档与开发计划
 - [Web 控制台当前进展报告](./PROGRESS.md)：阶段里程碑、核心交付物、代码质量与构建验证报告。
 - [Web 前端最小闭环开发计划](./Web_Minimal_Closed_Loop_Plan.md)：实施里程碑、MVP 场景、任务拆解与交付时间表。
-- [Web 与 Agent 接口约定冻结契约](../integration/Web_Agent_Freeze_Contract.md)：v1.1.1 冻结契约（API 规格、TS 类型、坐标变换、Mock 规范与联调门禁）。
+- [Web 与 Agent 接口约定冻结契约](../integration/Web_Agent_Freeze_Contract.md)：v1.2.0 冻结契约（API 规格、CV 节点调度、MJPEG 预览、严格 Mock 模式与联调门禁）。
 - [CV—Agent—Web 协商与集成契约](../integration/CV_Agent_Web_Integration_Contract.md)：三层整体架构与基础协议。
-
-

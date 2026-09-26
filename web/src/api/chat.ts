@@ -12,15 +12,6 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
       answer: `针对您的提问 **“${request.question}”**：\n\n` + mockChatResponse.answer,
     }
   }
-  try {
-    const res = await apiClient.post<ChatResponse>('/api/v1/agent/chat', request)
-    return res.data
-  } catch (err) {
-    console.warn('Real chat API failed, fallback to mock in dev:', err)
-    return {
-      ...mockChatResponse,
-      answer: `[后端服务连接异常，已启动离线兜底诊断]\n\n针对 **“${request.question}”**：\n\n` + mockChatResponse.answer,
-      degraded: true,
-    }
-  }
+  const res = await apiClient.post<ChatResponse>('/api/v1/agent/chat', request)
+  return res.data
 }

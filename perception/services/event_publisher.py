@@ -181,6 +181,10 @@ class PerceptionEventPublisher:
         self.bearer_token = bearer_token
         self.timeout = timeout
         self.session = session or requests.Session()
+        # Events, status reports and config pulls target the private Agent API.
+        # Do not route local/site traffic through a developer HTTP proxy.
+        if session is None:
+            self.session.trust_env = False
 
     def _headers(self) -> Dict[str, str]:
         headers = {

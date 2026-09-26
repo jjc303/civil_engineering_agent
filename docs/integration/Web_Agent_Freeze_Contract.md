@@ -1,13 +1,33 @@
 # Web 与 Agent 接口约定冻结契约 (Web-Agent Interface Freeze Contract)
 
-> **版本**：v1.1.1 (FROZEN)  
-> **冻结日期**：2026-09-25  
+> **版本**：v1.2.1 (FROZEN)
+> **冻结日期**：2026-09-26
 > **状态**：**已冻结 (Jointly Confirmed & Frozen)** —— Web 前端与 Agent 后端以此为唯一交付、实现与联调准绳。  
 > **适用范围**：Web 前端工程、Agent 服务层 (`agent/api` / `agent/contracts`)。
 
 ---
 
 ## 0. 版本演进与变更对齐 (Change Log & Alignment)
+
+### 0.5 v1.2.1：可编辑摄像头与节点文件浏览
+1. **摄像头编辑**：已绑定摄像头可修改显示名、CV 节点、源类型和视频源；运行中的会话必须先停止，Web 会明确确认并停止会话后再保存。
+2. **节点文件选择**：文件选择弹窗通过 Agent 代理列举所选 CV 节点 `CV_ALLOWED_MEDIA_ROOTS` 内的目录与支持的视频文件；它不读取操作员浏览器所在电脑的文件系统。
+3. **源保密**：原始 RTSP/文件路径不会在编辑表单中回显。只更新显示名时可省略 `source_uri`；切换节点或源类型时必须重新选择源。
+
+### 0.4 v1.2.0 Phase 2：多节点 CV 调度与 MJPEG 预览
+1. **节点与源管理**：新增受管理员令牌保护的 CV 节点与摄像头源管理接口。RTSP 完整地址只在 Agent 加密保存，响应仅返回脱敏值。
+2. **HTTP 调度**：Agent 通过已登记节点的 Control API 启停会话；CV 节点用专属令牌心跳，节点或 Agent 重启后会恢复目标状态为 `RUNNING` 的会话。
+3. **视频预览**：CV 输出 MJPEG，Web 仅访问 Agent 的 `/api/v1/cameras/{camera_id}/preview` 代理，不直接连接 CV 节点或获得视频源地址。
+
+### 0.3 v1.1.3 联调数据真实性修复
+1. **Mock 模式互斥**：`VITE_USE_MOCK=true` 时才允许本地 fixture 响应；`VITE_USE_MOCK=false` 时所有 API 必须请求 Agent，禁止在网络、4xx 或 5xx 错误后回退到 Mock 数据。
+2. **围栏版本来源**：实时模式的 `expected_version` 只能来自成功响应的 `GET /api/v1/cameras/{camera_id}/zones`；404 才允许使用 `null` 创建首版配置。不得把 Mock 的 `config_version` 提交给真实 Agent。
+3. **失败可见性**：实时 API 请求失败必须保留原始错误并由界面提示连接或服务错误，不能渲染 Mock 内容伪装为实时数据。
+
+### 0.2 v1.1.2 增量工具：当前天气查询
+1. **聊天工具扩展**：`POST /api/v1/agent/chat` 的 `tool_trace[].tool_name` 增加 `get_current_weather`。这是对既有枚举的向后兼容扩展；前端应以未知工具名称的通用展示作为兜底。
+2. **数据来源与安全边界**：Agent 使用固定的 Open-Meteo 地理编码与天气预报端点。模型只能提交长度为 2–128 的地点名称，不能指定任意 URL、请求方法或请求参数。
+3. **失败语义不变**：天气服务不可用、超时或地点无法解析时，聊天接口返回既有 `degraded=true` 与 `TOOL_EXECUTION_FAILED`，不伪造天气数据。
 
 ### 0.1 v1.1.1 关键纠偏与联调校准
 经过前后端深度对齐，v1.1.1 对以下 8 项核心工程问题进行了彻底纠偏与定稿：
@@ -47,7 +67,7 @@
 | **危险区域标定** | 1. Canvas / SVG 危险区域多边形交互绘制<br>2. 屏幕显示像素与原始视频帧像素的双向映射反算<br>3. 遇到 404 启动首次创建模式；遇到 409 拦截版本冲突提示并重拉取 | 1. 围栏几何顶点格式校验（>=3 点）<br>2. 维护自增 `config_version`<br>3. 乐观锁检测 (409 Conflict)<br>4. 下发给 CV 运行层 | **坐标系统必须使用视频原始帧绝对像素**，禁止将前端屏幕 CSS 像素存入数据库或下发 CV |
 | **智能安全问答** | 1. 对话流气泡与 Markdown 解析<br>2. 工具调用链路 (Tool Trace) 折叠展示<br>3. 结构化证据卡片 (Evidence) 渲染与跳转 | 1. LangGraph 意图理解与工具调用<br>2. 违规与相机数据受限读取<br>3. 汇总成答案并生成结构化证据与耗时审计 | **不向前端暴露模型原始思维链 (CoT)**；前端仅展示 `answer`、`evidence` 与 `tool_trace` |
 | **媒体证据展示** | 根据 `snapshot_uri` 拼接 `/media/${snapshot_uri}` 渲染图片 | 挂载静态媒体服务路径，由 `AGENT_MEDIA_ROOT` 提供本地文件映射 | 禁止传递/依赖仅在 CV 主机本地有效的操作系统绝对物理路径 |
-| **视频流与启停** | 轮询摄像头在线状态与 FPS，展示监控矩阵卡片与推流画面 | 记录摄像头心跳与状态上报；Phase 1 监控启停由后台或测试脚本托管 | Phase 1 不将启停作为阻塞接口，Phase 2 待调度器就绪后提供 |
+| **视频流与启停** | 配置摄像头源、选择在线 CV 节点、启停会话并展示 Agent 代理的 MJPEG 预览 | 保存加密源配置、校验管理令牌并通过 HTTP 调度 CV Control 服务 | Web 禁止直连 CV、暴露 RTSP 凭证或使用本机路径 |
 
 ---
 
@@ -128,8 +148,13 @@
 | `PUT` | `/api/v1/cameras/{camera_id}/zones` | 更新摄像头危险区域与参数 | **【Agent 已就绪】** | 支持 `expected_version` 乐观并发控制 |
 | `POST` | `/api/v1/agent/chat` | 智能安全问答 (Copilot) | **【Agent 已就绪】** | 返回结论、证据卡片与工具调用链 |
 | `GET` | `/media/{snapshot_uri}` | 静态抓拍证据媒体加载 | **【Agent 已就绪】** | 由 `AGENT_MEDIA_ROOT` 托管 |
-| `POST` | `/api/v1/cameras/{id}/monitoring:start` | 启动摄像头监控 | **【Phase 2 预留】** | 本期不阻塞，推流状态以心跳为准 |
-| `POST` | `/api/v1/cameras/{id}/monitoring:stop` | 停止摄像头监控 | **【Phase 2 预留】** | 本期不阻塞，推流状态以心跳为准 |
+| `GET/POST` | `/api/v1/cv-nodes` | 查询/登记 CV 节点 | **【Agent 已就绪】** | 管理员 Bearer Token；创建响应中的节点令牌仅返回一次 |
+| `GET/POST` | `/api/v1/managed-cameras` | 查询/创建摄像头源配置 | **【Agent 已就绪】** | 源地址仅写入；读取返回脱敏值 |
+| `PUT` | `/api/v1/managed-cameras/{id}/source` | 更新摄像头显示名、源与分配节点 | **【Agent 已就绪】** | 仅停止状态可修改；管理员 Bearer Token |
+| `GET` | `/api/v1/cv-nodes/{id}/media-files` | 浏览节点允许目录的视频文件 | **【Agent 已就绪】** | 仅管理员；Web 经 Agent 代理，不直连 CV |
+| `POST` | `/api/v1/cameras/{id}/monitoring:start` | 启动摄像头监控 | **【Agent 已就绪】** | 经节点 Control API 异步启动，返回 202 |
+| `POST` | `/api/v1/cameras/{id}/monitoring:stop` | 停止摄像头监控 | **【Agent 已就绪】** | 经节点 Control API 停止 |
+| `GET` | `/api/v1/cameras/{id}/preview` | 代理 MJPEG 实时预览 | **【Agent 已就绪】** | Web 不直连 CV 节点 |
 
 ---
 
@@ -281,6 +306,7 @@
 - **配置不存在时的行为**：
   - 状态码：`404 Not Found`，响应体：`{"detail": "camera config not found"}`
   - **前端处理规范**：前端捕获 404 后进入“首次创建”模式，初始化默认模板（1920×1080，`zones: []`，默认防抖参数），首次保存时传 `expected_version: null`。
+  - 其他错误（网络失败、401/403、5xx 等）不是“未标定”，必须停止保存流程并显示错误；禁止改用 Mock 配置。
 
 #### 4.5.2 更新配置（带乐观并发控制）
 - **实现状态**：**【Agent 已就绪】**
@@ -317,7 +343,7 @@
 - **并发冲突异常 (409 Conflict)**：
   - 触发条件：`expected_version` 与服务端当前版本不一致。
   - 响应体：`{"detail": "camera cam_crane_01 config version mismatch: expected 3, found 4"}`。
-  - 前端处理原则：拦截 409，提示用户重新加载最新版本。
+  - 前端处理原则：拦截 409，提示用户重新加载最新版本；用户确认后重新 GET 成功才允许再次保存。
 
 ---
 
@@ -465,7 +491,7 @@ export interface ChatEvidence {
 }
 
 export interface ToolTraceItem {
-  tool_name: "query_violations" | "get_violation_statistics" | "get_camera_status";
+  tool_name: "query_violations" | "get_violation_statistics" | "get_camera_status" | "get_current_weather";
   success: boolean;
   purpose: string;
   duration_ms: number;
@@ -530,6 +556,13 @@ export interface ApiErrorResponse {
 VITE_USE_MOCK=true
 VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
+
+模式必须严格互斥：
+
+| `VITE_USE_MOCK` | 数据来源 | 失败处理 |
+|---|---|---|
+| `true` | 仅本地 `src/mock/fixtures.ts` | 仅模拟既定的 404/409 场景，不请求 Agent |
+| `false` | 仅 Agent HTTP 接口 | 显示真实错误；**严禁**回退 Mock、沿用 Mock 版本号或混合两类数据 |
 
 ### 7.2 Mock 桩响应数据集 (Fixtures)
 前端工程提供本地模拟服务，并预置以下典型测试数据集：

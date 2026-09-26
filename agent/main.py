@@ -14,6 +14,8 @@ from agent.services.chat_service import ChatService
 from agent.db.base import Database
 from agent.llm.factory import create_chat_model
 from agent.services.perception_service import PerceptionService
+from agent.services.camera_management import CameraManagementService
+from agent.api.camera_management import router as camera_management_router, internal_router as cv_node_internal_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -37,8 +39,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.include_router(chat_router)
     app.state.perception_service = PerceptionService(database)
+    app.state.camera_management_service = CameraManagementService(database, settings.credential_encryption_key, settings.cv_control_timeout_seconds)
     app.include_router(internal_router)
     app.state.chat_service = ChatService(database, create_chat_model(settings), settings.tool_max_calls)
     app.include_router(camera_config_router)
     app.include_router(public_router)
+    app.include_router(camera_management_router)
+    app.include_router(cv_node_internal_router)
     return app
