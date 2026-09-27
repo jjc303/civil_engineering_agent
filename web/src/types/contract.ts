@@ -103,10 +103,43 @@ export interface KnowledgeCitation {
 }
 
 export interface ToolTraceItem {
-  tool_name: "query_violations" | "get_violation_statistics" | "get_camera_status" | "get_all_camera_statuses" | "get_workforce_summary" | "get_current_weather" | "search_knowledge";
+  tool_name: "query_violations" | "get_violation_statistics" | "get_camera_status" | "get_all_camera_statuses" | "get_workforce_summary" | "get_current_weather" | "search_knowledge" | "create_rectification_task" | "update_rectification_task" | "start_monitoring" | "stop_monitoring";
   success: boolean;
   purpose: string;
   duration_ms: number;
+}
+
+export type PendingActionType = 'create_rectification_task' | 'update_rectification_task' | 'start_monitoring' | 'stop_monitoring';
+export type PendingActionStatus = 'PENDING' | 'EXECUTING' | 'EXECUTED' | 'CANCELLED' | 'EXPIRED' | 'FAILED';
+
+export interface PendingAction {
+  confirmation_id: string;
+  action_type: PendingActionType;
+  summary: string;
+  expires_at_utc: string;
+  status: PendingActionStatus;
+}
+
+export interface ActionExecutionResponse {
+  confirmation_id: string;
+  action_type: PendingActionType;
+  status: PendingActionStatus;
+  summary: string;
+  result: Record<string, any>;
+  idempotent: boolean;
+}
+
+export interface GuidedSelectionOption {
+  option_id: string;
+  label: string;
+  description: string;
+  follow_up_question?: string | null;
+}
+
+export interface GuidedSelection {
+  kind: 'RECTIFICATION_TARGET' | 'CAMERA_TARGET';
+  prompt: string;
+  options: GuidedSelectionOption[];
 }
 
 export interface ChatRequest {
@@ -120,6 +153,8 @@ export interface ChatResponse {
   evidence: ChatEvidence[];
   knowledge_citations: KnowledgeCitation[];
   tool_trace: ToolTraceItem[];
+  pending_action?: PendingAction | null;
+  guided_selection?: GuidedSelection | null;
   degraded: boolean;
   error_code?: string | null;
 }
@@ -156,4 +191,47 @@ export interface ManagedCameraResponse {
   source_uri_masked: string;
   desired_state: 'RUNNING' | 'STOPPED';
   monitor_session_id: string | null;
+}
+
+export type RectificationTaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+
+export interface RectificationTaskRecord {
+  task_id: string;
+  event_uuid: string;
+  title: string;
+  description: string | null;
+  owner: string;
+  due_at_utc: string;
+  status: RectificationTaskStatus;
+  completed_at_utc: string | null;
+  created_at_utc: string;
+  updated_at_utc: string;
+  camera_id: string;
+  violation_type: ViolationType;
+  severity: ViolationSeverity;
+  violation_status: EventStatus;
+  occurred_at_utc: string;
+  snapshot_uri: string | null;
+}
+
+export interface RectificationTaskAudit {
+  audit_id: string;
+  task_id: string;
+  action: string;
+  actor: string;
+  detail_safe_json: Record<string, unknown>;
+  created_at_utc: string;
+}
+
+export interface RectificationTaskDetail {
+  task: RectificationTaskRecord;
+  violation: ViolationRecord;
+  audits: RectificationTaskAudit[];
+}
+
+export interface RectificationTaskPageResponse {
+  items: RectificationTaskRecord[];
+  total: number;
+  limit: number;
+  offset: number;
 }

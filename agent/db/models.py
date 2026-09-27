@@ -215,3 +215,56 @@ class AssistantUiConfigAuditModel(Base):
     actor: Mapped[str] = mapped_column(String(128), nullable=False)
     detail_safe_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class RectificationTaskModel(Base):
+    __tablename__ = "rectification_tasks"
+
+    task_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    event_uuid: Mapped[str] = mapped_column(ForeignKey("violation_events.event_uuid"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    owner: Mapped[str] = mapped_column(String(128), nullable=False)
+    due_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING", index=True)
+    completed_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class RectificationTaskAuditModel(Base):
+    __tablename__ = "rectification_task_audits"
+
+    audit_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey("rectification_tasks.task_id", ondelete="CASCADE"), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    detail_safe_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AgentPendingActionModel(Base):
+    __tablename__ = "agent_pending_actions"
+
+    confirmation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    action_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    summary: Mapped[str] = mapped_column(String(512), nullable=False)
+    payload_safe_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING", index=True)
+    expires_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    executed_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result_safe_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    failure_detail_safe: Mapped[str | None] = mapped_column(String(512))
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AgentPendingActionAuditModel(Base):
+    __tablename__ = "agent_pending_action_audits"
+
+    audit_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    confirmation_id: Mapped[str] = mapped_column(ForeignKey("agent_pending_actions.confirmation_id", ondelete="CASCADE"), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    detail_safe_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

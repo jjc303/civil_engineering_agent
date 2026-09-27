@@ -21,6 +21,11 @@
           <span>违规事件中心</span>
         </router-link>
 
+        <router-link to="/rectification-tasks" class="nav-item" active-class="active">
+          <el-icon><DocumentChecked /></el-icon>
+          <span>整改任务中心</span>
+        </router-link>
+
         <router-link to="/zones" class="nav-item" active-class="active">
           <el-icon><Crop /></el-icon>
           <span>危险区域标定</span>
@@ -85,6 +90,7 @@ import {
   Crop,
   ChatDotRound,
   VideoCamera,
+  DocumentChecked,
   Timer,
 } from '@element-plus/icons-vue'
 import { isMockEnabled } from '@/api/client'

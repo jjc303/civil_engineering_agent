@@ -5,12 +5,15 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from .actions import GuidedSelection, PendingActionResponse
 from .query import ViolationQuery
 
 
 ToolName = Literal[
     "query_violations", "get_violation_statistics", "get_camera_status",
     "get_all_camera_statuses", "get_workforce_summary", "get_current_weather", "search_knowledge",
+    "create_rectification_task", "update_rectification_task", "start_monitoring", "stop_monitoring",
+    "list_rectification_targets", "list_monitoring_targets",
 ]
 
 
@@ -35,6 +38,15 @@ class ToolDecision(BaseModel):
     weather_location: str | None = Field(default=None, min_length=2, max_length=128)
     knowledge_query: str | None = Field(default=None, min_length=1, max_length=1000)
     top_k: int = Field(default=4, ge=1, le=8)
+    violation_event_uuid: str | None = Field(default=None, max_length=36)
+    task_id: str | None = Field(default=None, max_length=36)
+    task_title: str | None = Field(default=None, min_length=1, max_length=255)
+    task_description: str | None = Field(default=None, max_length=4000)
+    task_owner: str | None = Field(default=None, min_length=1, max_length=128)
+    task_due_at_utc: datetime | None = None
+    task_status: Literal["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"] | None = None
+    task_note: str | None = Field(default=None, max_length=2000)
+    selection_action: Literal["start", "stop"] | None = None
     purpose: str = Field(min_length=1, max_length=256)
 
     @model_validator(mode="after")
@@ -52,6 +64,18 @@ class ToolDecision(BaseModel):
             raise ValueError("weather_location is required for get_current_weather")
         if self.tool_name == "search_knowledge" and not self.knowledge_query:
             raise ValueError("knowledge_query is required for search_knowledge")
+        if self.tool_name == "create_rectification_task":
+            if not all((self.violation_event_uuid, self.task_title, self.task_owner, self.task_due_at_utc)):
+                raise ValueError("violation_event_uuid, task_title, task_owner and task_due_at_utc are required for create_rectification_task")
+        if self.tool_name == "update_rectification_task":
+            if not self.task_id:
+                raise ValueError("task_id is required for update_rectification_task")
+            if not any((self.task_owner, self.task_due_at_utc, self.task_status, self.task_note)):
+                raise ValueError("at least one task update is required")
+        if self.tool_name in {"start_monitoring", "stop_monitoring"} and not self.camera_id:
+            raise ValueError("camera_id is required for monitoring control")
+        if self.tool_name == "list_monitoring_targets" and self.selection_action is None:
+            raise ValueError("selection_action is required for list_monitoring_targets")
         return self
 
 
@@ -83,6 +107,8 @@ class ChatResponse(BaseModel):
     evidence: list[Evidence] = Field(default_factory=list)
     knowledge_citations: list[KnowledgeCitation] = Field(default_factory=list)
     tool_trace: list[ToolTraceItem] = Field(default_factory=list)
+    pending_action: PendingActionResponse | None = None
+    guided_selection: GuidedSelection | None = None
     degraded: bool = False
     error_code: str | None = None
 

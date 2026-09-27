@@ -75,6 +75,9 @@ if curl --noproxy '*' --silent --fail "$AGENT_URL/docs" >/dev/null 2>&1; then
     exit 1
 fi
 
+echo "Applying database migrations"
+alembic upgrade head >"$log_dir/alembic.log" 2>&1
+
 echo "Starting Agent API on $AGENT_URL"
 python3 -m uvicorn agent.main:create_app --factory --host "$AGENT_BIND_HOST" --port "$AGENT_PORT" \
     >"$log_dir/agent.log" 2>&1 &

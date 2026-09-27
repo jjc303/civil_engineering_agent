@@ -9,15 +9,17 @@ from agent.llm.protocol import ChatModelPort
 from agent.repositories.violations import ViolationRepository
 from agent.services.conversation_memory import ConversationMemory
 from agent.services.knowledge_service import KnowledgeService
+from agent.services.agent_write_actions import AgentWriteActionService
 
 
 class ChatService:
-    def __init__(self, database: Database, model: ChatModelPort, max_tool_calls: int = 2, memory_enabled: bool = True, memory_ttl_hours: int = 24, memory_recent_turns: int = 6, knowledge_service: KnowledgeService | None = None):
+    def __init__(self, database: Database, model: ChatModelPort, max_tool_calls: int = 2, memory_enabled: bool = True, memory_ttl_hours: int = 24, memory_recent_turns: int = 6, knowledge_service: KnowledgeService | None = None, write_action_service: AgentWriteActionService | None = None):
         self.database = database
         self.model = model
         self.max_tool_calls = max_tool_calls
         self.memory_enabled, self.memory_ttl_hours, self.memory_recent_turns = memory_enabled, memory_ttl_hours, memory_recent_turns
         self.knowledge_service = knowledge_service
+        self.write_action_service = write_action_service
 
     def answer(self, request: ChatRequest) -> ChatResponse:
         request_id = str(uuid4())
@@ -26,7 +28,7 @@ class ChatService:
             if self.memory_enabled:
                 memory.cleanup_expired()
             context = memory.load_context(request.conversation_id) if self.memory_enabled else ""
-            graph = build_chat_graph(ViolationRepository(session), self.model, self.max_tool_calls, self.knowledge_service)
+            graph = build_chat_graph(ViolationRepository(session), self.model, self.max_tool_calls, self.knowledge_service, self.write_action_service)
             output = graph.invoke({
                 "request_id": request_id,
                 "question": request.question,
@@ -50,6 +52,8 @@ class ChatService:
             evidence=output.get("evidence", []),
             knowledge_citations=output.get("knowledge_citations", []),
             tool_trace=output.get("tool_trace", []),
+            pending_action=output.get("pending_action"),
+            guided_selection=output.get("guided_selection"),
             degraded=output.get("degraded", False),
             error_code=output.get("error_code"),
         )

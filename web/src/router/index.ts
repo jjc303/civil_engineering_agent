@@ -20,6 +20,12 @@ const router = createRouter({
       meta: { title: '违规事件中心' },
     },
     {
+      path: '/rectification-tasks',
+      name: 'RectificationTasks',
+      component: () => import('@/views/RectificationTasks.vue'),
+      meta: { title: '整改任务中心' },
+    },
+    {
       path: '/zones',
       name: 'ZoneEditor',
       component: () => import('@/views/ZoneEditor.vue'),

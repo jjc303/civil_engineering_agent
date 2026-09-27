@@ -24,6 +24,9 @@ from agent.api.knowledge import router as knowledge_router
 from agent.api.ui_config import admin_router as ui_config_admin_router, public_router as ui_config_public_router
 from agent.rag.chroma_adapter import ChromaKnowledgeRetriever
 from agent.services.knowledge_service import KnowledgeService
+from agent.services.agent_write_actions import AgentWriteActionService
+from agent.services.rectification_task_service import RectificationTaskService
+from agent.api.rectification_tasks import router as rectification_task_router
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +87,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         settings.rag_embedding_dimensions,
     ) if settings.rag_enabled else None
     app.state.knowledge_service = KnowledgeService(database, retriever, settings.rag_document_directory, settings.rag_inbox_directory, settings.rag_max_upload_bytes, settings.rag_allowed_extensions, settings.rag_chunk_size, settings.rag_chunk_overlap, settings.rag_top_k_max)
-    app.state.chat_service = ChatService(database, create_chat_model(settings), settings.tool_max_calls, settings.memory_enabled, settings.memory_ttl_hours, settings.memory_recent_turns, app.state.knowledge_service if retriever else None)
+    app.state.agent_write_action_service = AgentWriteActionService(database, app.state.camera_management_service)
+    app.state.rectification_task_service = RectificationTaskService(database, app.state.agent_write_action_service)
+    app.state.chat_service = ChatService(database, create_chat_model(settings), settings.tool_max_calls, settings.memory_enabled, settings.memory_ttl_hours, settings.memory_recent_turns, app.state.knowledge_service if retriever else None, app.state.agent_write_action_service)
     app.include_router(camera_config_router)
     app.include_router(public_router)
     app.include_router(camera_management_router)
@@ -92,5 +97,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(knowledge_router)
     app.include_router(ui_config_public_router)
     app.include_router(ui_config_admin_router)
+    app.include_router(rectification_task_router)
 
     return app

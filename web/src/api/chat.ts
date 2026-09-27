@@ -1,5 +1,5 @@
 import { apiClient, isMockEnabled } from './client'
-import type { ChatRequest, ChatResponse } from '@/types/contract'
+import type { ActionExecutionResponse, ChatRequest, ChatResponse } from '@/types/contract'
 import { mockChatResponse } from '@/mock/fixtures'
 
 export async function sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
@@ -13,5 +13,15 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
     }
   }
   const res = await apiClient.post<ChatResponse>('/api/v1/agent/chat', request)
+  return res.data
+}
+
+export async function confirmPendingAction(confirmationId: string, conversationId: string): Promise<ActionExecutionResponse> {
+  const res = await apiClient.post<ActionExecutionResponse>(`/api/v1/agent/actions/${confirmationId}/confirm`, { conversation_id: conversationId })
+  return res.data
+}
+
+export async function cancelPendingAction(confirmationId: string, conversationId: string): Promise<ActionExecutionResponse> {
+  const res = await apiClient.post<ActionExecutionResponse>(`/api/v1/agent/actions/${confirmationId}/cancel`, { conversation_id: conversationId })
   return res.data
 }

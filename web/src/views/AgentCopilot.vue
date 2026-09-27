@@ -56,7 +56,15 @@
                     class="evidence-card"
                     @click="viewEvidence(ev)"
                   >
-                    <img :src="resolveMediaUrl(ev.snapshot_uri)" class="thumb-img" alt="证据快照" />
+                    <el-image
+                      :src="resolveMediaUrl(ev.snapshot_uri)"
+                      :preview-src-list="[resolveMediaUrl(ev.snapshot_uri)]"
+                      preview-teleported
+                      fit="cover"
+                      class="thumb-img"
+                      alt="证据快照，点击预览"
+                      @click.stop
+                    />
                     <div class="evidence-info">
                       <span class="ev-time">{{ formatTime(ev.occurred_at_utc) }}</span>
                       <span class="ev-uuid font-mono">{{ ev.event_uuid.substring(0, 8) }}...</span>
@@ -71,6 +79,35 @@
                   <span>{{ citation.title }}（v{{ citation.version_no }}，{{ citation.page_or_section }}）</span>
                   <el-tag size="small" type="info">相关度 {{ citation.relevance_score.toFixed(2) }}</el-tag>
                 </div>
+              </div>
+
+              <div v-if="msg.guidedSelection" class="guided-selection">
+                <div class="guided-selection-title">请选择操作目标</div>
+                <div class="guided-selection-prompt">{{ msg.guidedSelection.prompt }}</div>
+                <div v-if="msg.guidedSelection.options.length" class="guided-selection-options">
+                  <el-button
+                    v-for="option in msg.guidedSelection.options"
+                    :key="option.option_id"
+                    plain
+                    @click="selectGuidedTarget(msg, option)"
+                  >
+                    <span>{{ option.label }}</span><small>{{ option.description }}</small>
+                  </el-button>
+                </div>
+              </div>
+
+              <div v-if="msg.pendingAction" class="pending-action">
+                <div class="pending-action-title">待确认写操作</div>
+                <div class="pending-action-summary">{{ msg.pendingAction.summary }}</div>
+                <div class="pending-action-meta">
+                  <el-tag :type="actionTagType(msg.pendingAction.status)" size="small">{{ actionStatusText(msg.pendingAction.status) }}</el-tag>
+                  <span v-if="msg.pendingAction.status === 'PENDING'">有效期至 {{ formatDateTime(msg.pendingAction.expires_at_utc) }}</span>
+                </div>
+                <div v-if="msg.pendingAction.status === 'PENDING'" class="pending-action-buttons">
+                  <el-button size="small" type="primary" :loading="msg.actionBusy" @click="confirmAction(msg)">确认执行</el-button>
+                  <el-button size="small" :disabled="msg.actionBusy" @click="cancelAction(msg)">取消</el-button>
+                </div>
+                <div v-if="msg.actionResult" class="pending-action-result">{{ msg.actionResult }}</div>
               </div>
 
               <!-- 智能体执行链路 (Tool Trace) -->
@@ -154,11 +191,36 @@
 
     <!-- 证据弹窗 -->
     <EvidenceModal v-model="modalVisible" :record="selectedViolation" />
+
+    <el-dialog v-model="rectificationDialogVisible" title="创建整改任务" width="520px" destroy-on-close>
+      <el-form label-position="top">
+        <el-form-item label="已选违规">
+          <el-input :model-value="selectedRectificationTarget?.label || ''" disabled />
+        </el-form-item>
+        <el-form-item label="整改要求" required>
+          <el-input v-model="rectificationForm.title" placeholder="例如：立即补发并佩戴安全帽" />
+        </el-form-item>
+        <el-form-item label="负责人" required>
+          <el-input v-model="rectificationForm.owner" placeholder="例如：张三" />
+        </el-form-item>
+        <el-form-item label="截止时间" required>
+          <el-date-picker v-model="rectificationForm.dueAt" type="datetime" placeholder="选择截止时间" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="补充说明">
+          <el-input v-model="rectificationForm.description" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="rectificationDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitRectification">生成待确认操作</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, nextTick, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   UserFilled,
   Service,
@@ -169,10 +231,10 @@ import {
   Cpu,
 } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
-import { sendChatMessage } from '@/api/chat'
+import { cancelPendingAction, confirmPendingAction, sendChatMessage } from '@/api/chat'
 import { fetchAssistantUiConfig } from '@/api/uiConfig'
 import { resolveMediaUrl } from '@/api/client'
-import type { AssistantUiConfig, ChatEvidence, ToolTraceItem, ViolationRecord } from '@/types/contract'
+import type { AssistantUiConfig, ChatEvidence, GuidedSelection, GuidedSelectionOption, PendingAction, PendingActionStatus, ToolTraceItem, ViolationRecord } from '@/types/contract'
 import EvidenceModal from '@/components/EvidenceModal.vue'
 
 interface ChatMessage {
@@ -182,6 +244,10 @@ interface ChatMessage {
   knowledgeCitations?: import('@/types/contract').KnowledgeCitation[]
   toolTrace?: ToolTraceItem[]
   degraded?: boolean
+  pendingAction?: PendingAction
+  guidedSelection?: GuidedSelection
+  actionBusy?: boolean
+  actionResult?: string
 }
 
 const md = new MarkdownIt({
@@ -196,6 +262,9 @@ const thinking = ref(false)
 
 const modalVisible = ref(false)
 const selectedViolation = ref<ViolationRecord | null>(null)
+const rectificationDialogVisible = ref(false)
+const selectedRectificationTarget = ref<GuidedSelectionOption | null>(null)
+const rectificationForm = reactive({ title: '', owner: '', dueAt: null as Date | null, description: '' })
 
 const uiConfig = ref<AssistantUiConfig | null>(null)
 const quickQuestions = ref<string[]>([])
@@ -236,6 +305,8 @@ async function handleSend() {
       knowledgeCitations: res.knowledge_citations,
       toolTrace: res.tool_trace,
       degraded: res.degraded,
+      pendingAction: res.pending_action || undefined,
+      guidedSelection: res.guided_selection || undefined,
     })
     saveMessages()
   } catch (err: any) {
@@ -249,6 +320,84 @@ async function handleSend() {
     thinking.value = false
     scrollToBottom()
   }
+}
+
+function selectGuidedTarget(msg: ChatMessage, option: GuidedSelectionOption) {
+  if (msg.guidedSelection?.kind === 'CAMERA_TARGET' && option.follow_up_question) {
+    inputQuestion.value = option.follow_up_question
+    handleSend()
+    return
+  }
+  selectedRectificationTarget.value = option
+  rectificationForm.title = ''
+  rectificationForm.owner = ''
+  rectificationForm.dueAt = null
+  rectificationForm.description = ''
+  rectificationDialogVisible.value = true
+}
+
+function submitRectification() {
+  const target = selectedRectificationTarget.value
+  if (!target || !rectificationForm.title.trim() || !rectificationForm.owner.trim() || !rectificationForm.dueAt) {
+    ElMessage.warning('请填写整改要求、负责人和截止时间')
+    return
+  }
+  const description = rectificationForm.description.trim() ? `，补充说明：${rectificationForm.description.trim()}` : ''
+  inputQuestion.value = `创建整改任务：关联违规 ${target.option_id}，整改内容为 ${rectificationForm.title.trim()}，负责人 ${rectificationForm.owner.trim()}，截止 ${rectificationForm.dueAt.toISOString()}${description}`
+  rectificationDialogVisible.value = false
+  handleSend()
+}
+
+async function confirmAction(msg: ChatMessage) {
+  if (!msg.pendingAction || msg.actionBusy) return
+  try {
+    await ElMessageBox.confirm(`将执行：${msg.pendingAction.summary}`, '确认执行写操作', {
+      confirmButtonText: '确认执行', cancelButtonText: '返回', type: 'warning',
+    })
+  } catch {
+    return
+  }
+  msg.actionBusy = true
+  try {
+    const result = await confirmPendingAction(msg.pendingAction.confirmation_id, getConversationId())
+    msg.pendingAction.status = result.status
+    msg.actionResult = actionResultText(result)
+    ElMessage.success('操作已执行')
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail || err?.message || '操作未完成')
+  } finally {
+    msg.actionBusy = false
+    saveMessages()
+  }
+}
+
+async function cancelAction(msg: ChatMessage) {
+  if (!msg.pendingAction || msg.actionBusy) return
+  msg.actionBusy = true
+  try {
+    const result = await cancelPendingAction(msg.pendingAction.confirmation_id, getConversationId())
+    msg.pendingAction.status = result.status
+    msg.actionResult = '已取消，未执行任何写操作。'
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail || err?.message || '取消失败')
+  } finally {
+    msg.actionBusy = false
+    saveMessages()
+  }
+}
+
+function actionResultText(result: import('@/types/contract').ActionExecutionResponse): string {
+  if (result.result.task_id) return `已执行：整改任务 ${result.result.task_id}，当前状态 ${result.result.status || '-'}。`
+  if (result.result.camera_id) return `已执行：摄像头 ${result.result.camera_id} 当前为 ${result.result.desired_state || '-'}。`
+  return result.idempotent ? '该操作此前已执行。' : '操作已执行。'
+}
+
+function actionStatusText(status: PendingActionStatus): string {
+  return ({ PENDING: '等待确认', EXECUTING: '执行中', EXECUTED: '已执行', CANCELLED: '已取消', EXPIRED: '已过期', FAILED: '执行失败' } as Record<PendingActionStatus, string>)[status]
+}
+
+function actionTagType(status: PendingActionStatus): 'primary' | 'success' | 'warning' | 'info' | 'danger' {
+  return ({ PENDING: 'warning', EXECUTING: 'primary', EXECUTED: 'success', CANCELLED: 'info', EXPIRED: 'info', FAILED: 'danger' } as Record<PendingActionStatus, 'primary' | 'success' | 'warning' | 'info' | 'danger'>)[status]
 }
 
 function getConversationId(): string {
@@ -278,13 +427,34 @@ function restoreMessages() {
 }
 
 function viewEvidence(ev: ChatEvidence) {
-  selectedViolation.value = ev as unknown as ViolationRecord
+  selectedViolation.value = {
+    event_uuid: ev.event_uuid,
+    camera_id: '证据快照',
+    monitor_session_id: '-',
+    track_id: 0,
+    violation_type: 'NO_HELMET',
+    severity: 'INFO',
+    status: 'ACTIVE',
+    zone_id: null,
+    zone_name: null,
+    occurred_at_utc: ev.occurred_at_utc,
+    resolved_at_utc: null,
+    duration_seconds: 0,
+    snapshot_uri: ev.snapshot_uri,
+    model_name: null,
+    model_version: null,
+    extra_details: {},
+  }
   modalVisible.value = true
 }
 
 function formatTime(utcStr: string): string {
   if (!utcStr) return '-'
   return new Date(utcStr).toLocaleTimeString()
+}
+
+function formatDateTime(utcStr: string): string {
+  return new Date(utcStr).toLocaleString()
 }
 
 function scrollToBottom() {
@@ -447,6 +617,7 @@ onMounted(() => {
   border-radius: 4px;
   background: #0f172a;
 }
+.thumb-img :deep(img) { width: 100%; height: 100%; }
 .evidence-info {
   display: flex;
   flex-direction: column;
@@ -461,6 +632,30 @@ onMounted(() => {
 .trace-section {
   margin-top: 12px;
 }
+.pending-action {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  background: #fffbeb;
+}
+.pending-action-title { font-weight: 600; color: #92400e; }
+.pending-action-summary { margin-top: 4px; color: #334155; }
+.pending-action-meta { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: #64748b; }
+.pending-action-buttons { display: flex; gap: 8px; margin-top: 10px; }
+.pending-action-result { margin-top: 8px; font-size: 12px; color: #475569; }
+.guided-selection {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #93c5fd;
+  border-radius: 6px;
+  background: #eff6ff;
+}
+.guided-selection-title { font-weight: 600; color: #1d4ed8; }
+.guided-selection-prompt { margin-top: 4px; color: #334155; }
+.guided-selection-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.guided-selection-options :deep(.el-button) { height: auto; min-height: 34px; text-align: left; display: flex; flex-direction: column; align-items: flex-start; }
+.guided-selection-options small { color: #64748b; font-size: 11px; }
 .trace-title {
   display: flex;
   align-items: center;

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from collections.abc import Sequence
 from typing import Any
 
@@ -26,6 +27,35 @@ class FakeChatModel(ChatModelPort):
                     purpose="补充最近的违规事件作为统计依据",
                 )
             return None
+        if any(token in question for token in ("启动监控", "开启监控", "开始监控")):
+            return ToolDecision(tool_name="start_monitoring", camera_id=camera_id, purpose="生成摄像头监控启动的待确认操作") if camera_id else None
+        if any(token in question for token in ("停止监控", "关闭监控", "结束监控")):
+            return ToolDecision(tool_name="stop_monitoring", camera_id=camera_id, purpose="生成摄像头监控停止的待确认操作") if camera_id else None
+        if any(token in question for token in ("创建整改", "新建整改", "派发整改")):
+            event_uuid = self._uuid(question)
+            due_at = self._due_at(question)
+            owner = self._owner(question)
+            title = self._task_title(question)
+            if event_uuid and due_at and owner and title:
+                return ToolDecision(
+                    tool_name="create_rectification_task", violation_event_uuid=event_uuid, task_title=title,
+                    task_owner=owner, task_due_at_utc=due_at, purpose="生成违规整改任务的待确认操作",
+                )
+            return None
+        if any(token in question for token in ("完成整改任务", "更新整改任务", "修改整改任务")):
+            task_id = self._uuid(question)
+            if not task_id:
+                return None
+            status = "COMPLETED" if "完成" in question else None
+            owner = self._owner(question)
+            note_match = re.search(r"备注[：:]?([^，。；;]+)", question)
+            if not any((status, owner, note_match)):
+                return None
+            return ToolDecision(
+                tool_name="update_rectification_task", task_id=task_id, task_status=status,
+                task_owner=owner, task_note=note_match.group(1).strip() if note_match else None,
+                purpose="生成整改任务更新的待确认操作",
+            )
         if any(token in normalized for token in ("天气", "气温", "温度", "降雨", "下雨", "风速")):
             location = extract_weather_location(question)
             if location:
@@ -102,6 +132,34 @@ class FakeChatModel(ChatModelPort):
     @staticmethod
     def _asks_for_latest(normalized: str) -> bool:
         return any(token in normalized for token in ("最近", "最新", "last", "latest"))
+
+    @staticmethod
+    def _uuid(question: str) -> str | None:
+        match = re.search(r"\b[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\b", question)
+        return match.group(0) if match else None
+
+    @staticmethod
+    def _due_at(question: str) -> datetime | None:
+        match = re.search(r"\b(20\d{2}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?)?)\b", question)
+        if not match:
+            return None
+        value = match.group(1).replace(" ", "T")
+        if len(value) == 10:
+            value += "T18:00:00+00:00"
+        elif value.endswith("Z"):
+            value = value[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(value)
+        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+
+    @staticmethod
+    def _owner(question: str) -> str | None:
+        match = re.search(r"负责人(?:为|是|：|:)?\s*([^，。；;\s]{2,32})", question)
+        return match.group(1).strip() if match else None
+
+    @staticmethod
+    def _task_title(question: str) -> str | None:
+        match = re.search(r"(?:创建|新建|派发)整改(?:任务)?[：:]?\s*([^，。；;]{2,120})", question)
+        return match.group(1).strip() if match else None
 
     @staticmethod
     def _query(camera_id: str | None, normalized: str) -> ViolationQuery:
