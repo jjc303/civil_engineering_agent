@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -16,18 +17,100 @@ from agent.db.base import Database
 from agent.db.models import KnowledgeAuditModel, KnowledgeDocumentModel, KnowledgeDocumentVersionModel, KnowledgeIndexJobModel
 from agent.rag.chroma_adapter import ChromaKnowledgeRetriever
 
+logger = logging.getLogger(__name__)
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
 class KnowledgeService:
-    def __init__(self, database: Database, retriever: ChromaKnowledgeRetriever | None, document_directory: str, max_upload_bytes: int, allowed_extensions: str, chunk_size: int, chunk_overlap: int, top_k_max: int) -> None:
+    def __init__(self, database: Database, retriever: ChromaKnowledgeRetriever | None, document_directory: str, inbox_directory: str, max_upload_bytes: int, allowed_extensions: str, chunk_size: int, chunk_overlap: int, top_k_max: int) -> None:
         self.database, self.retriever = database, retriever
         self.root = Path(document_directory)
+        self.inbox = Path(inbox_directory)
         self.max_upload_bytes = max_upload_bytes
         self.allowed = {value.strip().lower() for value in allowed_extensions.split(",")}
         self.chunk_size, self.chunk_overlap, self.top_k_max = chunk_size, chunk_overlap, top_k_max
+        # A failed external embedding request should be retried after a process
+        # restart, but never hammered once per inbox polling interval.
+        self._failed_retry_attempted: set[str] = set()
+
+    def sync_inbox(self) -> dict[str, int]:
+        """Index new files and repair a missing or failed local vector index."""
+        if not self.retriever:
+            raise RuntimeError("RAG is disabled")
+        self.inbox.mkdir(parents=True, exist_ok=True)
+        imported = recovered = retried = skipped = failed = 0
+
+        # Chroma is a rebuildable cache. A cleared persistence directory must not
+        # leave MySQL ACTIVE versions appearing searchable when no vectors exist.
+        if self.retriever.count() == 0:
+            with self.database.session() as session:
+                active_version_ids = list(session.scalars(select(KnowledgeDocumentVersionModel.document_version_id).where(KnowledgeDocumentVersionModel.status == "ACTIVE")))
+            for version_id in active_version_ids:
+                try:
+                    job = self.reindex(version_id, "recovery")
+                    if job.status == "SUCCEEDED":
+                        recovered += 1
+                    else:
+                        failed += 1
+                except Exception:
+                    failed += 1
+                    logger.exception("Failed to restore missing Chroma index for version: %s", version_id)
+
+        inbox_root = self.inbox.resolve()
+        for path in sorted(self.inbox.rglob("*")):
+            if not path.is_file() or path.is_symlink() or path.suffix.lower() not in self.allowed:
+                continue
+            try:
+                resolved = path.resolve()
+                relative = resolved.relative_to(inbox_root)
+                content = path.read_bytes()
+                if not content or len(content) > self.max_upload_bytes:
+                    raise ValueError("unsupported or oversized knowledge document")
+                checksum = hashlib.sha256(content).hexdigest()
+                source_label = f"inbox/{relative.as_posix()}"[:512]
+                with self.database.session() as session:
+                    existing_version = session.scalar(select(KnowledgeDocumentVersionModel).where(KnowledgeDocumentVersionModel.checksum_sha256 == checksum))
+                    existing = session.scalar(select(KnowledgeDocumentModel).where(KnowledgeDocumentModel.source_label == source_label))
+                    document_id = existing.document_id if existing else None
+                    current_version = existing.current_version if existing else None
+                if existing_version:
+                    if existing_version.status == "ACTIVE":
+                        skipped += 1
+                        continue
+                    if existing_version.document_version_id in self._failed_retry_attempted:
+                        skipped += 1
+                        continue
+                    # The managed original is intentionally separate from the
+                    # inbox. If it was removed along with a Chroma reset, restore
+                    # it only after the inbox content matched the stored checksum.
+                    managed_path = self.root / existing_version.storage_key
+                    if not managed_path.is_file():
+                        managed_path.parent.mkdir(parents=True, exist_ok=True)
+                        managed_path.write_bytes(content)
+                    job = self.reindex(existing_version.document_version_id, "inbox")
+                    self._failed_retry_attempted.add(existing_version.document_version_id)
+                    if job.status == "SUCCEEDED":
+                        retried += 1
+                    else:
+                        failed += 1
+                    continue
+                self.upload(
+                    filename=path.name,
+                    content=content,
+                    title=path.stem[:255] or path.name[:255],
+                    source_label=source_label,
+                    actor="inbox",
+                    document_id=document_id,
+                    expected_current_version=current_version,
+                )
+                imported += 1
+            except Exception:
+                failed += 1
+                logger.exception("Failed to import knowledge inbox file: %s", path)
+        return {"imported": imported, "recovered": recovered, "retried": retried, "skipped": skipped, "failed": failed}
 
     def upload(self, *, filename: str, content: bytes, title: str, source_label: str, actor: str, document_id: str | None = None, expected_current_version: int | None = None) -> tuple[KnowledgeDocumentDetailResponse, KnowledgeIndexJobResponse, bool]:
         suffix = Path(filename).suffix.lower()

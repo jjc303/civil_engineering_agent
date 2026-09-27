@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.security import HTTPAuthorizationCredentials
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
-from agent.api.camera_management import require_admin
 from agent.contracts.knowledge import KnowledgeDocumentDetailResponse, KnowledgeDocumentPage, KnowledgeIndexJobPage, KnowledgeIndexJobResponse
 from agent.services.knowledge_service import KnowledgeService
 
-router = APIRouter(prefix="/api/v1/knowledge", tags=["knowledge"], dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/api/v1/knowledge", tags=["knowledge"])
 
 
 def _service(request: Request) -> KnowledgeService:

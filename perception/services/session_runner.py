@@ -37,6 +37,25 @@ from perception.services.event_publisher import PerceptionEventPublisher
 logger = logging.getLogger("perception.session_runner")
 
 
+def _clamped_box(box: Any, width: int, height: int) -> tuple[int, int, int, int]:
+    """Convert a model box to a drawable rectangle inside a frame."""
+    x1 = max(0, min(width - 1, round(float(box.x1))))
+    y1 = max(0, min(height - 1, round(float(box.y1))))
+    x2 = max(x1 + 1, min(width - 1, round(float(box.x2))))
+    y2 = max(y1 + 1, min(height - 1, round(float(box.y2))))
+    return x1, y1, x2, y2
+
+
+def _draw_label(frame: np.ndarray, text: str, origin: tuple[int, int], color: tuple[int, int, int]) -> None:
+    """Draw a high-contrast ASCII label while keeping it inside the preview frame."""
+    font, scale, thickness = cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1
+    (text_width, text_height), baseline = cv2.getTextSize(text, font, scale, thickness)
+    x = max(0, min(frame.shape[1] - text_width - 4, int(origin[0])))
+    y = max(text_height + baseline + 4, min(frame.shape[0] - 3, int(origin[1])))
+    cv2.rectangle(frame, (x, y - text_height - baseline - 3), (x + text_width + 4, y + 3), color, -1)
+    cv2.putText(frame, text, (x + 2, y), font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
+
+
 class CameraSessionRunner:
     """
     Headless video perception session runner for a single camera stream.
@@ -155,9 +174,80 @@ class CameraSessionRunner:
         }
 
     def latest_preview_jpeg(self) -> bytes | None:
-        """Return a thread-safe copy of the latest decoded frame for HTTP preview."""
+        """Return the latest annotated frame for the HTTP MJPEG preview."""
         with self._preview_lock:
             return self._preview_jpeg
+
+    def _render_preview_frame(self, frame: np.ndarray, result: PipelineFrameResult) -> np.ndarray:
+        """Draw live safety context without modifying the frame used by the pipeline."""
+        preview = frame.copy()
+        if preview.ndim == 2:
+            preview = cv2.cvtColor(preview, cv2.COLOR_GRAY2BGR)
+
+        people = list(getattr(result, "tracked_persons", []))
+        active_violations = list(getattr(result, "active_violations", []))
+        zones = list(getattr(self.pipeline, "danger_zones", self.initial_danger_zones))
+
+        # Draw configured exclusion zones first, so people and labels remain clear.
+        zone_overlay = preview.copy()
+        for index, zone in enumerate(zones, start=1):
+            if len(zone.polygon) < 3:
+                continue
+            points = np.asarray(zone.polygon, dtype=np.int32).reshape((-1, 1, 2))
+            occupied = any(person.is_in_danger_zone and person.danger_zone_name == zone.name for person in people)
+            color = (0, 0, 255) if occupied else (0, 180, 255)
+            cv2.fillPoly(zone_overlay, [points], color)
+            cv2.polylines(preview, [points], True, color, 2, cv2.LINE_AA)
+            _draw_label(preview, f"DANGER ZONE {index}", tuple(points[0, 0]), color)
+        if zones:
+            cv2.addWeighted(zone_overlay, 0.16, preview, 0.84, 0, preview)
+
+        intrusion_count = dwell_alert_count = 0
+        for person in people:
+            x1, y1, x2, y2 = _clamped_box(person.bbox, preview.shape[1], preview.shape[0])
+            is_intrusion = bool(person.is_in_danger_zone)
+            is_dwell_alert = any(
+                violation.track_id == person.track_id
+                and violation.violation_type == ViolationType.DANGER_ZONE_INTRUSION
+                and violation.severity == ViolationSeverity.CRITICAL
+                and violation.status == "ACTIVE"
+                for violation in active_violations
+            )
+            if is_dwell_alert:
+                color = (0, 0, 255)
+                dwell_alert_count += 1
+            elif is_intrusion or not person.has_helmet:
+                color = (0, 165, 255)
+            else:
+                color = (0, 200, 0)
+            cv2.rectangle(preview, (x1, y1), (x2, y2), color, 2, cv2.LINE_AA)
+
+            if person.helmet_box is not None:
+                hx1, hy1, hx2, hy2 = _clamped_box(person.helmet_box, preview.shape[1], preview.shape[0])
+                cv2.rectangle(preview, (hx1, hy1), (hx2, hy2), (255, 220, 0), 2, cv2.LINE_AA)
+            elif person.head_box is not None:
+                hx1, hy1, hx2, hy2 = _clamped_box(person.head_box, preview.shape[1], preview.shape[0])
+                cv2.rectangle(preview, (hx1, hy1), (hx2, hy2), (0, 0, 255), 2, cv2.LINE_AA)
+
+            helmet_text = "HELMET" if person.has_helmet else "NO HELMET"
+            label = f"ID {person.track_id} | {helmet_text}"
+            if is_intrusion:
+                intrusion_count += 1
+                label += " | INTRUSION"
+            if is_dwell_alert:
+                label += f" | DWELL {person.dwell_time_seconds:.1f}s"
+            _draw_label(preview, label, (x1, y1 - 6), color)
+
+        # A compact banner remains visible even when a person's box leaves frame.
+        active_no_helmet = sum(
+            violation.violation_type == ViolationType.NO_HELMET and violation.status == "ACTIVE"
+            for violation in active_violations
+        )
+        if active_no_helmet or intrusion_count or dwell_alert_count:
+            banner = f"ACTIVE ALERTS  NO HELMET:{active_no_helmet}  INTRUSION:{intrusion_count}  CRITICAL:{dwell_alert_count}"
+            cv2.rectangle(preview, (0, 0), (min(preview.shape[1], max(440, len(banner) * 9)), 30), (0, 0, 180), -1)
+            cv2.putText(preview, banner, (8, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+        return preview
 
     def _fetch_or_fallback_zones(self) -> List[DangerZone]:
         """
@@ -331,7 +421,8 @@ class CameraSessionRunner:
                 # Process perception frame
                 result = self.pipeline.process_frame(frame, timestamp=ts)
                 self.last_frame_result = result
-                ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                preview_frame = self._render_preview_frame(frame, result)
+                ok, encoded = cv2.imencode(".jpg", preview_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
                 if ok:
                     with self._preview_lock:
                         self._preview_jpeg = encoded.tobytes()

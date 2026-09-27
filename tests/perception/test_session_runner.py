@@ -26,12 +26,14 @@ from perception.schemas.contract_v1 import (
 from perception.schemas.detection import (
     BoundingBox,
     DetectionResult,
+    TrackedPerson,
     ViolationEvent,
     ViolationType,
     ViolationSeverity,
 )
 from perception.detectors.base import BaseDetector
 from perception.geometry.danger_zone import DangerZone
+from perception.tracking.safety_pipeline import PipelineFrameResult
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
 
@@ -54,6 +56,43 @@ class MockReplayDetector(BaseDetector):
             boxes=self.boxes,
             inference_time_ms=5.0,
         )
+
+
+def test_mjpeg_preview_renders_zones_people_helmet_status_and_alerts() -> None:
+    runner = CameraSessionRunner(camera_id="cam_preview_01", source="0", detector=MockReplayDetector())
+    zone = DangerZone(name="Crane Zone", polygon=[(10, 10), (310, 10), (310, 220), (10, 220)])
+    runner.pipeline = SimpleNamespace(danger_zones=[zone])
+    person_box = BoundingBox(x1=100, y1=70, x2=180, y2=210, conf=0.9, class_id=0, class_name="person")
+    head_box = BoundingBox(x1=118, y1=72, x2=158, y2=108, conf=0.8, class_id=1, class_name="head")
+    person = TrackedPerson(
+        track_id=7,
+        bbox=person_box,
+        feet_point=person_box.feet_point,
+        has_helmet=False,
+        head_box=head_box,
+        is_in_danger_zone=True,
+        danger_zone_name="Crane Zone",
+        dwell_time_seconds=6.2,
+    )
+    active = ViolationEvent(
+        event_uuid="preview-alert",
+        track_id=7,
+        camera_id="cam_preview_01",
+        violation_type=ViolationType.DANGER_ZONE_INTRUSION,
+        severity=ViolationSeverity.CRITICAL,
+        zone_name="Crane Zone",
+        status="ACTIVE",
+    )
+    result = PipelineFrameResult(frame_id=1, timestamp=1.0, tracked_persons=[person], active_violations=[active])
+    raw = np.zeros((240, 320, 3), dtype=np.uint8)
+
+    preview = runner._render_preview_frame(raw, result)
+
+    assert preview.shape == raw.shape
+    assert not np.any(raw)  # Rendering must not alter the pipeline's source frame.
+    assert np.any(preview)
+    assert tuple(preview[70, 100]) != (0, 0, 0)  # Person box.
+    assert tuple(preview[10, 10]) != (0, 0, 0)  # Danger-zone outline.
 
 
 def test_file_source_uses_monotonic_timestamps_for_time_anchor():

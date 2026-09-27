@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager, suppress
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -21,6 +25,8 @@ from agent.api.ui_config import admin_router as ui_config_admin_router, public_r
 from agent.rag.chroma_adapter import ChromaKnowledgeRetriever
 from agent.services.knowledge_service import KnowledgeService
 
+logger = logging.getLogger(__name__)
+
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
@@ -29,7 +35,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings.auto_create_schema:
         database.create_schema()
 
-    app = FastAPI(title="Civil Engineering Safety Agent", version="0.1.0")
+    async def sync_knowledge_inbox_periodically(app: FastAPI) -> None:
+        while True:
+            try:
+                await asyncio.to_thread(app.state.knowledge_service.sync_inbox)
+            except Exception:
+                logger.exception("Knowledge inbox synchronization failed")
+            await asyncio.sleep(settings.rag_sync_interval_seconds)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        task: asyncio.Task[None] | None = None
+        if app.state.knowledge_service.retriever is not None:
+            # Indexing can take minutes for a large inbox or a remote embedding
+            # provider. It must never hold up the HTTP readiness check.
+            task = asyncio.create_task(sync_knowledge_inbox_periodically(app))
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+
+    app = FastAPI(title="Civil Engineering Safety Agent", version="0.1.0", lifespan=lifespan)
     media_root = Path(settings.media_root)
     media_root.mkdir(parents=True, exist_ok=True)
     app.add_middleware(
@@ -46,8 +75,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.perception_service = PerceptionService(database)
     app.state.camera_management_service = CameraManagementService(database, settings.credential_encryption_key, settings.cv_control_timeout_seconds)
     app.include_router(internal_router)
-    retriever = ChromaKnowledgeRetriever(settings.rag_persist_directory, settings.rag_embedding_model) if settings.rag_enabled else None
-    app.state.knowledge_service = KnowledgeService(database, retriever, settings.rag_document_directory, settings.rag_max_upload_bytes, settings.rag_allowed_extensions, settings.rag_chunk_size, settings.rag_chunk_overlap, settings.rag_top_k_max)
+    retriever = ChromaKnowledgeRetriever(
+        settings.rag_persist_directory,
+        settings.rag_embedding_provider,
+        settings.rag_embedding_model,
+        settings.rag_embedding_api_key,
+        settings.rag_embedding_base_url,
+        settings.rag_embedding_dimensions,
+    ) if settings.rag_enabled else None
+    app.state.knowledge_service = KnowledgeService(database, retriever, settings.rag_document_directory, settings.rag_inbox_directory, settings.rag_max_upload_bytes, settings.rag_allowed_extensions, settings.rag_chunk_size, settings.rag_chunk_overlap, settings.rag_top_k_max)
     app.state.chat_service = ChatService(database, create_chat_model(settings), settings.tool_max_calls, settings.memory_enabled, settings.memory_ttl_hours, settings.memory_recent_turns, app.state.knowledge_service if retriever else None)
     app.include_router(camera_config_router)
     app.include_router(public_router)
@@ -56,4 +92,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(knowledge_router)
     app.include_router(ui_config_public_router)
     app.include_router(ui_config_admin_router)
+
     return app

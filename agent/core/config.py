@@ -31,7 +31,13 @@ class Settings:
     rag_enabled: bool = False
     rag_persist_directory: str = "./runs/chroma"
     rag_document_directory: str = "./runs/knowledge"
-    rag_embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
+    rag_inbox_directory: str = "./runs/knowledge/inbox"
+    rag_sync_interval_seconds: int = 30
+    rag_embedding_provider: str = "dashscope"
+    rag_embedding_model: str = "text-embedding-v4"
+    rag_embedding_api_key: str = ""
+    rag_embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    rag_embedding_dimensions: int = 1024
     rag_chunk_size: int = 800
     rag_chunk_overlap: int = 120
     rag_top_k: int = 4
@@ -64,7 +70,15 @@ class Settings:
             rag_enabled=os.getenv("AGENT_RAG_ENABLED", "false").lower() == "true",
             rag_persist_directory=os.getenv("AGENT_RAG_PERSIST_DIRECTORY", "./runs/chroma"),
             rag_document_directory=os.getenv("AGENT_RAG_DOCUMENT_DIRECTORY", "./runs/knowledge"),
-            rag_embedding_model=os.getenv("AGENT_RAG_EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2"),
+            rag_inbox_directory=os.getenv("AGENT_RAG_INBOX_DIRECTORY", "./runs/knowledge/inbox"),
+            rag_sync_interval_seconds=int(os.getenv("AGENT_RAG_SYNC_INTERVAL_SECONDS", "30")),
+            rag_embedding_provider=os.getenv("AGENT_RAG_EMBEDDING_PROVIDER", "dashscope").lower(),
+            rag_embedding_model=os.getenv("AGENT_RAG_EMBEDDING_MODEL", "text-embedding-v4"),
+            # DASHSCOPE_API_KEY is the standard name used by Alibaba Cloud's SDK
+            # and is accepted as a backwards-compatible fallback.
+            rag_embedding_api_key=os.getenv("AGENT_RAG_EMBEDDING_API_KEY", os.getenv("DASHSCOPE_API_KEY", "")),
+            rag_embedding_base_url=os.getenv("AGENT_RAG_EMBEDDING_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+            rag_embedding_dimensions=int(os.getenv("AGENT_RAG_EMBEDDING_DIMENSIONS", "1024")),
             rag_chunk_size=int(os.getenv("AGENT_RAG_CHUNK_SIZE", "800")),
             rag_chunk_overlap=int(os.getenv("AGENT_RAG_CHUNK_OVERLAP", "120")),
             rag_top_k=int(os.getenv("AGENT_RAG_TOP_K", "4")),
@@ -95,8 +109,21 @@ class Settings:
             raise RuntimeError("AGENT_MEMORY_TTL_HOURS must be positive and AGENT_MEMORY_RECENT_TURNS non-negative")
         if self.rag_chunk_size <= 0 or not 0 <= self.rag_chunk_overlap < self.rag_chunk_size:
             raise RuntimeError("AGENT_RAG_CHUNK_OVERLAP must be non-negative and smaller than AGENT_RAG_CHUNK_SIZE")
+        if self.rag_sync_interval_seconds <= 0:
+            raise RuntimeError("AGENT_RAG_SYNC_INTERVAL_SECONDS must be positive")
         if not 1 <= self.rag_top_k <= self.rag_top_k_max:
             raise RuntimeError("AGENT_RAG_TOP_K must be between 1 and AGENT_RAG_TOP_K_MAX")
+        if self.rag_embedding_provider not in {"dashscope", "sentence_transformers"}:
+            raise RuntimeError("AGENT_RAG_EMBEDDING_PROVIDER must be dashscope or sentence_transformers")
+        if self.rag_embedding_provider == "dashscope":
+            if self.rag_embedding_model != "text-embedding-v4":
+                raise RuntimeError("AGENT_RAG_EMBEDDING_MODEL must be text-embedding-v4 for the dashscope provider")
+            if self.rag_embedding_dimensions not in {64, 128, 256, 512, 768, 1024, 1536, 2048}:
+                raise RuntimeError("AGENT_RAG_EMBEDDING_DIMENSIONS is not supported by text-embedding-v4")
+            if self.rag_enabled and not self.rag_embedding_api_key:
+                raise RuntimeError("AGENT_RAG_EMBEDDING_API_KEY or DASHSCOPE_API_KEY must be configured when RAG is enabled")
+            if self.rag_enabled and not self.rag_embedding_base_url:
+                raise RuntimeError("AGENT_RAG_EMBEDDING_BASE_URL must be configured when RAG is enabled")
         if not self.auto_create_schema and (not self.bind_host or not 1 <= self.port <= 65535 or not self.cors_origins):
             raise RuntimeError("AGENT_BIND_HOST, AGENT_PORT and AGENT_CORS_ORIGINS must be configured")
 
