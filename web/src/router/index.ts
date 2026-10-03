@@ -1,4 +1,7 @@
+import { shallowRef } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
+
+export const navigationFailure = shallowRef<{ path: string; title: string } | null>(null)
 
 const router = createRouter({
   history: createWebHistory(),
@@ -46,11 +49,19 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach((to) => {
   if (to.meta.title) {
     document.title = `${to.meta.title} - 智慧施工安全智能体`
   }
-  next()
+})
+
+// A failed dynamic import can remain rejected in the browser module cache.
+// Offer a full document navigation instead of repeating the same cached import.
+router.onError((_error, to) => {
+  navigationFailure.value = { path: to.fullPath, title: String(to.meta.title || '目标页面') }
+})
+router.afterEach((_to, _from, failure) => {
+  if (!failure) navigationFailure.value = null
 })
 
 export default router

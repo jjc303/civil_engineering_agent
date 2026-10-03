@@ -19,6 +19,7 @@
         <div class="breadcrumb"><button class="mobile-menu" aria-label="打开导航" :aria-expanded="mobileOpen" @click="mobileOpen = !mobileOpen"><el-icon><Menu /></el-icon></button><span class="workspace-name">安全工作台</span><span class="separator">/</span><strong>{{ route.meta.title }}</strong></div>
         <button class="search-trigger" @click="searchOpen = true"><el-icon><Search /></el-icon><span>你想做什么？</span><kbd>Ctrl K</kbd></button><div class="topbar-meta"><span v-if="isMockEnabled || localVideoDemo" class="demo-badge">{{ isMockEnabled ? '演示数据 · 非现场' : '本地视频演示' }}</span><time :datetime="now.toISOString()">{{ dateLabel }}</time><span class="time-label">{{ timeLabel }}</span></div>
       </header>
+      <div v-if="navigationFailure" class="navigation-error" role="alert"><span>“{{ navigationFailure.title }}”加载失败，请重新打开。</span><a :href="navigationFailure.path">重新打开页面 ↗</a><button aria-label="关闭加载提示" @click="navigationFailure = null">×</button></div>
       <main id="main-content" tabindex="-1" :class="isMonitor ? 'monitor-content' : 'business-content'"><router-view v-slot="{ Component }"><Transition name="page" mode="out-in"><component :is="Component" /></Transition></router-view></main>
     </div>
     <el-dialog v-model="searchOpen" title="快速前往" width="520px" @opened="searchInput?.focus()" @closed="searchText = ''">
@@ -32,6 +33,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { DataBoard, Warning, DocumentChecked, Crop, VideoCamera, ChatDotRound, Fold, Expand, Menu, Search } from '@element-plus/icons-vue'
 import { isMockEnabled } from '@/api/client'
+import { navigationFailure } from '@/router'
 const route = useRoute()
 const router = useRouter()
 const searchOpen = ref(false), searchText = ref('')
@@ -84,4 +86,5 @@ watch(() => route.path, () => { mobileOpen.value = false })
 .page-enter-active,.page-leave-active{transition:opacity .16s ease,transform .16s ease}.page-enter-from{opacity:0;transform:translateY(6px)}.page-leave-to{opacity:0}
 @media(max-width:1150px){.topbar{padding:14px 24px;gap:16px}.search-trigger{min-width:200px}.topbar-meta time{display:none}}
 @media(max-width:760px){.app-shell,.app-shell.collapsed{--sidebar-width:0px}.sidebar{width:240px;transform:translateX(-100%);transition:transform .25s ease}.mobile-open .sidebar{transform:translateX(0)}.mobile-open .nav-backdrop{display:block;position:fixed;inset:0;background:#25243f44;border:0;z-index:29;backdrop-filter:blur(3px)}.mobile-menu{display:flex;background:none;border:0;color:#626778;font-size:22px;padding:8px}.topbar{padding:10px 16px;gap:10px;min-height:68px}.breadcrumb strong{display:none}.search-trigger{min-width:0;flex:1;font-size:12px}.search-trigger kbd{display:none}.topbar-meta{gap:0}.demo-badge{font-size:10px;padding:6px 8px}.collapse-button{display:none}.collapsed .brand-copy,.collapsed .nav-item span,.collapsed .mode-note,.collapsed .nav-caption{display:block}.collapsed .nav-item{justify-content:flex-start;padding:0 15px}.business-content{padding:12px;height:calc(100dvh - 68px)}}
+.navigation-error{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:16px 24px 0;padding:14px 18px;background:#fff1e9;border:1px solid #f2d5c1;border-radius:12px;color:#946049;font-size:13px}.navigation-error a{color:#765bbb;text-decoration:underline;text-underline-offset:3px}.navigation-error button{margin-left:auto;border:0;background:none;color:inherit;font-size:20px;padding:2px 8px}
 </style>

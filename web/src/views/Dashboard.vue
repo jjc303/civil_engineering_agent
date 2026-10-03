@@ -33,7 +33,16 @@
         <router-link to="/copilot" class="assistant-card"><div class="assistant-icon"><el-icon><ChatDotRound /></el-icon></div><div><h3>安全智能助手</h3><p>从现场数据，找到下一步。</p><span>询问现场情况 <i>↗</i></span></div></router-link>
       </aside>
     </div>
-    <details class="statistics-panel"><summary>今日风险分析 <span>点击展开统计</span></summary><div class="section-heading"><div><h2>风险分布 <small>DAILY INSIGHTS</small></h2><p>按今日事件统计，帮助定位关注重点</p></div><span class="range-label">{{ dayLabel }} · 本机时区</span></div><div v-if="stats && stats.total_violations" class="charts-grid"><div class="chart"><h3>违规类型</h3><v-chart :option="typePieOption" autoresize aria-label="今日违规类型分布" /></div><div class="chart"><h3>严重程度</h3><v-chart :option="severityBarOption" autoresize aria-label="今日违规严重程度" /></div></div><div v-else class="chart-empty">{{ stats ? '今日尚无违规记录' : '尚未取得今日统计' }}</div></details>
+    <section class="statistics-panel visible-statistics" aria-label="今日违规统计">
+      <div class="section-heading"><div><h2>今日违规统计</h2><p>{{ dayLabel }} · 本机时区 · 包含已解除事件</p></div><router-link class="statistics-link" to="/violations">查看事件明细 ↗</router-link></div>
+      <p v-if="errors.stats" class="statistics-warning" role="status">统计更新失败{{ stats ? '，下方保留上次成功数据。' : '，请稍后重试。' }}</p>
+      <div v-if="stats" class="charts-grid">
+        <div class="chart"><h3>违规类型分布 <span>共 {{ stats.total_violations }} 起</span></h3><v-chart :option="typePieOption" autoresize aria-label="今日违规类型分布" /><p v-if="stats.total_violations === 0" class="zero-chart-note">今日暂无违规记录</p><ul class="chart-values" aria-label="违规类型统计明细"><li v-for="(label, type) in typeNames" :key="type"><span>{{ label }}</span><b>{{ stats.by_type[type] ?? 0 }}</b></li></ul></div>
+        <div class="chart"><h3>告警严重程度 <span>单位：起</span></h3><v-chart :option="severityBarOption" autoresize aria-label="今日违规严重程度" /><ul class="chart-values" aria-label="严重程度统计明细"><li v-for="severity in severityKeys" :key="severity"><span>{{ severityLabel(severity) }}</span><b>{{ stats.by_severity[severity] ?? 0 }}</b></li></ul></div>
+      </div>
+      <div v-else class="chart-empty">{{ loading ? '正在加载统计图…' : '尚未取得统计数据' }}<button v-if="!loading" class="clear-filter" @click="refreshAll">重新加载</button></div>
+      <p class="statistics-updated">{{ sourceTime('stats') }} · 与页面数据同步刷新</p>
+    </section>
 
     <EvidenceModal v-model="evidenceVisible" :record="selectedEvent" />
   </div>
@@ -73,6 +82,8 @@ const pageCount = computed(() => Math.max(1, Math.ceil(filteredCameras.value.len
 const displayedCameras = computed(() => cameraPage(filteredCameras.value, layout.value, cameraPageNumber.value, selectedCameraId.value))
 watch([cameraQuery, cameraStatus], () => { cameraPageNumber.value = 1 })
 watch(filteredCameras, value => { selectedCameraId.value = cameraSelection(value, selectedCameraId.value); cameraPageNumber.value = Math.min(cameraPageNumber.value, pageCount.value) })
+const severityKeys: ViolationSeverity[] = ['INFO', 'WARNING', 'CRITICAL']
+const chartAnimation = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
 const typeNames: Record<ViolationType, string> = { NO_HELMET: '未佩戴安全帽', DANGER_ZONE_INTRUSION: '危险区域入侵', DWELL_TIMEOUT: '区域停留超时' }
 function violationLabel(type: ViolationType) { return typeNames[type] || type }
 function severityLabel(severity: ViolationSeverity) { return { CRITICAL: '严重', WARNING: '警告', INFO: '提示' }[severity] }
@@ -105,8 +116,22 @@ function syncFullscreen() { fullscreen.value = document.fullscreenElement === vi
 function onVisibility() { pageVisible.value = !document.hidden; if (pageVisible.value && autoRefresh.value) void refreshAll() }
 onMounted(() => { void refreshAll(); timer = setInterval(() => { if (autoRefresh.value && !document.hidden) void refreshAll() }, 30000); document.addEventListener('visibilitychange', onVisibility); document.addEventListener('fullscreenchange', syncFullscreen) })
 onUnmounted(() => { alive = false; clearInterval(timer); document.removeEventListener('visibilitychange', onVisibility); document.removeEventListener('fullscreenchange', syncFullscreen) })
-const typePieOption = computed(() => ({ color: ['#9181ea', '#dc907f', '#7894a5'], tooltip: { trigger: 'item' }, legend: { orient: 'vertical', right: '3%', top: 'middle', icon: 'circle', itemWidth: 7, itemHeight: 7, textStyle: { color: '#72798b', fontSize: 11 } }, series: [{ type: 'pie', radius: ['48%', '70%'], center: ['28%', '50%'], label: { show: false }, itemStyle: { borderWidth: 4, borderColor: '#ffffff', borderRadius: 3 }, data: Object.entries(stats.value?.by_type || {}).map(([key, value]) => ({ name: typeNames[key as ViolationType] || key, value })) }] }))
-const severityBarOption = computed(() => ({ tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } }, grid: { top: 22, bottom: 22, left: 65, right: 30 }, xAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: '#eef0f5' } }, axisLabel: { color: '#7e909c' } }, yAxis: { type: 'category', data: ['提示', '警告', '严重'], axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#72798b', fontSize: 11 } }, series: [{ type: 'bar', barWidth: 10, itemStyle: { borderRadius: [0, 3, 3, 0] }, data: [{ value: stats.value?.by_severity.INFO ?? 0, itemStyle: { color: '#7894a5' } }, { value: stats.value?.by_severity.WARNING ?? 0, itemStyle: { color: '#9181ea' } }, { value: stats.value?.by_severity.CRITICAL ?? 0, itemStyle: { color: '#dc907f' } }] }] }))
+const typePieOption = computed(() => ({
+  animation: chartAnimation, animationDuration: 400,
+  color: ['#9181ea', '#e4a58c', '#85b5b2'],
+  title: { text: String(stats.value?.total_violations ?? 0), subtext: '今日事件', left: '28%', top: '36%', textAlign: 'center', textStyle: { color: '#625775', fontSize: 30, fontWeight: 500 }, subtextStyle: { color: '#8d869b', fontSize: 11 } },
+  tooltip: { trigger: 'item', valueFormatter: (value: unknown) => `${value} 起` },
+  legend: { data: Object.values(typeNames), orient: 'vertical', right: '1%', top: 'middle', icon: 'circle', itemWidth: 8, itemHeight: 8, selectedMode: false, textStyle: { color: '#72798b', fontSize: 11 } },
+  series: [{ type: 'pie', radius: ['55%', '73%'], center: ['28%', '50%'], label: { show: false }, stillShowZeroSum: false, showEmptyCircle: true, emptyCircleStyle: { color: '#eeebf6' }, itemStyle: { borderWidth: 3, borderColor: '#f9f9fd', borderRadius: 5 }, data: stats.value?.total_violations ? Object.entries(typeNames).map(([key, name]) => ({ name, value: stats.value?.by_type[key as ViolationType] ?? 0 })) : [] }],
+}))
+const severityBarOption = computed(() => ({
+  animation: chartAnimation, animationDuration: 400,
+  tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: (value: unknown) => `${value} 起` },
+  grid: { top: 22, bottom: 22, left: 48, right: 35 },
+  xAxis: { type: 'value', minInterval: 1, max: stats.value?.total_violations === 0 ? 1 : undefined, splitLine: { lineStyle: { color: '#ececf4', type: 'dashed' } }, axisLabel: { color: '#8a8fa0' } },
+  yAxis: { type: 'category', data: ['提示', '警告', '严重'], axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#72798b', fontSize: 12 } },
+  series: [{ type: 'bar', barWidth: 14, label: { show: true, position: 'right', color: '#817590' }, itemStyle: { borderRadius: [0, 5, 5, 0] }, data: [{ value: stats.value?.by_severity.INFO ?? 0, itemStyle: { color: '#85b5b2' } }, { value: stats.value?.by_severity.WARNING ?? 0, itemStyle: { color: '#b2a1e5' } }, { value: stats.value?.by_severity.CRITICAL ?? 0, itemStyle: { color: '#e4a58c' } }] }],
+}))
 </script>
 <style scoped>
 .monitor-dashboard { padding: 34px 34px 24px; max-width: 1800px; margin: 0 auto; color: #d5dfe4; --line: #ffffff0c; }
@@ -149,4 +174,6 @@ h1{font-size:28px;font-weight:600;letter-spacing:-.5px}.eyebrow{font-size:11px;l
 .subtitle,.section-heading p,.camera-toolbar,.auto-refresh{color:#737b8d}.metrics>div>span,.events-footer,.page-controls{color:#81889a}.metrics p small{color:#838a9b}.section-empty p{color:#858c9d}.quick-actions a{min-height:40px}.event-location,.event-bottomline{font-size:11px}.section-empty.compact{min-height:220px}.statistics-panel summary span{color:#838a9b}
 
 .camera-filters{display:flex;gap:12px;justify-content:space-between;align-items:center;margin:18px 0 12px;flex-wrap:wrap}.camera-search{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid #eeebf6;border-radius:14px;background:#f9f8fd;color:#aaa0c0;flex:1;min-width:150px;max-width:300px;transition:box-shadow .2s,border-color .2s}.camera-search:focus-within{border-color:#b4a6e2;box-shadow:0 0 0 3px #eee8fb}.camera-search input{width:100%;min-width:0;background:transparent;border:0;outline:none;font-size:12px;color:#747087}.camera-search input::placeholder{color:#aaa4b6}.status-filter{display:flex;gap:4px}.status-filter button,.focus-toggle,.clear-filter{background:transparent;border:0;border-radius:18px;color:#9386ac;padding:9px 12px;font-size:11px;min-height:36px}.status-filter button:hover{background:#f6f2fc}.status-filter button[aria-pressed=true],.focus-toggle[aria-pressed=true]{background:#eee8fa;color:#7c68b2}.focus-toggle{border:1px solid #e9e3f5;white-space:nowrap}.clear-filter{padding:4px 9px}.clear-filter:hover{background:#f5f1fa}.focus-mode .workspace-grid{grid-template-columns:1fr}.focus-mode .event-column{display:none}.video-panel{scroll-margin-top:20px}.video-grid{transition:gap .2s}.section-empty>.monitor-button{margin-top:16px}.view-controls{flex-wrap:wrap}.focus-mode .grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}.focus-mode .grid-6{grid-template-columns:repeat(3,minmax(0,1fr))}@media(max-width:620px){.camera-search{max-width:none}.camera-filters{gap:8px}.status-filter{width:100%;justify-content:flex-start}.focus-mode .grid-4,.focus-mode .grid-6{grid-template-columns:1fr}.view-controls{width:100%;justify-content:space-between}.focus-toggle{padding:7px 10px}}
+
+.statistics-panel.visible-statistics{padding:24px}.visible-statistics .section-heading{margin-bottom:20px}.visible-statistics .chart{padding:20px;position:relative}.visible-statistics .chart h3{display:flex;justify-content:space-between;gap:10px;font-size:13px;font-weight:500;color:#6e687f}.visible-statistics .chart h3 span{font-size:11px;font-weight:400;color:#8d869b}.visible-statistics .chart .echarts{height:220px}.statistics-link{font-size:12px;color:#8978bd;text-decoration:none;border-radius:20px;background:#f3effb;padding:9px 14px}.statistics-link:hover{background:#eae3f9}.chart-values{display:flex;gap:12px;justify-content:space-between;padding:14px 0 0;margin:0;list-style:none;border-top:1px solid #eeebf5}.chart-values li{display:flex;flex-direction:column;gap:6px;color:#878093;font-size:11px}.chart-values b{font-size:17px;color:#716282;font-weight:500}.statistics-updated{color:#97909f;font-size:11px;margin:0}.zero-chart-note{font-size:11px;color:#968b9e;text-align:center;margin:-10px 0 14px}.statistics-warning{font-size:12px;color:#b77964;background:#fff2ec;padding:10px 14px;border-radius:10px}@media(max-width:620px){.statistics-panel.visible-statistics{padding:18px}.visible-statistics .chart{padding:14px}.visible-statistics .chart .echarts{height:200px}.chart-values{gap:8px}.chart-values li{font-size:10px}}
 </style>
