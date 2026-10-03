@@ -1,33 +1,41 @@
+/* The monitoring surface owns its dark palette; business forms stay light. */
 :root {
-  --primary-color: #2563eb;
-  --bg-color: #f8fafc;
-  --sidebar-bg: #0f172a;
-  --card-bg: #ffffff;
-  --text-main: #1e293b;
-  --text-muted: #64748b;
-  --border-color: #e2e8f0;
+  color-scheme: light;
+  --primary-color: #8272db; --bg-color: #f7f8fc; --sidebar-bg: #151b21;
+  --card-bg: #fff; --text-main: #4f586b; --text-muted: #8f96a6; --border-color: #e3e7e8;
+  --el-color-primary: #8272db; --el-color-primary-light-3: #a79ae7;
+  --el-color-primary-light-5: #c1b8f0; --el-color-primary-light-7: #ded8f8;
+  --el-color-primary-light-8: #eae6fc; --el-color-primary-light-9: #f5f2ff;
+  --el-color-primary-dark-2: #6b5bbe; --el-color-success: #488774;
+  --el-color-warning: #b78640; --el-color-danger: #c45e54; --el-border-radius-base: 6px;
+  --el-font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-family: var(--el-font-family); color: var(--text-main); font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+}
+* { box-sizing: border-box; }
+html, body, #app { margin: 0; width: 100%; min-height: 100%; }
+body { background: var(--bg-color); }
+button, input, select, textarea { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid #9583e7; outline-offset: 4px; }
+button { cursor: pointer; } button:disabled { cursor: not-allowed; }
+a { color: inherit; }
+.el-dialog { max-width: calc(100vw - 28px); } .el-drawer { max-width: 100vw; }
+.el-card { --el-card-border-radius: 10px; } .el-button { font-weight: 500; }
+.el-table { --el-table-header-bg-color: #f5f6f4; }
+.el-message { max-width: calc(100vw - 28px); }
+.business-content > * { min-width: 0; }
+@media (max-width: 700px) {
+  .business-content .header-section { flex-wrap: wrap; gap: 14px; }
+  .business-content .header-actions { flex-wrap: wrap; }
+  .evidence-dialog .meta-bar { flex-wrap: wrap; gap: 8px; }
+  .evidence-dialog .details-panel { grid-template-columns: 1fr; overflow-wrap: anywhere; }
+  .evidence-dialog .image-wrapper { min-height: 200px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background-color: var(--bg-color);
-  color: var(--text-main);
-  overflow: hidden;
-}
-
-#app {
-  width: 100vw;
-  height: 100vh;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  overflow: hidden;
-}
+/* Shared interaction feedback, including keyboard and reduced-motion users. */
+button,a,summary{touch-action:manipulation}button:not(:disabled){transition:background .18s ease,box-shadow .18s ease,transform .16s ease}button:not(:disabled):active{transform:scale(.97)}summary:focus-visible{outline:2px solid #9583e7;outline-offset:4px;border-radius:8px}.el-dialog{border-radius:22px!important;padding:26px!important}.el-button{border-radius:10px}.el-input__wrapper,.el-select__wrapper{border-radius:10px}.el-card{border-color:#edf0f5;box-shadow:0 3px 18px #48506604!important}.el-table{--el-table-header-bg-color:#f8f8fc}
+@media(prefers-reduced-motion:reduce){button,a,summary{transition:none!important}}

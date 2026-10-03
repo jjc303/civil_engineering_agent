@@ -1,368 +1,152 @@
 <template>
-  <div class="dashboard-page">
-    <div class="header-section">
-      <div class="title-area">
-        <h2>安全监控看板 (Dashboard)</h2>
-        <p class="subtitle">全域施工态势感知、摄像头运行矩阵与实时违规统计</p>
-      </div>
-      <div class="actions">
-        <el-button type="primary" :icon="Refresh" :loading="loading" @click="refreshAll">
-          刷新数据
-        </el-button>
-      </div>
+  <div class="monitor-dashboard" :class="{ 'focus-mode': focusMode }">
+    <header class="page-heading">
+      <div><p class="eyebrow">工作台 / 现场总览</p><h1>现场，一目了然</h1><p class="subtitle">看看现场，及时处理需要关注的事。</p></div>
+      <div class="heading-actions"><label class="auto-refresh"><input v-model="autoRefresh" type="checkbox">30 秒刷新数据</label><button class="monitor-button" :disabled="loading" @click="refreshAll"><el-icon><Refresh /></el-icon>{{ loading ? '更新中' : '刷新数据' }}</button></div>
+    </header>
+    <div v-if="isMockEnabled" class="notice">演示模式 · 使用仓库样例数据；视频与证据不连接现场，统计口径以样例为准。</div>
+    <div v-if="errorLabels.length" class="notice error" role="alert">{{ errorLabels.join('、') }}读取失败。{{ hasAnyData ? '保留上次成功数据，请注意更新时间。' : '尚未取得现场数据，请检查服务连接。' }}<button :disabled="loading" @click="refreshAll">重新加载 ↗</button></div>
+    <nav class="quick-actions" aria-label="常用操作"><router-link to="/cameras"><el-icon><VideoCamera /></el-icon>管理视频源<span>↗</span></router-link><router-link to="/violations"><el-icon><Warning /></el-icon>查看违规<span>↗</span></router-link><router-link to="/copilot"><el-icon><ChatDotRound /></el-icon>问问安全助手<span>↗</span></router-link></nav>
+    <section class="metrics" aria-label="监控指标">
+      <div><p>摄像头在线 <small>最近上报状态</small></p><strong>{{ cameraLoaded ? onlineCamerasCount : '—' }}<em>/ {{ cameraLoaded ? cameras.length : '—' }}</em></strong><span :class="{ stale: errors.cameras }">{{ sourceTime('cameras') }}</span></div>
+      <div><p>今日违规 <small>{{ dayLabel }}</small></p><strong>{{ stats?.total_violations ?? '—' }}<em>起</em></strong><span :class="{ stale: errors.stats }">{{ sourceTime('stats') }}</span></div>
+      <div><p>今日严重告警 <small>含已解除事件</small></p><strong class="critical-number">{{ stats ? stats.by_severity.CRITICAL ?? 0 : '—' }}<em>起</em></strong><span :class="{ stale: errors.stats }">{{ sourceTime('stats') }}</span></div>
+
+    </section>
+    <div class="workspace-grid">
+      <section ref="videoPanel" tabindex="-1" class="video-panel" aria-label="现场视频墙">
+        <div class="section-heading"><div><h2>现场视频</h2><p>选中画面放大查看，或直接进入区域标定</p></div><div class="view-controls"><button class="focus-toggle" :aria-pressed="focusMode" @click="focusMode = !focusMode">{{ focusMode ? '退出专注' : '专注看视频' }}</button><div class="layout-switch" role="group" aria-label="视频分屏"><button v-for="n in [1,4,6]" :key="n" :aria-pressed="layout === n" @click="setLayout(n)">{{ n === 1 ? '单屏' : n === 4 ? '四屏' : '六屏' }}</button></div><button class="icon-button" :aria-label="fullscreen ? '退出视频墙全屏' : '视频墙全屏'" @click="toggleFullscreen"><el-icon><FullScreen /></el-icon></button></div></div>
+        <div class="camera-filters"><label class="camera-search"><el-icon><Search /></el-icon><input v-model="cameraQuery" type="search" placeholder="搜索摄像头" aria-label="搜索摄像头名称或编号" /></label><div class="status-filter" role="group" aria-label="设备状态筛选"><button v-for="option in statusOptions" :key="option.value" :aria-pressed="cameraStatus === option.value" @click="cameraStatus = option.value">{{ option.label }}</button></div></div>
+        <div class="camera-toolbar"><label v-if="layout === 1">当前通道 <select v-model="selectedCameraId" aria-label="选择单屏摄像头" :disabled="!filteredCameras.length"><option v-for="camera in filteredCameras" :key="camera.camera_id" :value="camera.camera_id">{{ camera.camera_id }}</option></select></label><span v-else>{{ cameraLoaded ? filteredCameras.length : '—' }} 路匹配 · 共 {{ cameras.length }} 路</span><button v-if="cameraQuery || cameraStatus !== 'all'" class="clear-filter" @click="clearFilters">清除筛选</button></div>
+        <div v-if="!cameraLoaded" class="section-empty"><el-icon><VideoCamera /></el-icon><h3>{{ loading ? '正在获取摄像头' : '摄像头数据不可用' }}</h3><p>连接成功后，已上报的摄像头会出现在这里。</p></div>
+        <div v-else-if="!cameras.length" class="section-empty"><el-icon><VideoCamera /></el-icon><h3>尚无摄像头上报状态</h3><p>登记视频来源并启动监控后，可在此查看。</p><router-link to="/cameras">前往设备管理 ↗</router-link></div>
+        <div v-else-if="!filteredCameras.length" class="section-empty"><el-icon><Search /></el-icon><h3>没有匹配的摄像头</h3><p>试试其他名称，或切换设备状态。</p><button class="monitor-button" @click="clearFilters">清除筛选</button></div>
+        <div v-else class="video-grid" :class="`grid-${layout}`"><MonitorCamera v-for="camera in displayedCameras" :key="camera.camera_id" :camera="camera" :index="cameras.findIndex(c => c.camera_id === camera.camera_id)" :active-event-count="events.filter(e => e.camera_id === camera.camera_id).length" :stale="Boolean(errors.cameras)" :preview-allowed="pageVisible" @focus="focusCamera" /></div>
+        <div v-if="layout > 1 && filteredCameras.length" class="page-controls"><span>第 {{ cameraPageNumber }} / {{ pageCount }} 页 · {{ filteredCameras.length }} 路匹配</span><div><button class="icon-button" aria-label="上一页摄像头" :disabled="cameraPageNumber <= 1" @click="cameraPageNumber--">←</button><button class="icon-button" aria-label="下一页摄像头" :disabled="cameraPageNumber >= pageCount" @click="cameraPageNumber++">→</button></div></div>
+      </section>
+      <aside class="event-column">
+        <section class="events-panel"><div class="section-heading"><div><h2>需要你关注 <span class="event-total">{{ eventLoaded ? eventTotal : '—' }}</span></h2><p>活动事件 · 不限发生日期</p></div><router-link class="quiet-link" to="/violations">全部 ↗</router-link></div>
+          <div v-if="!eventLoaded || !events.length" class="section-empty compact"><el-icon><CircleCheck v-if="eventLoaded" /><Warning v-else /></el-icon><h3>{{ eventLoaded ? '当前没有活动违规' : loading ? '正在读取事件' : '事件数据不可用' }}</h3><p>{{ eventLoaded ? '继续关注现场，处理记录可在事件中心查看。' : '数据恢复后可查看证据与发生时间。' }}</p></div>
+          <div v-else class="event-list"><button v-for="(event, index) in events" :key="event.event_uuid" class="event-item" :class="{ critical: event.severity === 'CRITICAL', featured: index === 0 }" @click="openEvidence(event)"><span class="event-rank">{{ String(index + 1).padStart(2, '0') }}</span><div class="event-body"><div class="event-topline"><b>{{ violationLabel(event.violation_type) }}</b><span class="severity-tag" :class="event.severity.toLowerCase()">{{ severityLabel(event.severity) }}</span></div><span class="event-location">{{ event.camera_id }}</span><div class="event-bottomline"><time>{{ formatTime(event.occurred_at_utc, true) }}</time><span>查看证据 ↗</span></div><p v-if="index === 0" class="event-detail">持续 {{ event.duration_seconds.toFixed(1) }} 秒<span v-if="event.zone_name"> · {{ event.zone_name }}</span></p></div></button></div>
+          <div class="events-footer">{{ sourceTime('events') }}<span v-if="eventTotal > events.length"> · 展示最近 {{ events.length }} 条</span></div>
+        </section>
+        <router-link to="/copilot" class="assistant-card"><div class="assistant-icon"><el-icon><ChatDotRound /></el-icon></div><div><h3>安全智能助手</h3><p>从现场数据，找到下一步。</p><span>询问现场情况 <i>↗</i></span></div></router-link>
+      </aside>
     </div>
+    <details class="statistics-panel"><summary>今日风险分析 <span>点击展开统计</span></summary><div class="section-heading"><div><h2>风险分布 <small>DAILY INSIGHTS</small></h2><p>按今日事件统计，帮助定位关注重点</p></div><span class="range-label">{{ dayLabel }} · 本机时区</span></div><div v-if="stats && stats.total_violations" class="charts-grid"><div class="chart"><h3>违规类型</h3><v-chart :option="typePieOption" autoresize aria-label="今日违规类型分布" /></div><div class="chart"><h3>严重程度</h3><v-chart :option="severityBarOption" autoresize aria-label="今日违规严重程度" /></div></div><div v-else class="chart-empty">{{ stats ? '今日尚无违规记录' : '尚未取得今日统计' }}</div></details>
 
-    <!-- KPI 概览卡片 -->
-    <div class="kpi-grid">
-      <el-card shadow="hover" class="kpi-card">
-        <div class="kpi-title">今日违规总数</div>
-        <div class="kpi-value text-blue">{{ stats?.total_violations ?? 0 }}</div>
-        <div class="kpi-footer">覆盖全站所有在监控相机</div>
-      </el-card>
-
-      <el-card shadow="hover" class="kpi-card">
-        <div class="kpi-title">严重告警 (CRITICAL)</div>
-        <div class="kpi-value text-red">{{ stats?.by_severity?.CRITICAL ?? 0 }}</div>
-        <div class="kpi-footer">需现场安全员紧急介入处置</div>
-      </el-card>
-
-      <el-card shadow="hover" class="kpi-card">
-        <div class="kpi-title">平均停留/违规时长</div>
-        <div class="kpi-value text-amber">
-          {{ (stats?.average_duration_seconds ?? 0).toFixed(1) }} <span class="unit">秒</span>
-        </div>
-        <div class="kpi-footer">基于脚底进入判定至离场闭环</div>
-      </el-card>
-
-      <el-card shadow="hover" class="kpi-card">
-        <div class="kpi-title">在线摄像头矩阵</div>
-        <div class="kpi-value text-emerald">
-          {{ onlineCamerasCount }} <span class="unit">/ {{ cameras.length }}</span>
-        </div>
-        <div class="kpi-footer">30s 内有心跳视为在线</div>
-      </el-card>
-    </div>
-
-    <!-- ECharts 图表区 -->
-    <div class="charts-grid">
-      <el-card shadow="hover" class="chart-card">
-        <template #header>
-          <div class="card-header">
-            <span>违规类型分布 (By Violation Type)</span>
-          </div>
-        </template>
-        <div class="chart-wrapper">
-          <v-chart :option="typePieOption" autoresize />
-        </div>
-      </el-card>
-
-      <el-card shadow="hover" class="chart-card">
-        <template #header>
-          <div class="card-header">
-            <span>违规严重度分级 (By Severity)</span>
-          </div>
-        </template>
-        <div class="chart-wrapper">
-          <v-chart :option="severityBarOption" autoresize />
-        </div>
-      </el-card>
-    </div>
-
-    <!-- 摄像头运行矩阵 -->
-    <div class="camera-matrix-section">
-      <div class="section-title">
-        <h3>摄像头推流与推理矩阵</h3>
-        <el-tag size="small" type="info">共 {{ cameras.length }} 路通道</el-tag>
-      </div>
-
-      <div class="camera-grid">
-        <el-card
-          v-for="cam in cameras"
-          :key="cam.camera_id"
-          shadow="hover"
-          class="camera-card"
-        >
-          <div class="cam-header">
-            <span class="cam-id">{{ cam.camera_id }}</span>
-            <el-tag :type="cam.is_online ? 'success' : 'danger'" size="small" effect="dark">
-              {{ cam.is_online ? '在线 推流中' : '离线' }}
-            </el-tag>
-          </div>
-
-          <div class="cam-body">
-            <div class="cam-stat">
-              <span class="label">实时 FPS：</span>
-              <span class="val font-mono">{{ cam.fps.toFixed(1) }}</span>
-            </div>
-            <div class="cam-stat">
-              <span class="label">已处理帧：</span>
-              <span class="val font-mono">{{ cam.processed_frame_id }}</span>
-            </div>
-            <div class="cam-stat">
-              <span class="label">活跃 Worker：</span>
-              <span class="val">{{ cam.active_workers_count }}</span>
-            </div>
-            <div class="cam-stat">
-              <span class="label">部署模型：</span>
-              <span class="val truncate">{{ cam.model_name || '默认' }}</span>
-            </div>
-            <div class="cam-stat">
-              <span class="label">心跳时间：</span>
-              <span class="val text-muted">{{ formatTime(cam.reported_at_utc) }}</span>
-            </div>
-          </div>
-
-          <div class="cam-footer">
-            <el-button
-              size="small"
-              text
-              type="primary"
-              @click="$router.push({ path: '/zones', query: { camera_id: cam.camera_id } })"
-            >
-              标定围栏
-            </el-button>
-            <el-button
-              size="small"
-              text
-              type="primary"
-              @click="$router.push({ path: '/violations', query: { camera_id: cam.camera_id } })"
-            >
-              查看违规
-            </el-button>
-          </div>
-        </el-card>
-      </div>
-    </div>
+    <EvidenceModal v-model="evidenceVisible" :record="selectedEvent" />
   </div>
 </template>
-
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { Refresh } from '@element-plus/icons-vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Refresh, FullScreen, VideoCamera, ChatDotRound, CircleCheck, Warning, Search } from '@element-plus/icons-vue'
 import { fetchCameras } from '@/api/cameras'
-import { fetchViolationStatistics } from '@/api/violations'
-import type { CameraStatusResponse, ViolationStatistics } from '@/types/contract'
-
-const loading = ref(false)
+import { fetchViolations, fetchViolationStatistics } from '@/api/violations'
+import { isMockEnabled } from '@/api/client'
+import type { CameraStatusResponse, ViolationRecord, ViolationStatistics, ViolationType, ViolationSeverity } from '@/types/contract'
+import MonitorCamera from '@/components/MonitorCamera.vue'
+import EvidenceModal from '@/components/EvidenceModal.vue'
+import { todayWindow, cameraPage, cameraSelection, utcDate, filterCameras } from '@/utils/monitoring'
 const cameras = ref<CameraStatusResponse[]>([])
+const cameraQuery = ref(''), cameraStatus = ref<'all' | 'online' | 'offline'>('all'), focusMode = ref(false)
+const statusOptions = [{ value: 'all', label: '全部' }, { value: 'online', label: '在线' }, { value: 'offline', label: '离线' }] as const
+const filteredCameras = computed(() => filterCameras(cameras.value, cameraQuery.value, cameraStatus.value))
+function clearFilters() { cameraQuery.value = ''; cameraStatus.value = 'all' }
 const stats = ref<ViolationStatistics | null>(null)
-
-const onlineCamerasCount = computed(() => cameras.value.filter((c) => c.is_online).length)
-
-const typePieOption = computed(() => {
-  const data = []
-  if (stats.value?.by_type) {
-    const map: Record<string, string> = {
-      NO_HELMET: '未佩戴安全帽',
-      DANGER_ZONE_INTRUSION: '危险区入侵',
-      DWELL_TIMEOUT: '超时停留',
-    }
-    for (const [k, v] of Object.entries(stats.value.by_type)) {
-      data.push({ name: map[k] || k, value: v })
-    }
-  }
-  return {
-    tooltip: { trigger: 'item' },
-    legend: { bottom: '0' },
-    color: ['#f59e0b', '#ef4444', '#8b5cf6', '#3b82f6'],
-    series: [
-      {
-        name: '违规类型',
-        type: 'pie',
-        radius: ['45%', '70%'],
-        avoidLabelOverlap: false,
-        itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
-        label: { show: false, position: 'center' },
-        emphasis: {
-          label: { show: true, fontSize: 14, fontWeight: 'bold' },
-        },
-        data: data.length > 0 ? data : [{ name: '暂无数据', value: 0 }],
-      },
-    ],
-  }
-})
-
-const severityBarOption = computed(() => {
-  const categories = ['INFO (普通)', 'WARNING (告警)', 'CRITICAL (严重)']
-  const bySev = stats.value?.by_severity || {}
-  const data = [bySev.INFO || 0, bySev.WARNING || 0, bySev.CRITICAL || 0]
-
-  return {
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
-    xAxis: { type: 'category', data: categories },
-    yAxis: { type: 'value', minInterval: 1 },
-    series: [
-      {
-        name: '事件数量',
-        type: 'bar',
-        barWidth: '35%',
-        data: [
-          { value: data[0], itemStyle: { color: '#3b82f6' } },
-          { value: data[1], itemStyle: { color: '#f59e0b' } },
-          { value: data[2], itemStyle: { color: '#ef4444' } },
-        ],
-      },
-    ],
-  }
-})
-
+const events = ref<ViolationRecord[]>([])
+const eventTotal = ref(0)
+const cameraLoaded = ref(false), eventLoaded = ref(false), loading = ref(false), autoRefresh = ref(true)
+const pageVisible = ref(!document.hidden)
+const errors = reactive({ cameras: false, stats: false, events: false })
+const updatedAt = reactive<Record<'cameras' | 'stats' | 'events', Date | null>>({ cameras: null, stats: null, events: null })
+const dayLabel = ref(new Date().toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }))
+const selectedCameraId = ref(''), cameraPageNumber = ref(1), layout = ref(4)
+const videoPanel = ref<HTMLElement | null>(null), fullscreen = ref(false)
+const evidenceVisible = ref(false), selectedEvent = ref<ViolationRecord | null>(null)
+const labels = { cameras: '摄像头状态', stats: '今日统计', events: '活动事件' }
+const errorLabels = computed(() => (Object.keys(errors) as (keyof typeof errors)[]).filter(k => errors[k]).map(k => labels[k]))
+const hasAnyData = computed(() => cameraLoaded.value || eventLoaded.value || stats.value !== null)
+const onlineCamerasCount = computed(() => cameras.value.filter(c => c.is_online).length)
+const pageCount = computed(() => Math.max(1, Math.ceil(filteredCameras.value.length / layout.value)))
+const displayedCameras = computed(() => cameraPage(filteredCameras.value, layout.value, cameraPageNumber.value, selectedCameraId.value))
+watch([cameraQuery, cameraStatus], () => { cameraPageNumber.value = 1 })
+watch(filteredCameras, value => { selectedCameraId.value = cameraSelection(value, selectedCameraId.value); cameraPageNumber.value = Math.min(cameraPageNumber.value, pageCount.value) })
+const typeNames: Record<ViolationType, string> = { NO_HELMET: '未佩戴安全帽', DANGER_ZONE_INTRUSION: '危险区域入侵', DWELL_TIMEOUT: '区域停留超时' }
+function violationLabel(type: ViolationType) { return typeNames[type] || type }
+function severityLabel(severity: ViolationSeverity) { return { CRITICAL: '严重', WARNING: '警告', INFO: '提示' }[severity] }
+function formatTime(value: string | Date, date = false) { return utcDate(value).toLocaleString('zh-CN', { ...(date ? { month: '2-digit', day: '2-digit' } as const : {}), hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) }
+function sourceTime(key: keyof typeof errors) { return updatedAt[key] ? `${errors[key] ? '上次成功' : '更新于'} ${formatTime(updatedAt[key]!)}` : '尚未取得数据' }
+function setLayout(count: number) { layout.value = count; cameraPageNumber.value = 1 }
+function focusCamera(id: string) { selectedCameraId.value = id; layout.value = 1 }
+function openEvidence(event: ViolationRecord) { selectedEvent.value = event; evidenceVisible.value = true }
+let alive = true
+let timer: ReturnType<typeof setInterval> | undefined
 async function refreshAll() {
+  if (loading.value) return
   loading.value = true
+  const now = new Date()
   try {
-    const [cRes, sRes] = await Promise.all([fetchCameras(), fetchViolationStatistics()])
-    cameras.value = cRes
-    stats.value = sRes
-  } finally {
-    loading.value = false
-  }
+    const [cameraResult, statsResult, eventResult] = await Promise.allSettled([fetchCameras(), fetchViolationStatistics(todayWindow(now)), fetchViolations({ status: 'ACTIVE', limit: 6, offset: 0 })])
+    if (!alive) return
+    errors.cameras = cameraResult.status === 'rejected'; errors.stats = statsResult.status === 'rejected'; errors.events = eventResult.status === 'rejected'
+    if (cameraResult.status === 'fulfilled') {
+      cameras.value = cameraResult.value; cameraLoaded.value = true; updatedAt.cameras = new Date()
+      selectedCameraId.value = cameraSelection(filteredCameras.value, selectedCameraId.value)
+      cameraPageNumber.value = Math.min(cameraPageNumber.value, pageCount.value)
+    }
+    if (statsResult.status === 'fulfilled') { stats.value = statsResult.value; updatedAt.stats = new Date(); dayLabel.value = now.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) }
+    if (eventResult.status === 'fulfilled') { events.value = eventResult.value.items.filter(e => e.status === 'ACTIVE').slice(0, 6); eventTotal.value = eventResult.value.total; eventLoaded.value = true; updatedAt.events = new Date() }
+  } finally { if (alive) loading.value = false }
 }
-
-function formatTime(utcStr: string): string {
-  if (!utcStr) return '-'
-  return new Date(utcStr).toLocaleTimeString()
-}
-
-onMounted(() => {
-  refreshAll()
-})
+async function toggleFullscreen() { try { if (document.fullscreenElement) await document.exitFullscreen(); else await videoPanel.value?.requestFullscreen() } catch { ElMessage.info('当前浏览器不支持全屏，可以使用单屏放大查看') } }
+function syncFullscreen() { fullscreen.value = document.fullscreenElement === videoPanel.value }
+function onVisibility() { pageVisible.value = !document.hidden; if (pageVisible.value && autoRefresh.value) void refreshAll() }
+onMounted(() => { void refreshAll(); timer = setInterval(() => { if (autoRefresh.value && !document.hidden) void refreshAll() }, 30000); document.addEventListener('visibilitychange', onVisibility); document.addEventListener('fullscreenchange', syncFullscreen) })
+onUnmounted(() => { alive = false; clearInterval(timer); document.removeEventListener('visibilitychange', onVisibility); document.removeEventListener('fullscreenchange', syncFullscreen) })
+const typePieOption = computed(() => ({ color: ['#9181ea', '#dc907f', '#7894a5'], tooltip: { trigger: 'item' }, legend: { orient: 'vertical', right: '3%', top: 'middle', icon: 'circle', itemWidth: 7, itemHeight: 7, textStyle: { color: '#72798b', fontSize: 11 } }, series: [{ type: 'pie', radius: ['48%', '70%'], center: ['28%', '50%'], label: { show: false }, itemStyle: { borderWidth: 4, borderColor: '#ffffff', borderRadius: 3 }, data: Object.entries(stats.value?.by_type || {}).map(([key, value]) => ({ name: typeNames[key as ViolationType] || key, value })) }] }))
+const severityBarOption = computed(() => ({ tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } }, grid: { top: 22, bottom: 22, left: 65, right: 30 }, xAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: '#eef0f5' } }, axisLabel: { color: '#7e909c' } }, yAxis: { type: 'category', data: ['提示', '警告', '严重'], axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#72798b', fontSize: 11 } }, series: [{ type: 'bar', barWidth: 10, itemStyle: { borderRadius: [0, 3, 3, 0] }, data: [{ value: stats.value?.by_severity.INFO ?? 0, itemStyle: { color: '#7894a5' } }, { value: stats.value?.by_severity.WARNING ?? 0, itemStyle: { color: '#9181ea' } }, { value: stats.value?.by_severity.CRITICAL ?? 0, itemStyle: { color: '#dc907f' } }] }] }))
 </script>
-
 <style scoped>
-.dashboard-page {
-  padding: 24px;
-  overflow-y: auto;
-  height: 100%;
-}
-.header-section {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-.title-area h2 {
-  margin: 0;
-  font-size: 22px;
-  color: #0f172a;
-}
-.subtitle {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: #64748b;
-}
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 20px;
-}
-.kpi-card {
-  border-radius: 8px;
-}
-.kpi-title {
-  font-size: 13px;
-  color: #64748b;
-  margin-bottom: 8px;
-}
-.kpi-value {
-  font-size: 32px;
-  font-weight: 700;
-  line-height: 1.1;
-  margin-bottom: 8px;
-}
-.kpi-value .unit {
-  font-size: 14px;
-  font-weight: 400;
-  color: #64748b;
-}
-.kpi-footer {
-  font-size: 12px;
-  color: #94a3b8;
-}
-.text-blue { color: #2563eb; }
-.text-red { color: #ef4444; }
-.text-amber { color: #d97706; }
-.text-emerald { color: #059669; }
+.monitor-dashboard { padding: 34px 34px 24px; max-width: 1800px; margin: 0 auto; color: #d5dfe4; --line: #ffffff0c; }
+.page-heading { display: flex; justify-content: space-between; gap: 20px; align-items: center; margin-bottom: 26px; }
+.eyebrow { display: flex; align-items: center; gap: 9px; color: #9caaaf; font-size: 9px; letter-spacing: 1.6px; margin: 0 0 13px; }.eyebrow span { width: 14px; height: 2px; background: #8b7ee5; }.eyebrow i { font-style: normal; color: #485761; margin: 0 3px; }
+h1 { font-weight: 500; font-size: 28px; line-height: 1.4; letter-spacing: 1px; color: #303446; margin: 0; }h1 span { color: #7969d0; }.subtitle { color: #8a9aa6; font-size: 12px; margin: 11px 0 0; }
+.heading-actions { display: flex; align-items: center; gap: 18px; }.auto-refresh { font-size: 11px; color: #8f9ca5; white-space: nowrap; }.auto-refresh input { accent-color: #8271db; vertical-align: middle; margin-right: 6px; }
+.monitor-button { border: 1px solid #e1def3; background: #edeafd; color: #6559cf; display: inline-flex; align-items: center; gap: 8px; border-radius: 5px; padding: 9px 13px; font-size: 11px; white-space: nowrap; }.monitor-button:hover { border-color: #8271db80; }.monitor-button:disabled { opacity: .5; }
+.notice { padding: 10px 14px; border: 1px solid #8271db29; background: #8271db09; color: #786bb0; font-size: 11px; border-radius: 5px; margin-bottom: 18px; line-height: 1.7; }.notice.error { color: #dbad9e; background: #a0594910; border-color: #a0594930; }.notice button { color: inherit; background: none; border: 0; text-decoration: underline; margin-left: 15px; }
+.metrics { display: grid; grid-template-columns: repeat(4,1fr); padding: 22px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 28px; }.metrics > div { padding: 0 25px; border-right: 1px solid var(--line); }.metrics > div:first-child { padding-left: 0; }.metrics > div:last-child { border: 0; }.metrics p { margin: 0 0 11px; font-size: 12px; color: #686f80; }.metrics p small { display: block; color: #788d9a; font-size: 9px; margin-top: 5px; }
+.metrics strong { font-size: 35px; line-height: 1.3; font-weight: 500; color: #34394b; letter-spacing: -.8px; font-variant-numeric: tabular-nums; }.metrics strong em { font-size: 13px; color: #8b9ba6; font-weight: 400; font-style: normal; letter-spacing: 0; margin-left: 10px; }.metrics strong.critical-number { color: #ce7666; }.metrics > div > span { display: block; color: #83939d; font-size: 9px; margin-top: 8px; }.metrics .stale { color: #ce7666; }
+.workspace-grid { display: grid; grid-template-columns: minmax(0,1fr) 295px; gap: 26px; align-items: start; }.section-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }.section-heading h2 { font-size: 15px; font-weight: 500; margin: 0; color: #3f4555; }.section-heading h2 small { color: #68808f; font-size: 8px; letter-spacing: 1.3px; margin-left: 10px; font-weight: 400; }.section-heading p { font-size: 10px; color: #7f929e; margin: 7px 0 0; }
+.view-controls { display: flex; gap: 10px; align-items: center; }.layout-switch { display: flex; padding: 3px; background: #f4f3fb; border: 1px solid var(--line); border-radius: 5px; }.layout-switch button { background: none; color: #8f9fa9; border: 0; padding: 4px 10px; font-size: 10px; border-radius: 3px; }.layout-switch button[aria-pressed=true] { background: #ffffff; color: #6559cf; }.icon-button { width: 28px; height: 28px; display: inline-grid; place-items: center; border: 1px solid #e6e8f0; color: #98aab6; background: #f4f3fb; border-radius: 4px; font-size: 13px; }.icon-button:disabled { opacity: .3; }
+.camera-toolbar { display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #8c9daa; margin-bottom: 13px; min-height: 27px; }.camera-toolbar select { margin-left: 10px; max-width: 230px; padding: 4px 8px; border-radius: 4px; background: #f4f3fb; color: #5f6175; border: 1px solid #ffffff15; font-size: 11px; }.preview-note { color: #7d919e; font-size: 9px; }
+.video-grid { display: grid; gap: 14px; }.grid-1 { grid-template-columns: 1fr; }.grid-4 { grid-template-columns: repeat(2,minmax(0,1fr)); }.grid-6 { grid-template-columns: repeat(3,minmax(0,1fr)); }.video-panel:fullscreen { padding: 28px; background: #f7f8fc; overflow: auto; }.video-panel:fullscreen .grid-1 { max-width: 1100px; margin: auto; }.page-controls { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 10px; color: #81939f; }.page-controls > div { display: flex; gap: 6px; }
+.event-column { min-width: 0; border-left: 1px solid var(--line); padding-left: 24px; }.events-panel .section-heading { padding-bottom: 16px; margin: 0; border-bottom: 1px solid var(--line); }.event-total { font-size: 10px; font-weight: 400; color: #ceae8c; background: #8b7ee512; border: 1px solid #8b7ee520; padding: 1px 5px; margin-left: 8px; border-radius: 3px; }.quiet-link { font-size: 10px; color: #776acb; text-decoration: none; }
+.event-item { width: 100%; text-align: left; display: flex; align-items: flex-start; padding: 21px 0; gap: 12px; border: 0; border-bottom: 1px solid var(--line); color: inherit; background: none; }.event-item:hover { background: #f8f7fd; }.event-item.featured { background: linear-gradient(90deg,#f6f3ff,transparent); }.event-rank { font-size: 10px; color: #788b98; padding-top: 3px; }.critical .event-rank { color: #cb9384; }.event-body { flex: 1; min-width: 0; }.event-topline { display: flex; justify-content: space-between; gap: 6px; align-items: center; }.event-topline b { font-size: 12px; font-weight: 500; }.severity-tag { font-size: 9px; padding: 2px 5px; border-radius: 3px; white-space: nowrap; }.severity-tag.critical { background: #b56a571c; color: #c46957; }.severity-tag.warning { background: #b3996017; color: #a77d36; }.severity-tag.info { background: #67839820; color: #718ca5; }.event-location { display: block; color: #8297a5; font-size: 10px; margin-top: 9px; overflow-wrap: anywhere; }.event-bottomline { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; font-size: 10px; color: #7d929f; }.event-bottomline > span { color: #7969d0; }.event-detail { font-size: 10px; line-height: 1.8; color: #9fa8ac; margin: 12px 0 0; }.events-footer { font-size: 9px; color: #7f929f; margin: 15px 0; }
+.assistant-card { display: flex; gap: 13px; padding: 20px 16px; margin-top: 25px; border: 1px solid #baa17e26; border-radius: 7px; background: linear-gradient(135deg,#f3efff,#f8f6ff); text-decoration: none; }.assistant-icon { color: #8b7ee5; font-size: 22px; }.assistant-card > div:last-child { flex: 1; }.assistant-card h3 { margin: 0; font-size: 13px; font-weight: 500; color: #464058; }.assistant-card p { color: #97a4ad; font-size: 11px; margin: 9px 0 19px; }.assistant-card span { display: flex; justify-content: space-between; font-size: 10px; color: #7969d0; border-top: 1px solid #e9ecf3; padding-top: 12px; }.assistant-card i { font-style: normal; }
+.section-empty { min-height: 310px; border: 1px dashed #e4e7f0; border-radius: 8px; padding: 45px 22px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #7f95a3; }.section-empty > .el-icon { font-size: 28px; }.section-empty h3 { font-size: 14px; font-weight: 400; color: #616a7d; margin: 18px 0 8px; }.section-empty p { font-size: 11px; margin: 0; line-height: 1.9; }.section-empty a { font-size: 12px; color: #7969d0; margin-top: 20px; }.section-empty.compact { min-height: 240px; border: 0; padding: 25px 10px; }
+.statistics-panel { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 24px; }.range-label { font-size: 10px; color: #83949e; }.charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }.chart { background: #ffffff; border: 1px solid var(--line); padding: 16px; border-radius: 7px; min-width: 0; }.chart h3 { font-size: 11px; color: #737b8f; font-weight: 400; margin: 0; }.chart .echarts { height: 180px; }.chart-empty { padding: 25px; font-size: 12px; color: #8295a2; background: #ffffff; border-radius: 5px; text-align: center; }
+.dashboard-footer { display: flex; gap: 15px; justify-content: space-between; margin-top: 26px; color: #748996; font-size: 9px; }.dashboard-footer i { margin: 0 10px; font-style: normal; color: #455864; }
+@media (min-width: 1650px) { .monitor-dashboard { padding: 40px 48px; }.workspace-grid { grid-template-columns: minmax(0,1fr) 340px; gap: 32px; }.event-column { padding-left: 30px; }.event-item { padding: 25px 0; } }
+@media (max-width: 1300px) { .monitor-dashboard { padding: 28px 24px; }.workspace-grid { grid-template-columns: minmax(0,1fr) 260px; gap: 18px; }.event-column { padding-left: 18px; }.heading-actions { flex-direction: column-reverse; gap: 10px; align-items: end; }h1 { font-size: 25px; }.grid-6 { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 1050px) { .workspace-grid { grid-template-columns: 1fr; }.event-column { border: 0; padding: 0; display: grid; grid-template-columns: minmax(0,1fr) 250px; gap: 24px; }.assistant-card { align-self: start; margin-top: 0; }.metrics > div { padding: 0 16px; }.section-heading h2 small { display: none; } }
+@media (max-width: 620px) { .monitor-dashboard { padding: 25px 18px; }.page-heading { align-items: start; flex-direction: column; }h1 { font-size: 23px; letter-spacing: 0; }.heading-actions { flex-direction: row; align-items: center; width: 100%; justify-content: space-between; }.metrics { grid-template-columns: 1fr 1fr; row-gap: 23px; }.metrics > div { padding: 0 0 0 20px; }.metrics > div:nth-child(3) { padding-left: 0; }.metrics > div:nth-child(even) { border: 0; }.metrics strong { font-size: 30px; }.grid-4,.grid-6 { grid-template-columns: 1fr; }.event-column,.charts-grid { grid-template-columns: 1fr; }.dashboard-footer { flex-direction: column; line-height: 1.8; gap: 5px; }.view-controls { gap: 7px; }.layout-switch button { padding: 4px 8px; }.camera-toolbar select { max-width: 180px; }.preview-note { display: none; } }
 
-.charts-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-.chart-card {
-  border-radius: 8px;
-}
-.chart-wrapper {
-  height: 260px;
-  width: 100%;
-}
-.camera-matrix-section {
-  margin-top: 16px;
-}
-.section-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-.section-title h3 {
-  margin: 0;
-  font-size: 16px;
-  color: #0f172a;
-}
-.camera-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-}
-.camera-card {
-  border-radius: 8px;
-}
-.cam-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #f1f5f9;
-}
-.cam-id {
-  font-weight: 600;
-  font-size: 15px;
-  color: #1e293b;
-}
-.cam-body {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
-  margin-bottom: 12px;
-}
-.cam-stat {
-  display: flex;
-  justify-content: space-between;
-}
-.cam-stat .label {
-  color: #64748b;
-}
-.cam-stat .val {
-  color: #1e293b;
-  font-weight: 500;
-}
-.font-mono {
-  font-family: ui-monospace, monospace;
-}
-.truncate {
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cam-footer {
-  display: flex;
-  justify-content: flex-end;
-  border-top: 1px solid #f8fafc;
-  padding-top: 6px;
-}
+/* Light workspace: primary actions first, advanced analysis on demand. */
+.monitor-dashboard{--line:#e9ecf3;color:#545d70;max-width:1800px;margin:0 auto;padding:32px 36px 44px}
+h1{font-size:28px;font-weight:600;letter-spacing:-.5px}.eyebrow{font-size:11px;letter-spacing:0;color:#969cad;margin-bottom:10px}.subtitle{font-size:13px;color:#8b92a3}.page-heading{margin-bottom:24px}.monitor-button{background:#ece8fc;color:#7565c9;border:0;border-radius:24px;padding:12px 18px;font-size:12px;min-height:42px}.auto-refresh{color:#9298a7}.auto-refresh input{accent-color:#8879df}
+.quick-actions{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 26px}.quick-actions a{display:flex;align-items:center;gap:9px;background:#fff;border:1px solid #e9eaf2;border-radius:24px;padding:10px 15px;color:#6d7485;font-size:12px;text-decoration:none;transition:box-shadow .2s,transform .2s,background .2s}.quick-actions a:hover{background:#f2efff;color:#7868ca;transform:translateY(-2px);box-shadow:0 4px 12px #615a9910}.quick-actions span{margin-left:12px;color:#a09aaa}
+.metrics{grid-template-columns:repeat(3,1fr);gap:18px;padding:0;border:0;margin-bottom:28px}.metrics>div,.metrics>div:first-child{border:1px solid #edf0f5;border-radius:18px;padding:20px 24px;background:#fff;box-shadow:0 3px 16px #28356103}.metrics>div:last-child{border:1px solid #edf0f5}.metrics p{font-size:13px;color:#7d8495}.metrics p small{display:inline;margin-left:8px;color:#a1a6b3;font-size:10px}.metrics strong{font-size:32px;color:#454a5a;font-weight:550}.metrics strong em{color:#a1a6b3}.metrics>div>span{color:#a1a6b3;font-size:10px}
+.workspace-grid{gap:24px;grid-template-columns:minmax(0,1fr) 300px}.video-panel{background:#fff;border:1px solid #edf0f5;border-radius:20px;padding:24px;min-width:0}.section-heading h2{font-weight:600;font-size:16px;color:#50576a}.section-heading p{color:#999faf;font-size:11px}.section-heading h2 small{display:none}.layout-switch{border:0;border-radius:20px;background:#f2f1f8;padding:4px}.layout-switch button{border-radius:18px;padding:7px 12px;min-height:32px;font-size:11px;color:#9195a5;transition:background .2s,box-shadow .2s,color .2s}.layout-switch button[aria-pressed=true]{background:#fff;box-shadow:0 2px 7px #43386c15;color:#7969cd}.icon-button{border:0;border-radius:50%;width:36px;height:36px;background:#f3f2fa;color:#8b80ba}.camera-toolbar{color:#959caa;margin-bottom:16px}.camera-toolbar select{background:#f5f3fc;border:1px solid #e9e4f6;border-radius:12px;padding:7px 10px;color:#7b7198}.preview-note{color:#999eab}.page-controls{color:#969cab;margin-top:18px}.page-controls:has(button:disabled + button:disabled){opacity:.6}
+.event-column{border:0;padding:0}.events-panel{background:#fff;border:1px solid #edf0f5;border-radius:20px;padding:23px}.events-panel .section-heading{border-bottom:0;padding-bottom:12px}.event-total{background:#f1edff;color:#8a78ce;border:0;border-radius:9px;padding:3px 7px}.quiet-link{color:#8a7bcc}.section-empty{border:1px dashed #e4e5ef;border-radius:16px;color:#a09ab9}.section-empty h3{color:#74798c;font-size:14px}.section-empty p{color:#a0a5b3;font-size:12px}.section-empty.compact{min-height:220px}.section-empty.compact>.el-icon{width:58px;height:58px;border-radius:50%;background:#eeF6f0;color:#90b39a;font-size:28px}.event-item{padding:18px 8px;border-color:#f0f1f6;border-radius:10px;color:#646b7b;transition:background .2s,transform .2s}.event-item:hover{background:#f7f5fe;transform:translateX(2px)}.event-item.featured{background:none}.event-bottomline{flex-wrap:wrap}.events-footer{color:#a1a6b3}.assistant-card{background:linear-gradient(125deg,#eeebff,#f7f5ff);border:0;border-radius:20px;padding:24px;transition:transform .2s,box-shadow .2s}.assistant-card:hover{transform:translateY(-3px);box-shadow:0 10px 24px #7e6cca14}.assistant-card h3{color:#70649b}.assistant-card p{color:#9a91ae}.assistant-card span{color:#8c7bc4;border-color:#e4dcf3}
+.statistics-panel{border:1px solid #edf0f5;border-radius:18px;background:#fff;padding:0 24px;margin-top:24px}.statistics-panel summary{cursor:pointer;padding:22px 0;color:#777e90;font-size:13px;list-style:none;display:flex;align-items:center;gap:10px}.statistics-panel summary:before{content:'›';font-size:20px;color:#9c90c9;transition:transform .2s}.statistics-panel[open] summary:before{transform:rotate(90deg)}.statistics-panel summary span{margin-left:auto;color:#a4a9b6;font-size:11px}.statistics-panel>.section-heading,.statistics-panel>.charts-grid,.statistics-panel>.chart-empty{margin-bottom:24px}.chart{border:0;background:#f9f9fd;border-radius:14px}.chart-empty{background:#f8f8fc;color:#a0a5b2}.range-label{color:#969dab}.video-panel:fullscreen{background:#f7f8fc}.notice{background:#f1eefb;color:#82759e;border-color:#e8e2f3;border-radius:12px}.notice.error{background:#fff0ec;color:#bd7a67;border-color:#f2dcd5}
+@media(max-width:1250px){.workspace-grid{grid-template-columns:minmax(0,1fr) 270px;gap:18px}.video-panel{padding:18px}.events-panel{padding:20px}.monitor-dashboard{padding:28px 24px}.view-controls{gap:5px}.layout-switch button{padding:6px 9px}}
+@media(max-width:1050px){.workspace-grid{grid-template-columns:1fr}.event-column{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:20px}.assistant-card{margin-top:0;align-self:start}}
+@media(max-width:620px){.monitor-dashboard{padding:24px 16px}.page-heading{gap:18px}.metrics{gap:8px;grid-template-columns:repeat(3,minmax(0,1fr))}.metrics>div,.metrics>div:first-child,.metrics>div:nth-child(3){padding:15px 10px;border-radius:14px}.metrics p{font-size:11px;line-height:1.7}.metrics p small{display:none}.metrics strong{font-size:25px}.metrics strong em{font-size:11px;margin-left:4px}.metrics>div>span{font-size:9px;line-height:1.7}.quick-actions{gap:7px}.quick-actions a{font-size:11px;padding:9px 11px}.quick-actions span{display:none}.video-panel{padding:16px;border-radius:18px}.section-heading{flex-wrap:wrap;gap:14px}.event-column{grid-template-columns:1fr}.statistics-panel{padding:0 16px}.heading-actions{justify-content:space-between}.grid-4,.grid-6{grid-template-columns:1fr}.camera-toolbar select{max-width:155px}}
+
+/* Keep secondary copy legible on the light surface. */
+.subtitle,.section-heading p,.camera-toolbar,.auto-refresh{color:#737b8d}.metrics>div>span,.events-footer,.page-controls{color:#81889a}.metrics p small{color:#838a9b}.section-empty p{color:#858c9d}.quick-actions a{min-height:40px}.event-location,.event-bottomline{font-size:11px}.section-empty.compact{min-height:220px}.statistics-panel summary span{color:#838a9b}
+
+.camera-filters{display:flex;gap:12px;justify-content:space-between;align-items:center;margin:18px 0 12px;flex-wrap:wrap}.camera-search{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid #eeebf6;border-radius:14px;background:#f9f8fd;color:#aaa0c0;flex:1;min-width:150px;max-width:300px;transition:box-shadow .2s,border-color .2s}.camera-search:focus-within{border-color:#b4a6e2;box-shadow:0 0 0 3px #eee8fb}.camera-search input{width:100%;min-width:0;background:transparent;border:0;outline:none;font-size:12px;color:#747087}.camera-search input::placeholder{color:#aaa4b6}.status-filter{display:flex;gap:4px}.status-filter button,.focus-toggle,.clear-filter{background:transparent;border:0;border-radius:18px;color:#9386ac;padding:9px 12px;font-size:11px;min-height:36px}.status-filter button:hover{background:#f6f2fc}.status-filter button[aria-pressed=true],.focus-toggle[aria-pressed=true]{background:#eee8fa;color:#7c68b2}.focus-toggle{border:1px solid #e9e3f5;white-space:nowrap}.clear-filter{padding:4px 9px}.clear-filter:hover{background:#f5f1fa}.focus-mode .workspace-grid{grid-template-columns:1fr}.focus-mode .event-column{display:none}.video-panel{scroll-margin-top:20px}.video-grid{transition:gap .2s}.section-empty>.monitor-button{margin-top:16px}.view-controls{flex-wrap:wrap}.focus-mode .grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}.focus-mode .grid-6{grid-template-columns:repeat(3,minmax(0,1fr))}@media(max-width:620px){.camera-search{max-width:none}.camera-filters{gap:8px}.status-filter{width:100%;justify-content:flex-start}.focus-mode .grid-4,.focus-mode .grid-6{grid-template-columns:1fr}.view-controls{width:100%;justify-content:space-between}.focus-toggle{padding:7px 10px}}
 </style>
