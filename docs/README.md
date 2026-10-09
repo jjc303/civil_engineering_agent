@@ -2,6 +2,8 @@
 
 本目录汇总了 **Civil Engineering Agent (智能建造工程智能体)** 各子系统与核心模块的技术设计、规格说明、实施进展与迁移使用指南：
 
+- **[项目功能与 Agent 工具总览](./PROJECT_FUNCTIONS_AND_AGENT_TOOLS.md)**：按当前代码梳理整体架构、30 个 Agent 工具、全部页面、知识库、学习中心、接口与配置边界。
+
 ## 1. 核心专栏与文档索引
 
 - **[迁移成果与系统全功能使用指南 (Migration)](./migration/README.md)** ⭐️
@@ -19,13 +21,14 @@
 - [智能体服务子系统 (Agent)](./agent/README.md)
   - [Agent 阶段一进展报告 (Agent_Phase_1_Progress.md)](./agent/Agent_Phase_1_Progress.md)：涵盖 FastAPI 服务、工具注册、MySQL 幂等存储与 LangGraph 状态编排。
   - [DeepSeek 接入与模型适配报告 (DeepSeek_Integration.md)](./agent/DeepSeek_Integration.md)：官方 DeepSeek-V3 / R1 协议适配与离线测试桩。
-  - [会话记忆与 RAG 向量库管理规范 (Agent_Memory_RAG_Management.md)](./agent/Agent_Memory_RAG_Management.md)：首版记忆、资料知识库、向量索引、运维和验收的唯一实施准绳（尚未上线）。
+  - [会话记忆与 RAG 向量库管理规范 (Agent_Memory_RAG_Management.md)](./agent/Agent_Memory_RAG_Management.md)：早期设计文档；当前实现以[项目功能与 Agent 工具总览](./PROJECT_FUNCTIONS_AND_AGENT_TOOLS.md)和代码为准。
 
 ## 2. 文档组织架构
 
 ```text
 docs/
 ├── README.md                      # 文档中心总览与主导航
+├── PROJECT_FUNCTIONS_AND_AGENT_TOOLS.md # 当前项目功能与 Agent 工具清单
 ├── migration/                     # 迁移与重构成果专区 ⭐️
 │   ├── README.md
 │   └── SYSTEM_FEATURES_AND_USAGE_GUIDE.md # 系统全功能与使用指南 (全新)
