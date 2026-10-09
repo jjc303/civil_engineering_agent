@@ -1,5 +1,6 @@
 <template>
-  <div class="app-shell" :class="{ 'monitor-mode': isMonitor, collapsed, 'mobile-open': mobileOpen }">
+  <router-view v-if="isLearningRoute" />
+  <div v-else class="app-shell" :class="{ 'monitor-mode': isMonitor, collapsed, 'mobile-open': mobileOpen }">
     <a class="skip-link" href="#main-content">跳到主要内容</a>
     <button v-if="mobileOpen" class="nav-backdrop" aria-label="关闭导航" @click="mobileOpen = false" />
     <aside class="sidebar" aria-label="工作台导航">
@@ -31,7 +32,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { DataBoard, Warning, DocumentChecked, Crop, VideoCamera, ChatDotRound, Fold, Expand, Menu, Search } from '@element-plus/icons-vue'
+import { DataBoard, Warning, DocumentChecked, Crop, VideoCamera, ChatDotRound, Reading, Fold, Expand, Menu, Search } from '@element-plus/icons-vue'
 import { isMockEnabled } from '@/api/client'
 import { navigationFailure } from '@/router'
 const route = useRoute()
@@ -51,6 +52,7 @@ const collapsed = ref(false)
 const mobileOpen = ref(false)
 const now = ref(new Date())
 const isMonitor = computed(() => route.path === '/dashboard')
+const isLearningRoute = computed(() => route.path.startsWith('/learn/'))
 const dateLabel = computed(() => now.value.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }))
 const timeLabel = computed(() => now.value.toLocaleTimeString('zh-CN', { hour12: false }))
 const navigation = [
@@ -60,6 +62,7 @@ const navigation = [
   { path: '/zones', label: '区域标定', icon: Crop },
   { path: '/cameras', label: '摄像头与节点', icon: VideoCamera },
   { path: '/copilot', label: '安全智能助手', icon: ChatDotRound },
+  { path: '/learning', label: '学习中心', icon: Reading },
 ]
 let clock: ReturnType<typeof setInterval> | undefined
 onMounted(() => { clock = setInterval(() => { now.value = new Date() }, 1000) })

@@ -15,7 +15,7 @@ from agent.contracts.camera_management import (
     ManagedCameraSourceUpdate, MonitoringSessionResponse,
 )
 from agent.db.base import Database
-from agent.db.models import CvNodeModel, ManagedCameraModel
+from agent.db.models import CameraStatusModel, CvNodeModel, ManagedCameraModel
 
 
 class CameraManagementError(RuntimeError):
@@ -210,6 +210,13 @@ class CameraManagementService:
             assert camera is not None
             camera.desired_state = "RUNNING" if action == "start" else "STOPPED"
             camera.monitor_session_id = body.get("monitor_session_id") if action == "start" else None
+            if action == "stop":
+                status = session.get(CameraStatusModel, camera_id)
+                if status is not None:
+                    status.is_online = False
+                    status.fps = 0.0
+                    status.active_workers_count = 0
+                    status.reported_at_utc = datetime.now(timezone.utc)
             return MonitoringSessionResponse(camera_id=camera_id, node_id=camera.node_id, monitor_session_id=camera.monitor_session_id, desired_state=camera.desired_state, accepted=True)
 
     def _decrypt(self, value: str) -> str:

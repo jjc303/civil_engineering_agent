@@ -87,7 +87,7 @@ Agent API (FastAPI :8000) ── MySQL
 ### 安全边界
 
 - CV 到 Agent 的内部事件接口使用 `INTERNAL_PERCEPTION_TOKEN` 鉴权。
-- CV 节点注册、摄像头配置和启停由 `AGENT_ADMIN_TOKEN` 保护；RAG 收件目录、智能助手和整改任务接口不需要管理员令牌。
+- CV 节点注册、摄像头配置和启停等本地管理接口无需管理员令牌；CV 节点回传事件仍需节点或内部通信令牌。
 - 摄像头源地址与控制令牌不返回浏览器；写操作采用“提议 → 用户确认 → 服务端执行”的模式，并保留审计记录。
 
 ## 3. 从零开始运行
@@ -149,9 +149,8 @@ AGENT_CORS_ORIGINS=http://127.0.0.1:5173
 WEB_BIND_HOST=0.0.0.0
 WEB_PORT=5173
 
-# 内部 CV 与管理接口的密钥；不要填写到浏览器页面中
+# 内部 CV 通信密钥；不要填写到浏览器页面中
 INTERNAL_PERCEPTION_TOKEN=REPLACE_WITH_A_RANDOM_SECRET
-AGENT_ADMIN_TOKEN=REPLACE_WITH_A_RANDOM_SECRET
 CV_NODE_TOKEN=REPLACE_WITH_A_RANDOM_SECRET
 AGENT_CREDENTIAL_ENCRYPTION_KEY=REPLACE_WITH_FERNET_KEY
 
@@ -207,7 +206,7 @@ LOCAL_CAMERA_SOURCE=/absolute/path/to/demo.mp4
 
 说明：
 
-- `AGENT_ADMIN_TOKEN` 只供启动脚本注册本地 CV 节点和摄像头使用；RAG 文档放入收件目录不需要它。
+- 学习中心、知识文档、工人扫码、摄像头与 CV 节点管理接口均无需管理令牌。
 - `AGENT_CREDENTIAL_ENCRYPTION_KEY` 应为 Fernet key，可用以下命令生成：
 
   ```bash
@@ -218,6 +217,13 @@ LOCAL_CAMERA_SOURCE=/absolute/path/to/demo.mp4
 - 也可以用 `DASHSCOPE_API_KEY` 代替 `AGENT_RAG_EMBEDDING_API_KEY`。
 - 若暂不使用 RAG，设置 `AGENT_RAG_ENABLED=false`；Agent 和监控功能仍可运行。
 - `LOCAL_CAMERA_SOURCE_TYPE=file` 使用本地视频；`CV_ALLOWED_MEDIA_ROOTS` 必须覆盖视频文件所在目录。
+
+学习中心在 `.env` 中设置 `LEARNING_PUBLIC_BASE_URL`。仅在本机访问时可用 `http://127.0.0.1:5173`；手机扫码时应改成手机可访问的局域网地址，二维码会指向该地址的 `/learn/<任务令牌>`。工人手机须能访问前端与 `web/.env` 中配置的 `VITE_API_BASE_URL`。报告按 `LEARNING_TIMEZONE` 与前端 `VITE_LEARNING_TIMEZONE` 显示自然日，两者应设为相同的项目时区。`LEARNING_REPORT_DIRECTORY` 默认为 `./runs/learning/reports`，报告 PDF 通过学习中心接口下载。首次使用前执行 `pip install -r requirements-agent.txt` 和 `alembic upgrade head`；PDF 使用 WeasyPrint，服务器需要可用的中文字体与 Pango/Cairo 系统库。
+
+管理端打开 `/learning`，先生成并确认安全报告，再上传或选择事故报告、规范文档生成培训草稿，核对材料与答案后发布。事故日期、规范发布日期、风险标签和规范有效性均由管理员维护；旧文档可在资料详情中补录。
+学习中心的本周事件数、风险分布和培训进度由 MySQL 实时汇总；推荐案例与 AI 教育建议另行加载，不阻塞统计卡片。AI 结果按本周主要风险在进程内短期复用，`LEARNING_INSIGHTS_TTL_SECONDS` 默认 600 秒；页面“重新生成建议”可强制更新。服务进程重启后这份短期结果会重新生成。
+安全助手已注册学习中心读写工具：可查询本周概览、报告和培训列表/详情、培训完成情况；可提议生成、修改、确认或删除报告，以及生成、修改、发布或删除培训任务。写操作沿用聊天页的待确认卡片，确认后才执行。培训生成必须指定已确认报告、任务标题和目标人数；删除已发布培训会同时删除答题成绩。
+未填写摘要的文档在索引完成后由 Agent 根据原文片段自动生成摘要；已有空摘要由后台逐批补齐，详情页也可手动重新生成。人工填写或修改的摘要不会被自动覆盖。
 
 ### 3.5 启动
 

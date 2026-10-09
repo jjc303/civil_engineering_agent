@@ -126,6 +126,15 @@ class ChromaKnowledgeRetriever:
         collection = self._standards if document_type == "STANDARD" else self._collection
         return self._search_collection(collection, query, top_k, where={"document_version_id": {"$in": version_ids}})
 
+    def get_version(self, document_type: str, version_id: str) -> list[KnowledgeChunk]:
+        collection = self._standards if document_type == "STANDARD" else self._collection
+        result = collection.get(where={"document_version_id": version_id}, include=["documents", "metadatas"])
+        rows: list[tuple[int, KnowledgeChunk]] = []
+        for position, (chunk_id, body, meta) in enumerate(zip(result.get("ids", []), result.get("documents", []), result.get("metadatas", []))):
+            if not meta: continue
+            rows.append((int(meta.get("chunk_index", position)), KnowledgeChunk(str(chunk_id), str(body), str(meta["document_id"]), str(meta["document_version_id"]), int(meta["version_no"]), str(meta["title"]), str(meta["page_or_section"]), 1.0, str(meta.get("source_label", "")), document_type)))
+        return [chunk for _, chunk in sorted(rows, key=lambda pair: pair[0])]
+
     @staticmethod
     def _search_collection(collection: Any, query: str, top_k: int, where: dict[str, Any] | None = None) -> list[KnowledgeChunk]:
         if collection.count() == 0:

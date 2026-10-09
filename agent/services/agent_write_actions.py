@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from agent.contracts.actions import ActionExecutionResponse, PendingActionResponse
 from agent.contracts.chat import ToolDecision
+from agent.contracts.learning import ReportContent, ReportCreate, TrainingCreate, TrainingEdit
 from agent.db.base import Database
 from agent.db.models import (
     AgentPendingActionAuditModel,
@@ -17,6 +18,7 @@ from agent.db.models import (
     ViolationEventModel,
 )
 from agent.services.camera_management import CameraManagementService
+from agent.services.learning_service import LearningService
 
 
 class AgentWriteActionError(RuntimeError):
@@ -25,6 +27,10 @@ class AgentWriteActionError(RuntimeError):
 
 _ACTOR = "agent-ui-confirmation"
 _TTL = timedelta(minutes=15)
+_LEARNING_ACTIONS = {
+    "create_safety_report", "update_safety_report", "confirm_safety_report", "delete_safety_report",
+    "create_training_task", "update_training_task", "publish_training_task", "delete_training_task",
+}
 
 
 def _utc_now() -> datetime:
@@ -42,9 +48,10 @@ class AgentWriteActionService:
     no camera source URI, CV-node token, or other credential material.
     """
 
-    def __init__(self, database: Database, camera_management: CameraManagementService | None) -> None:
+    def __init__(self, database: Database, camera_management: CameraManagementService | None, learning_service: LearningService | None = None) -> None:
         self.database = database
         self.camera_management = camera_management
+        self.learning_service = learning_service
 
     def propose(self, conversation_id: str | None, decision: ToolDecision) -> PendingActionResponse:
         if not conversation_id:
@@ -55,7 +62,73 @@ class AgentWriteActionService:
             return self._propose_task_update(conversation_id, decision)
         if decision.tool_name in {"start_monitoring", "stop_monitoring"}:
             return self._propose_camera_control(conversation_id, decision)
+        if decision.tool_name in _LEARNING_ACTIONS:
+            return self._propose_learning_action(conversation_id, decision)
         raise AgentWriteActionError("不支持的写操作")
+
+    def _propose_learning_action(self, conversation_id: str, decision: ToolDecision) -> PendingActionResponse:
+        learning = self.learning_service
+        if learning is None:
+            raise AgentWriteActionError("学习中心服务未启用")
+        name = decision.tool_name
+        try:
+            if name == "create_safety_report":
+                request = learning.current_week_period() if decision.report_period == "THIS_WEEK" or not decision.report_period_start_utc else ReportCreate(
+                    period_start_utc=decision.report_period_start_utc, period_end_utc=decision.report_period_end_utc)
+                payload = request.model_dump(mode="json")
+                summary = f"生成安全报告草稿：{request.period_start_utc.isoformat()} 至 {request.period_end_utc.isoformat()}"
+            elif name in {"update_safety_report", "confirm_safety_report", "delete_safety_report"}:
+                assert decision.report_id
+                report = learning.get_report(decision.report_id)
+                if name in {"update_safety_report", "confirm_safety_report"} and report.status != "DRAFT":
+                    raise AgentWriteActionError("该报告已确认，不能再次修改或确认")
+                payload = {"report_id": report.report_id}
+                if name == "update_safety_report":
+                    content = report.content.model_dump()
+                    for field, value in (("summary", decision.report_summary), ("risk_analysis", decision.report_risk_analysis), ("remediation", decision.report_remediation)):
+                        if value is not None:
+                            content[field] = value.strip()
+                    payload["content"] = ReportContent.model_validate(content).model_dump()
+                label = {"update_safety_report": "修改报告草稿", "confirm_safety_report": "确认报告并生成 PDF", "delete_safety_report": "删除报告及 PDF"}[name]
+                summary = f"{label}：{report.report_id[:8]}（{report.period_start_utc.date()} 至 {report.period_end_utc.date()}）"
+            elif name == "create_training_task":
+                assert decision.report_id and decision.training_title and decision.training_target_count
+                report = learning.get_report(decision.report_id)
+                if report.status != "CONFIRMED":
+                    raise AgentWriteActionError("请先确认安全报告，再创建培训任务")
+                request = TrainingCreate(report_id=report.report_id, title=decision.training_title.strip(),
+                                         document_ids=decision.training_document_ids or [], target_count=decision.training_target_count,
+                                         question_count=decision.training_question_count or 5,
+                                         pass_score=80 if decision.training_pass_score is None else decision.training_pass_score)
+                payload = request.model_dump(mode="json")
+                summary = f"生成培训草稿：{request.title}；目标 {request.target_count} 人；{request.question_count} 道题"
+            else:
+                assert decision.training_id
+                task = learning.get_training(decision.training_id)
+                if name == "update_training_task" and task.status != "DRAFT":
+                    raise AgentWriteActionError("已发布的培训任务不可修改草稿")
+                if name == "publish_training_task" and task.status != "DRAFT":
+                    raise AgentWriteActionError("培训任务已发布")
+                payload = {"training_id": task.task_id}
+                if name == "update_training_task":
+                    edit = TrainingEdit(
+                        title=decision.training_title.strip() if decision.training_title else task.title,
+                        target_count=decision.training_target_count or task.target_count,
+                        pass_score=task.pass_score if decision.training_pass_score is None else decision.training_pass_score,
+                        material=decision.training_material.strip() if decision.training_material else task.material,
+                        questions=decision.training_questions if decision.training_questions is not None else task.questions,
+                    )
+                    payload["edit"] = edit.model_dump(mode="json")
+                label = {"update_training_task": "修改培训草稿", "publish_training_task": "发布培训任务", "delete_training_task": "删除培训任务及答题成绩"}[name]
+                summary = f"{label}：{task.title}（{task.task_id[:8]}）"
+        except AgentWriteActionError:
+            raise
+        except KeyError as exc:
+            raise AgentWriteActionError("指定的报告或培训任务不存在") from exc
+        except ValueError as exc:
+            raise AgentWriteActionError(f"学习中心参数无效：{exc}") from exc
+        with self.database.session() as session:
+            return self._create_pending(session, conversation_id, name, summary, payload)
 
     def _propose_task_create(self, conversation_id: str, decision: ToolDecision) -> PendingActionResponse:
         assert decision.violation_event_uuid and decision.task_title and decision.task_owner and decision.task_due_at_utc
@@ -145,19 +218,22 @@ class AgentWriteActionService:
                 action.status = "EXPIRED"
                 self._audit(session, action.confirmation_id, "EXPIRED", {})
                 raise AgentWriteActionError("确认已过期，请重新发起操作")
-            if action.action_type in {"start_monitoring", "stop_monitoring"}:
+            if action.action_type in {"start_monitoring", "stop_monitoring", *_LEARNING_ACTIONS}:
                 action.status = "EXECUTING"
                 self._audit(session, action.confirmation_id, "CONFIRMED", {})
                 payload = dict(action.payload_safe_json or {})
+                action_type = action.action_type
             else:
                 return self._execute_local(session, action)
 
-        # The preceding transaction commits EXECUTING before crossing the
-        # network boundary. No browser supplied camera credentials are used.
-        assert self.camera_management is not None
+        # Commit EXECUTING before external CV calls or potentially long AI/PDF work.
         try:
-            result = self.camera_management.start_camera(payload["camera_id"]) if payload["action"] == "start" else self.camera_management.stop_camera(payload["camera_id"])
-            result_data = result.model_dump(mode="json")
+            if action_type in _LEARNING_ACTIONS:
+                result_data = self._execute_learning(action_type, payload)
+            else:
+                assert self.camera_management is not None
+                result = self.camera_management.start_camera(payload["camera_id"]) if payload["action"] == "start" else self.camera_management.stop_camera(payload["camera_id"])
+                result_data = result.model_dump(mode="json")
         except Exception as exc:
             with self.database.session() as session:
                 action = session.get(AgentPendingActionModel, confirmation_id)
@@ -165,7 +241,7 @@ class AgentWriteActionService:
                     action.status = "FAILED"
                     action.failure_detail_safe = self._safe_error(exc)
                     self._audit(session, confirmation_id, "FAILED", {"reason": action.failure_detail_safe})
-            raise AgentWriteActionError("摄像头控制未完成：" + self._safe_error(exc)) from exc
+            raise AgentWriteActionError(("学习中心操作未完成：" if action_type in _LEARNING_ACTIONS else "摄像头控制未完成：") + self._safe_error(exc)) from exc
         with self.database.session() as session:
             action = session.get(AgentPendingActionModel, confirmation_id)
             if action is None:
@@ -175,6 +251,36 @@ class AgentWriteActionService:
             action.result_safe_json = result_data
             self._audit(session, confirmation_id, "EXECUTED", result_data)
             return self._execution_response(action)
+
+    def _execute_learning(self, action_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+        learning = self.learning_service
+        if learning is None:
+            raise AgentWriteActionError("学习中心服务未启用")
+        if action_type == "create_safety_report":
+            report = learning.create_report(ReportCreate.model_validate(payload))
+            return {"report_id": report.report_id, "status": report.status}
+        if action_type == "update_safety_report":
+            report = learning.edit_report(payload["report_id"], ReportContent.model_validate(payload["content"]))
+            return {"report_id": report.report_id, "status": report.status}
+        if action_type == "confirm_safety_report":
+            report = learning.confirm_report(payload["report_id"])
+            return {"report_id": report.report_id, "status": report.status, "pdf_url": report.pdf_url}
+        if action_type == "delete_safety_report":
+            learning.delete_report(payload["report_id"])
+            return {"report_id": payload["report_id"], "status": "DELETED"}
+        if action_type == "create_training_task":
+            task = learning.create_training(TrainingCreate.model_validate(payload))
+            return {"training_id": task.task_id, "status": task.status, "title": task.title}
+        if action_type == "update_training_task":
+            task = learning.edit_training(payload["training_id"], TrainingEdit.model_validate(payload["edit"]))
+            return {"training_id": task.task_id, "status": task.status}
+        if action_type == "publish_training_task":
+            task = learning.publish_training(payload["training_id"])
+            return {"training_id": task.task_id, "status": task.status, "public_url": task.public_url, "qr_url": task.qr_url}
+        if action_type == "delete_training_task":
+            learning.delete_training(payload["training_id"])
+            return {"training_id": payload["training_id"], "status": "DELETED"}
+        raise AgentWriteActionError("不支持的学习中心操作")
 
     def cancel(self, confirmation_id: str, conversation_id: str) -> ActionExecutionResponse:
         with self.database.session() as session:

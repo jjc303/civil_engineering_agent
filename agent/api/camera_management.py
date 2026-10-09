@@ -13,15 +13,11 @@ from agent.contracts.camera_management import (
     CvNodeMediaDirectoryResponse, ManagedCameraCreateRequest, ManagedCameraResponse,
     ManagedCameraSourceUpdate, MonitoringSessionResponse,
 )
-from agent.core.security import bearer_scheme, verify_admin_token
+from agent.core.security import bearer_scheme
 from agent.services.camera_management import CameraManagementError, CameraManagementService
 
 router = APIRouter(prefix="/api/v1", tags=["camera-management"])
 internal_router = APIRouter(prefix="/internal/v1/cv-nodes", tags=["internal-cv-nodes"])
-
-
-def require_admin(request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)) -> None:
-    verify_admin_token(credentials, request.app.state.settings)
 
 
 def _http_error(exc: Exception) -> HTTPException:
@@ -32,12 +28,12 @@ def _http_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=503, detail=str(exc))
 
 
-@router.get("/cv-nodes", response_model=list[CvNodeResponse], dependencies=[Depends(require_admin)])
+@router.get("/cv-nodes", response_model=list[CvNodeResponse])
 def list_cv_nodes(service: CameraManagementService = Depends(get_camera_management_service)) -> list[CvNodeResponse]:
     return service.list_nodes()
 
 
-@router.post("/cv-nodes", response_model=CvNodeEnrollmentResponse, status_code=201, dependencies=[Depends(require_admin)])
+@router.post("/cv-nodes", response_model=CvNodeEnrollmentResponse, status_code=201)
 def create_cv_node(request: CvNodeCreateRequest, service: CameraManagementService = Depends(get_camera_management_service)) -> CvNodeEnrollmentResponse:
     try:
         return service.create_node(request)
@@ -45,12 +41,12 @@ def create_cv_node(request: CvNodeCreateRequest, service: CameraManagementServic
         raise HTTPException(status_code=409 if "already exists" in str(exc) else 503, detail=str(exc)) from exc
 
 
-@router.get("/managed-cameras", response_model=list[ManagedCameraResponse], dependencies=[Depends(require_admin)])
+@router.get("/managed-cameras", response_model=list[ManagedCameraResponse])
 def list_managed_cameras(service: CameraManagementService = Depends(get_camera_management_service)) -> list[ManagedCameraResponse]:
     return service.list_cameras()
 
 
-@router.post("/managed-cameras", response_model=ManagedCameraResponse, status_code=201, dependencies=[Depends(require_admin)])
+@router.post("/managed-cameras", response_model=ManagedCameraResponse, status_code=201)
 def create_managed_camera(request: ManagedCameraCreateRequest, service: CameraManagementService = Depends(get_camera_management_service)) -> ManagedCameraResponse:
     try:
         return service.create_camera(request)
@@ -58,7 +54,7 @@ def create_managed_camera(request: ManagedCameraCreateRequest, service: CameraMa
         raise HTTPException(status_code=409 if "already exists" in str(exc) else 422, detail=str(exc)) from exc
 
 
-@router.put("/managed-cameras/{camera_id}/source", response_model=ManagedCameraResponse, dependencies=[Depends(require_admin)])
+@router.put("/managed-cameras/{camera_id}/source", response_model=ManagedCameraResponse)
 def update_camera_source(camera_id: str, request: ManagedCameraSourceUpdate, service: CameraManagementService = Depends(get_camera_management_service)) -> ManagedCameraResponse:
     try:
         return service.update_source(camera_id, request)
@@ -66,7 +62,7 @@ def update_camera_source(camera_id: str, request: ManagedCameraSourceUpdate, ser
         raise _http_error(exc) from exc
 
 
-@router.get("/cv-nodes/{node_id}/media-files", response_model=CvNodeMediaDirectoryResponse, dependencies=[Depends(require_admin)])
+@router.get("/cv-nodes/{node_id}/media-files", response_model=CvNodeMediaDirectoryResponse)
 def list_node_media_files(node_id: str, directory: str | None = None, service: CameraManagementService = Depends(get_camera_management_service)) -> CvNodeMediaDirectoryResponse:
     try:
         return service.list_node_media_files(node_id, directory)
@@ -74,7 +70,7 @@ def list_node_media_files(node_id: str, directory: str | None = None, service: C
         raise _http_error(exc) from exc
 
 
-@router.post("/cameras/{camera_id}/monitoring:start", response_model=MonitoringSessionResponse, status_code=202, dependencies=[Depends(require_admin)])
+@router.post("/cameras/{camera_id}/monitoring:start", response_model=MonitoringSessionResponse, status_code=202)
 def start_monitoring(camera_id: str, service: CameraManagementService = Depends(get_camera_management_service)) -> MonitoringSessionResponse:
     try:
         return service.start_camera(camera_id)
@@ -82,7 +78,7 @@ def start_monitoring(camera_id: str, service: CameraManagementService = Depends(
         raise _http_error(exc) from exc
 
 
-@router.post("/cameras/{camera_id}/monitoring:stop", response_model=MonitoringSessionResponse, dependencies=[Depends(require_admin)])
+@router.post("/cameras/{camera_id}/monitoring:stop", response_model=MonitoringSessionResponse)
 def stop_monitoring(camera_id: str, service: CameraManagementService = Depends(get_camera_management_service)) -> MonitoringSessionResponse:
     try:
         return service.stop_camera(camera_id)

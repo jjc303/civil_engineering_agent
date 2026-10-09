@@ -37,9 +37,9 @@ class RagManager:
             {
                 "chunk_id": str(uuid4()),
                 "text": body,
-                "metadata": {**metadata, "document_type": document_type, "page_or_section": section, "status": "ACTIVE"},
+                "metadata": {**metadata, "document_type": document_type, "page_or_section": section, "chunk_index": index, "status": "ACTIVE"},
             }
-            for body, section in chunks
+            for index, (body, section) in enumerate(chunks)
         ]
         return PreparedDocument(records, page_count, parser)
 
@@ -66,6 +66,9 @@ class RagManager:
         if document_type == "STANDARD":
             return self.retriever.search_standards(query, top_k)
         return self.retriever.search(query, top_k)
+
+    def get_version(self, document_type: DocumentType, version_id: str) -> list[KnowledgeChunk]:
+        return self.retriever.get_version(document_type, version_id)
 
     def update_version_source(self, document_type: DocumentType, version_id: str, source_label: str) -> None:
         if hasattr(self.retriever, "update_version_source"):

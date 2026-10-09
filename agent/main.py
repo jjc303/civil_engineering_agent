@@ -27,6 +27,8 @@ from agent.services.knowledge_service import KnowledgeService
 from agent.services.agent_write_actions import AgentWriteActionService
 from agent.services.rectification_task_service import RectificationTaskService
 from agent.api.rectification_tasks import router as rectification_task_router
+from agent.api.learning import router as learning_router, public_router as learning_public_router
+from agent.services.learning_service import LearningService
 
 logger = logging.getLogger(__name__)
 
@@ -93,9 +95,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         standards_subdirectory=settings.rag_standards_subdirectory,
         accident_reports_subdirectory=settings.rag_accident_reports_subdirectory,
     )
-    app.state.agent_write_action_service = AgentWriteActionService(database, app.state.camera_management_service)
+    model = create_chat_model(settings)
+    app.state.knowledge_service.set_summary_model(model)
+    app.state.learning_service = LearningService(database, app.state.knowledge_service, model, settings.learning_report_directory, settings.learning_public_base_url, settings.learning_timezone, settings.learning_insights_ttl_seconds)
+    app.state.agent_write_action_service = AgentWriteActionService(database, app.state.camera_management_service, app.state.learning_service)
     app.state.rectification_task_service = RectificationTaskService(database, app.state.agent_write_action_service)
-    app.state.chat_service = ChatService(database, create_chat_model(settings), settings.tool_max_calls, settings.memory_enabled, settings.memory_ttl_hours, settings.memory_recent_turns, app.state.knowledge_service if retriever else None, app.state.agent_write_action_service, settings.rag_top_k)
+    app.state.chat_service = ChatService(database, model, settings.tool_max_calls, settings.memory_enabled, settings.memory_ttl_hours, settings.memory_recent_turns, app.state.knowledge_service if retriever else None, app.state.agent_write_action_service, settings.rag_top_k, app.state.learning_service)
     app.include_router(camera_config_router)
     app.include_router(public_router)
     app.include_router(camera_management_router)
@@ -104,5 +109,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ui_config_public_router)
     app.include_router(ui_config_admin_router)
     app.include_router(rectification_task_router)
+    app.include_router(learning_router)
+    app.include_router(learning_public_router)
 
     return app

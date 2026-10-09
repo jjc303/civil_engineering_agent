@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol, Sequence
+from typing import Any, Protocol, Sequence
 
 from agent.contracts.chat import ToolDecision, ToolResult
 
@@ -15,3 +15,6 @@ class ChatModelPort(Protocol):
 
     def respond(self, question: str, results: Sequence[ToolResult], memory_context: str = "") -> str:
         """Create a user-facing answer only from the validated tool results."""
+
+    def generate_structured(self, instruction: str, context: dict[str, Any]) -> dict[str, Any]:
+        """Generate a JSON object from bounded, server supplied evidence."""

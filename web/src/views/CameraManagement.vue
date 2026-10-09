@@ -2,11 +2,10 @@
   <div class="camera-management-page">
     <div class="header-section">
       <div><h2>摄像头与 CV 节点</h2><p>配置视频源、分配可用 CV 节点并远程控制监控会话。</p></div>
-      <div><el-button :loading="loading" @click="load">刷新节点与会话</el-button><el-button type="primary" :disabled="!adminConfigured" @click="nodeDialogVisible = true">登记 CV 节点</el-button></div>
+      <div><el-button :loading="loading" @click="load">刷新节点与会话</el-button><el-button type="primary" @click="nodeDialogVisible = true">登记 CV 节点</el-button></div>
     </div>
 
     <el-alert v-if="isMock" title="Mock 模式不提供 CV 调度；切换 VITE_USE_MOCK=false 后配置真实节点。" type="info" :closable="false" />
-    <el-alert v-else-if="!adminConfigured" title="缺少 VITE_AGENT_ADMIN_TOKEN，无法进行摄像头与节点管理。" type="warning" :closable="false" />
 
     <div class="grid">
       <el-card><template #header>可用 CV 节点</template>
@@ -26,7 +25,7 @@
           <el-form-item label="CV 节点"><el-select v-model="form.node_id" style="width:100%" placeholder="选择在线节点" @change="clearFileSource(form)"><el-option v-for="node in onlineNodes" :key="node.node_id" :label="`${node.display_name} (${node.node_id})`" :value="node.node_id" /></el-select></el-form-item>
           <el-form-item label="视频源类型"><el-radio-group v-model="form.source_type" @change="clearFileSource(form)"><el-radio value="rtsp">RTSP</el-radio><el-radio value="file">节点本地文件</el-radio></el-radio-group></el-form-item>
           <el-form-item :label="form.source_type === 'rtsp' ? 'RTSP 地址' : 'CV 节点本地文件'"><el-input v-model="form.source_uri" :readonly="form.source_type === 'file'" :type="form.source_type === 'rtsp' ? 'password' : 'text'" show-password placeholder="rtsp://user:password@host/live"><template v-if="form.source_type === 'file'" #append><el-button :disabled="!form.node_id" @click="openMediaBrowser('create')">选择文件</el-button></template></el-input></el-form-item>
-          <el-button type="primary" :loading="creating" :disabled="!adminConfigured" @click="createCamera">保存摄像头</el-button>
+          <el-button type="primary" :loading="creating" @click="createCamera">保存摄像头</el-button>
         </el-form>
       </el-card>
     </div>
@@ -36,7 +35,7 @@
         <el-table-column prop="display_name" label="名称" /><el-table-column prop="camera_id" label="ID" /><el-table-column prop="node_id" label="CV 节点" />
         <el-table-column prop="source_uri_masked" label="视频源（脱敏）" min-width="220" show-overflow-tooltip />
         <el-table-column label="会话"><template #default="{ row }"><el-tag :type="row.desired_state === 'RUNNING' ? 'success' : 'info'">{{ row.desired_state === 'RUNNING' ? '运行中' : '已停止' }}</el-tag></template></el-table-column>
-        <el-table-column label="操作" width="280"><template #default="{ row }"><el-button size="small" :disabled="!adminConfigured" @click="openEdit(row)">编辑</el-button><el-button size="small" type="primary" :disabled="!adminConfigured || row.desired_state === 'RUNNING'" @click="control(row.camera_id, 'start')">启动</el-button><el-button size="small" :disabled="!adminConfigured || row.desired_state === 'STOPPED'" @click="control(row.camera_id, 'stop')">停止</el-button><el-button size="small" :disabled="row.desired_state !== 'RUNNING'" @click="openPreview(row.camera_id)">预览</el-button></template></el-table-column>
+        <el-table-column label="操作" width="280"><template #default="{ row }"><el-button size="small" @click="openEdit(row)">编辑</el-button><el-button size="small" type="primary" :disabled="row.desired_state === 'RUNNING'" @click="control(row.camera_id, 'start')">启动</el-button><el-button size="small" :disabled="row.desired_state === 'STOPPED'" @click="control(row.camera_id, 'stop')">停止</el-button><el-button size="small" :disabled="row.desired_state !== 'RUNNING'" @click="openPreview(row.camera_id)">预览</el-button></template></el-table-column>
       </el-table>
     </el-card>
     <el-dialog v-model="editDialogVisible" title="编辑摄像头配置" width="560px" destroy-on-close>
@@ -73,14 +72,14 @@ const nodes = ref<CvNodeResponse[]>([]); const cameras = ref<ManagedCameraRespon
 const loading = ref(false); const creating = ref(false); const creatingNode = ref(false); const nodeDialogVisible = ref(false); const previewVisible = ref(false); const previewCameraId = ref('')
 const editDialogVisible = ref(false); const savingEdit = ref(false); const editingCamera = ref<ManagedCameraResponse | null>(null)
 const mediaBrowserVisible = ref(false); const browsingMedia = ref(false); const mediaDirectory = ref<CvNodeMediaDirectory | null>(null); const mediaTarget = ref<'create' | 'edit'>('create'); const mediaNodeId = ref('')
-const isMock = isMockEnabled; const adminConfigured = Boolean(import.meta.env.VITE_AGENT_ADMIN_TOKEN)
+const isMock = isMockEnabled
 const onlineNodes = computed(() => nodes.value.filter((node) => node.is_online))
 type CameraForm = { camera_id: string; display_name: string; node_id: string; source_type: 'rtsp' | 'file'; source_uri: string; source_uri_masked?: string }
 const form = reactive<CameraForm>({ camera_id: '', display_name: '', node_id: '', source_type: 'rtsp', source_uri: '' })
 const editForm = reactive<CameraForm>({ camera_id: '', display_name: '', node_id: '', source_type: 'rtsp', source_uri: '' })
 const nodeForm = reactive({ node_id: '', display_name: '', control_url: '', capacity: 8 })
 
-async function load() { loading.value = true; try { [nodes.value, cameras.value] = await Promise.all([fetchCvNodes(), fetchManagedCameras()]) } catch { ElMessage.error('无法获取 CV 节点或摄像头配置，请检查 Agent 管理令牌和服务连接。') } finally { loading.value = false } }
+async function load() { loading.value = true; try { [nodes.value, cameras.value] = await Promise.all([fetchCvNodes(), fetchManagedCameras()]) } catch { ElMessage.error('无法获取 CV 节点或摄像头配置，请检查服务连接。') } finally { loading.value = false } }
 function clearFileSource(target: CameraForm) { target.source_uri = '' }
 async function createCamera() { if (!form.camera_id || !form.display_name || !form.node_id || !form.source_uri) return ElMessage.warning('请完整填写摄像头配置'); creating.value = true; try { await createManagedCamera({ ...form }); ElMessage.success('摄像头已保存，视频源已脱敏保存。'); form.camera_id = ''; form.display_name = ''; form.source_uri = ''; await load() } catch { /* Axios interceptor already reports the error. */ } finally { creating.value = false } }
 function openEdit(camera: ManagedCameraResponse) { editingCamera.value = camera; Object.assign(editForm, { camera_id: camera.camera_id, display_name: camera.display_name, node_id: camera.node_id, source_type: camera.source_type, source_uri: '', source_uri_masked: camera.source_uri_masked }); editDialogVisible.value = true }

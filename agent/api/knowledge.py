@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
-from agent.contracts.knowledge import DocumentType, StandardValidityUpdate, KnowledgeDocumentDetailResponse, KnowledgeDocumentPage, KnowledgeIndexJobPage, KnowledgeIndexJobResponse
+from agent.contracts.knowledge import DocumentType, StandardValidityUpdate, KnowledgeMetadataUpdate, KnowledgeDocumentDetailResponse, KnowledgeDocumentPage, KnowledgeIndexJobPage, KnowledgeIndexJobResponse
 from agent.services.knowledge_service import KnowledgeService
 
 router = APIRouter(prefix="/api/v1/knowledge", tags=["knowledge"])
@@ -23,9 +25,10 @@ def _error(exc: Exception) -> HTTPException:
 
 
 @router.post("/documents", response_model=KnowledgeDocumentDetailResponse, status_code=201)
-async def upload_document(request: Request, file: UploadFile = File(...), title: str = Form(...), source_label: str = Form(""), document_type: DocumentType = Form("ACCIDENT_REPORT")) -> KnowledgeDocumentDetailResponse:
+async def upload_document(request: Request, file: UploadFile = File(...), title: str = Form(...), source_label: str = Form(""), document_type: DocumentType = Form("ACCIDENT_REPORT"), document_date: datetime | None = Form(None), risk_tags: str = Form(""), summary: str = Form("")) -> KnowledgeDocumentDetailResponse:
     try:
-        detail, _, duplicate = _service(request).upload(filename=file.filename or "upload", content=await file.read(), title=title, source_label=source_label or title, actor="admin", document_type=document_type)
+        content = await file.read()
+        detail, _, duplicate = await asyncio.to_thread(_service(request).upload, filename=file.filename or "upload", content=content, title=title, source_label=source_label or title, actor="admin", document_type=document_type, document_date=document_date, risk_tags=[x.strip() for x in risk_tags.split(",") if x.strip()], summary=summary or None)
         if duplicate: raise HTTPException(409, detail="identical document already exists")
         return detail
     except HTTPException: raise
@@ -40,6 +43,18 @@ def list_documents(request: Request, limit: int = 20, offset: int = 0, status: s
 @router.get("/documents/{document_id}", response_model=KnowledgeDocumentDetailResponse)
 def get_document(document_id: str, request: Request) -> KnowledgeDocumentDetailResponse:
     try: return _service(request).detail(document_id)
+    except Exception as exc: raise _error(exc) from exc
+
+
+@router.patch("/documents/{document_id}/metadata", response_model=KnowledgeDocumentDetailResponse)
+def update_metadata(document_id: str, payload: KnowledgeMetadataUpdate, request: Request) -> KnowledgeDocumentDetailResponse:
+    try: return _service(request).update_metadata(document_id, payload, "admin")
+    except Exception as exc: raise _error(exc) from exc
+
+
+@router.post("/documents/{document_id}:summarize", response_model=KnowledgeDocumentDetailResponse)
+def regenerate_summary(document_id: str, request: Request) -> KnowledgeDocumentDetailResponse:
+    try: return _service(request).summarize_document(document_id, force=True)
     except Exception as exc: raise _error(exc) from exc
 
 
@@ -58,7 +73,8 @@ def update_standard_validity(document_id: str, payload: StandardValidityUpdate, 
 @router.post("/documents/{document_id}/versions", response_model=KnowledgeDocumentDetailResponse, status_code=201)
 async def create_version(document_id: str, request: Request, file: UploadFile = File(...), title: str = Form(...), source_label: str = Form(""), expected_current_version: int | None = Form(None)) -> KnowledgeDocumentDetailResponse:
     try:
-        detail, _, _ = _service(request).upload(filename=file.filename or "upload", content=await file.read(), title=title, source_label=source_label or title, actor="admin", document_id=document_id, expected_current_version=expected_current_version)
+        content = await file.read()
+        detail, _, _ = await asyncio.to_thread(_service(request).upload, filename=file.filename or "upload", content=content, title=title, source_label=source_label or title, actor="admin", document_id=document_id, expected_current_version=expected_current_version)
         return detail
     except Exception as exc: raise _error(exc) from exc
 

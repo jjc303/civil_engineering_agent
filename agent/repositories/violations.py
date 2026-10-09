@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from agent.contracts.event_v1 import CameraStatusReportV1, SafetyViolationEventV1
 from agent.contracts.query import CameraStatusResponse, ViolationQuery, ViolationRecord, ViolationStatisticsResponse
-from agent.db.models import CameraConfigModel, CameraStatusModel, ViolationEventModel
+from agent.db.models import CameraConfigModel, CameraStatusModel, ManagedCameraModel, ViolationEventModel
 
 
 def _utc_now() -> datetime:
@@ -103,37 +103,28 @@ class ViolationRepository:
 
     def get_camera_status(self, camera_id: str) -> CameraStatusResponse | None:
         model = self.session.get(CameraStatusModel, camera_id)
-        return self._to_camera_status(model) if model else None
+        managed = self.session.get(ManagedCameraModel, camera_id)
+        if model:
+            return self._effective_camera_status(model, managed, _utc_now())
+        if managed:
+            return self._unreported_camera_status(camera_id, managed.created_at_utc)
+        return None
 
     def list_camera_statuses(self, now: datetime | None = None) -> list[CameraStatusResponse]:
         now = now or _utc_now()
         status_by_id = {model.camera_id: model for model in self.session.scalars(select(CameraStatusModel))}
+        managed_by_id = {model.camera_id: model for model in self.session.scalars(select(ManagedCameraModel))}
         configured = {camera_id: updated_at for camera_id, updated_at in self.session.execute(select(CameraConfigModel.camera_id, CameraConfigModel.updated_at_utc))}
         results: list[CameraStatusResponse] = []
 
-        for camera_id in sorted(set(status_by_id) | set(configured)):
+        for camera_id in sorted(set(status_by_id) | set(configured) | set(managed_by_id)):
             model = status_by_id.get(camera_id)
             if model is None:
-                results.append(CameraStatusResponse(
-                    camera_id=camera_id,
-                    monitor_session_id="unreported",
-                    is_online=False,
-                    fps=0.0,
-                    processed_frame_id=0,
-                    active_workers_count=0,
-                    model_name=None,
-                    model_version=None,
-                    reported_at_utc=configured[camera_id],
-                    extra_details={},
-                ))
+                reported_at = configured.get(camera_id) or managed_by_id[camera_id].created_at_utc
+                results.append(self._unreported_camera_status(camera_id, reported_at))
                 continue
 
-            item = self._to_camera_status(model)
-            reported_at = item.reported_at_utc
-            if reported_at.tzinfo is None:
-                reported_at = reported_at.replace(tzinfo=timezone.utc)
-            item.is_online = (now - reported_at).total_seconds() <= 30
-            results.append(item)
+            results.append(self._effective_camera_status(model, managed_by_id.get(camera_id), now))
 
         return sorted(results, key=lambda item: (not item.is_online, item.camera_id))
 
@@ -160,3 +151,25 @@ class ViolationRepository:
     @staticmethod
     def _to_camera_status(model: CameraStatusModel) -> CameraStatusResponse:
         return CameraStatusResponse(**{field: getattr(model, field) for field in CameraStatusResponse.model_fields})
+
+    @classmethod
+    def _effective_camera_status(cls, model: CameraStatusModel, managed: ManagedCameraModel | None, now: datetime) -> CameraStatusResponse:
+        item = cls._to_camera_status(model)
+        reported_at = item.reported_at_utc
+        if reported_at.tzinfo is None:
+            reported_at = reported_at.replace(tzinfo=timezone.utc)
+        fresh = (now - reported_at).total_seconds() <= 30
+        session_active = managed is None or (managed.desired_state == "RUNNING" and managed.monitor_session_id == item.monitor_session_id)
+        item.is_online = item.is_online and fresh and session_active
+        if not item.is_online:
+            item.fps = 0.0
+            item.active_workers_count = 0
+        return item
+
+    @staticmethod
+    def _unreported_camera_status(camera_id: str, reported_at: datetime) -> CameraStatusResponse:
+        return CameraStatusResponse(
+            camera_id=camera_id, monitor_session_id="unreported", is_online=False, fps=0.0,
+            processed_frame_id=0, active_workers_count=0, model_name=None, model_version=None,
+            reported_at_utc=reported_at, extra_details={},
+        )

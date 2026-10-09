@@ -33,7 +33,10 @@ class Settings:
     llm_api_key: str = ""
     llm_timeout_seconds: float = 20.0
     media_root: str = "./runs/media"
-    admin_token: str = ""
+    learning_public_base_url: str = ""
+    learning_report_directory: str = "./runs/learning/reports"
+    learning_timezone: str = "Asia/Shanghai"
+    learning_insights_ttl_seconds: int = 600
     credential_encryption_key: str = ""
     cv_control_timeout_seconds: float = 10.0
     memory_enabled: bool = True
@@ -74,7 +77,10 @@ class Settings:
             internal_perception_token=os.getenv("INTERNAL_PERCEPTION_TOKEN", ""),
             auto_create_schema=os.getenv("AGENT_AUTO_CREATE_SCHEMA", "false").lower() == "true",
             media_root=os.getenv("AGENT_MEDIA_ROOT", "./runs/media"),
-            admin_token=os.getenv("AGENT_ADMIN_TOKEN", ""),
+            learning_public_base_url=os.getenv("LEARNING_PUBLIC_BASE_URL", ""),
+            learning_report_directory=os.getenv("LEARNING_REPORT_DIRECTORY", "./runs/learning/reports"),
+            learning_timezone=os.getenv("LEARNING_TIMEZONE", "Asia/Shanghai"),
+            learning_insights_ttl_seconds=int(os.getenv("LEARNING_INSIGHTS_TTL_SECONDS", "600")),
             credential_encryption_key=os.getenv("AGENT_CREDENTIAL_ENCRYPTION_KEY", ""),
             cv_control_timeout_seconds=float(os.getenv("AGENT_CV_CONTROL_TIMEOUT_SECONDS", "10")),
             memory_enabled=os.getenv("AGENT_MEMORY_ENABLED", "true").lower() == "true",
@@ -106,6 +112,11 @@ class Settings:
         )
 
     def validate_for_runtime(self) -> None:
+        from zoneinfo import ZoneInfo
+        try:
+            ZoneInfo(self.learning_timezone)
+        except (KeyError, ValueError) as exc:
+            raise RuntimeError("LEARNING_TIMEZONE must be a valid IANA time zone") from exc
         if not self.database_url:
             raise RuntimeError("AGENT_DATABASE_URL must be configured")
         if not self.internal_perception_token:
@@ -120,6 +131,8 @@ class Settings:
             raise RuntimeError("AGENT_LLM_TIMEOUT_SECONDS must be positive")
         if self.cv_control_timeout_seconds <= 0:
             raise RuntimeError("AGENT_CV_CONTROL_TIMEOUT_SECONDS must be positive")
+        if self.learning_insights_ttl_seconds < 0:
+            raise RuntimeError("LEARNING_INSIGHTS_TTL_SECONDS must be non-negative")
         if self.memory_ttl_hours <= 0 or self.memory_recent_turns < 0:
             raise RuntimeError("AGENT_MEMORY_TTL_HOURS must be positive and AGENT_MEMORY_RECENT_TURNS non-negative")
         if self.rag_chunk_size <= 0 or not 0 <= self.rag_chunk_overlap < self.rag_chunk_size:

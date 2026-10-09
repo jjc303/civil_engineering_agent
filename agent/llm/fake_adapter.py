@@ -117,6 +117,32 @@ class FakeChatModel(ChatModelPort):
                     fragments.append("未查询到该地点的天气信息。")
         return "".join(fragments)
 
+    def generate_structured(self, instruction: str, context: dict[str, Any]) -> dict[str, Any]:
+        if "文档摘要" in instruction:
+            excerpts = context.get("excerpts") or []
+            text = " ".join(str(item.get("text", "")) for item in excerpts if isinstance(item, dict))
+            return {"summary": (text[:150].strip() or f"{context.get('title', '该文档')}：原文片段未提供可概括内容。")}
+        if "题目" in instruction:
+            count = int(context.get("question_count", 5))
+            report = context.get("report") or {}
+            source_texts = [str(report.get(key, "")) for key in ("risk_analysis", "remediation", "summary")]
+            source_texts.extend(str(chunk.get("content", "")) for doc in context.get("documents", []) for chunk in doc.get("chunks", []))
+            evidence = []
+            for source in source_texts:
+                for sentence in re.split(r"[。！？\n]", source):
+                    sentence = sentence.strip()
+                    if sentence and sentence not in evidence:
+                        evidence.append(sentence)
+            questions = []
+            for sentence in evidence[:count]:
+                questions.append({"stem": f"关于“{sentence[:18]}”所述的现场安全要求，哪项与学习资料一致？",
+                                  "options": [sentence, "风险出现后可继续冒险作业", "只口头提醒，无需落实整改", "忽略隐患，等待下次培训再处理"],
+                                  "answer": 0, "evidence": sentence})
+            return {"material": "请阅读本期安全报告与所选资料，重点学习现场风险识别、隐患处置与防范措施。", "questions": questions}
+        if "事故经过" in instruction:
+            return {"process": "依据已收录文档片段查看事故经过。", "causes": "请核对原文。", "risks": "请核对原文。", "prevention": "按现场管理要求防范。"}
+        return {"summary": "根据统计数据形成的安全报告草稿。", "risk_analysis": "请结合统计表核对风险分布。", "remediation": "针对高频违规开展现场整改。"}
+
     @staticmethod
     def _camera_id(question: str) -> str | None:
         # Camera IDs are deployment-defined and commonly contain multiple

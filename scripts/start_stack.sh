@@ -35,7 +35,6 @@ if [[ -f "$project_root/.env" ]]; then
     set +a
 fi
 
-: "${AGENT_ADMIN_TOKEN:?AGENT_ADMIN_TOKEN must be configured in .env}"
 : "${CV_NODE_TOKEN:?CV_NODE_TOKEN must be configured in .env}"
 : "${AGENT_BIND_HOST:?AGENT_BIND_HOST must be configured in .env}"
 : "${AGENT_PORT:?AGENT_PORT must be configured in .env}"
@@ -111,7 +110,7 @@ echo "Registering local CV node: $cv_node_id"
 node_payload=$(python3 -c 'import json, os; print(json.dumps({"node_id": os.environ["CV_NODE_ID"], "display_name": os.environ["CV_NODE_DISPLAY_NAME"], "control_url": os.environ["CV_NODE_CONTROL_URL"], "capacity": int(os.environ["CV_NODE_CAPACITY"]), "control_token": os.environ["CV_NODE_TOKEN"]}))')
 node_status=$(curl --noproxy '*' --silent --output /dev/null --write-out '%{http_code}' \
     -X POST "$AGENT_URL/api/v1/cv-nodes" \
-    -H "Authorization: Bearer $AGENT_ADMIN_TOKEN" -H 'Content-Type: application/json' -d "$node_payload")
+    -H 'Content-Type: application/json' -d "$node_payload")
 if [[ "$node_status" != "201" && "$node_status" != "409" ]]; then
     echo "Failed to register local CV node (HTTP $node_status)" >&2
     exit 1
@@ -147,7 +146,7 @@ for _ in {1..20}; do
         echo "CV Control failed to start; see $log_dir/cv-control.log" >&2
         exit 1
     fi
-    if curl --noproxy '*' --silent "$AGENT_URL/api/v1/cv-nodes" -H "Authorization: Bearer $AGENT_ADMIN_TOKEN" | grep -q '"node_id":"'"$cv_node_id"'".*"is_online":true'; then
+    if curl --noproxy '*' --silent "$AGENT_URL/api/v1/cv-nodes" | grep -q '"node_id":"'"$cv_node_id"'".*"is_online":true'; then
         node_online=true
         break
     fi
@@ -162,15 +161,14 @@ fi
 camera_payload=$(CAMERA_ID="$camera_id" CAMERA_SOURCE="$cv_source" python3 -c 'import json, os; print(json.dumps({"camera_id": os.environ["CAMERA_ID"], "display_name": os.environ["LOCAL_CAMERA_DISPLAY_NAME"], "node_id": os.environ["CV_NODE_ID"], "source_type": os.environ["LOCAL_CAMERA_SOURCE_TYPE"], "source_uri": os.environ["CAMERA_SOURCE"]}))')
 camera_status=$(curl --noproxy '*' --silent --output /dev/null --write-out '%{http_code}' \
     -X POST "$AGENT_URL/api/v1/managed-cameras" \
-    -H "Authorization: Bearer $AGENT_ADMIN_TOKEN" -H 'Content-Type: application/json' -d "$camera_payload")
+    -H 'Content-Type: application/json' -d "$camera_payload")
 if [[ "$camera_status" != "201" && "$camera_status" != "409" ]]; then
     echo "Failed to register local camera (HTTP $camera_status)" >&2
     exit 1
 fi
 
 start_status=$(curl --noproxy '*' --silent --output /dev/null --write-out '%{http_code}' \
-    -X POST "$AGENT_URL/api/v1/cameras/$camera_id/monitoring:start" \
-    -H "Authorization: Bearer $AGENT_ADMIN_TOKEN")
+    -X POST "$AGENT_URL/api/v1/cameras/$camera_id/monitoring:start")
 if [[ "$start_status" != "202" ]]; then
     echo "Failed to start local camera session (HTTP $start_status)" >&2
     exit 1

@@ -104,14 +104,37 @@ export interface KnowledgeCitation {
   document_type: "STANDARD" | "ACCIDENT_REPORT";
 }
 
+export interface ReportPreview {
+  report_id: string;
+  period_start_utc: string;
+  period_end_utc: string;
+  status: string;
+  event_count: number;
+  summary: string;
+  pdf_url: string | null;
+}
+
+export interface TrainingPreview {
+  training_id: string;
+  report_id: string;
+  title: string;
+  status: string;
+  target_count: number;
+  question_count: number;
+  material_preview: string;
+  public_url: string | null;
+}
+
 export interface ToolTraceItem {
-  tool_name: "query_violations" | "get_violation_statistics" | "get_camera_status" | "get_all_camera_statuses" | "get_workforce_summary" | "get_current_weather" | "search_knowledge" | "list_standard_catalog" | "create_rectification_task" | "update_rectification_task" | "start_monitoring" | "stop_monitoring";
+  tool_name: string;
   success: boolean;
   purpose: string;
   duration_ms: number;
 }
 
-export type PendingActionType = 'create_rectification_task' | 'update_rectification_task' | 'start_monitoring' | 'stop_monitoring';
+export type PendingActionType = 'create_rectification_task' | 'update_rectification_task' | 'start_monitoring' | 'stop_monitoring'
+  | 'create_safety_report' | 'update_safety_report' | 'confirm_safety_report' | 'delete_safety_report'
+  | 'create_training_task' | 'update_training_task' | 'publish_training_task' | 'delete_training_task';
 export type PendingActionStatus = 'PENDING' | 'EXECUTING' | 'EXECUTED' | 'CANCELLED' | 'EXPIRED' | 'FAILED';
 
 export interface PendingAction {
@@ -139,7 +162,7 @@ export interface GuidedSelectionOption {
 }
 
 export interface GuidedSelection {
-  kind: 'RECTIFICATION_TARGET' | 'CAMERA_TARGET';
+  kind: 'RECTIFICATION_TARGET' | 'CAMERA_TARGET' | 'TRAINING_REPORT';
   prompt: string;
   options: GuidedSelectionOption[];
 }
@@ -154,6 +177,10 @@ export interface ChatResponse {
   answer: string;
   evidence: ChatEvidence[];
   knowledge_citations: KnowledgeCitation[];
+  report_previews?: ReportPreview[];
+  report_count?: number;
+  training_previews?: TrainingPreview[];
+  training_count?: number;
   tool_trace: ToolTraceItem[];
   pending_action?: PendingAction | null;
   guided_selection?: GuidedSelection | null;

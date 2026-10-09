@@ -140,8 +140,12 @@ class KnowledgeDocumentModel(Base):
     document_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     source_label: Mapped[str] = mapped_column(String(512), nullable=False)
+    source_display: Mapped[str | None] = mapped_column(String(512))
     document_type: Mapped[str] = mapped_column(String(32), nullable=False, default="ACCIDENT_REPORT", index=True)
     validity_status: Mapped[str] = mapped_column(String(32), nullable=False, default="UNKNOWN")
+    document_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    risk_tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    summary: Mapped[str | None] = mapped_column(Text)
     checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     current_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
@@ -194,6 +198,50 @@ class KnowledgeAuditModel(Base):
     job_id: Mapped[str | None] = mapped_column(String(36))
     detail_safe_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SafetyReportModel(Base):
+    __tablename__ = "safety_reports"
+    report_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    period_start_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    period_end_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="DRAFT", index=True)
+    statistics_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    citations_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    content_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    pdf_path: Mapped[str | None] = mapped_column(String(1024))
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    confirmed_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TrainingTaskModel(Base):
+    __tablename__ = "training_tasks"
+    task_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    report_id: Mapped[str] = mapped_column(ForeignKey("safety_reports.report_id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="DRAFT", index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    target_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    question_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    pass_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    selected_documents_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    material: Mapped[str] = mapped_column(Text, nullable=False)
+    questions_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    access_token: Mapped[str | None] = mapped_column(String(64), unique=True)
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    published_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TrainingSubmissionModel(Base):
+    __tablename__ = "training_submissions"
+    __table_args__ = (UniqueConstraint("task_id", "worker_id", name="uq_training_task_worker"),)
+    submission_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey("training_tasks.task_id"), nullable=False, index=True)
+    worker_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    worker_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    answers_json: Mapped[list[int]] = mapped_column(JSON, nullable=False)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    submitted_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class AssistantUiConfigModel(Base):

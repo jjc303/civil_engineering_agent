@@ -46,6 +46,18 @@ const router = createRouter({
       component: () => import('@/views/AgentCopilot.vue'),
       meta: { title: '安全智能助手' },
     },
+    {
+      path: '/learning',
+      name: 'LearningCenter',
+      component: () => import('@/views/LearningCenter.vue'),
+      meta: { title: '学习中心' },
+    },
+    {
+      path: '/learn/:token',
+      name: 'WorkerLearning',
+      component: () => import('@/views/WorkerLearning.vue'),
+      meta: { title: '安全培训' },
+    },
   ],
 })
 

@@ -11,6 +11,8 @@ PendingActionType = Literal[
     "update_rectification_task",
     "start_monitoring",
     "stop_monitoring",
+    "create_safety_report", "update_safety_report", "confirm_safety_report", "delete_safety_report",
+    "create_training_task", "update_training_task", "publish_training_task", "delete_training_task",
 ]
 PendingActionStatus = Literal["PENDING", "EXECUTING", "EXECUTED", "CANCELLED", "EXPIRED", "FAILED"]
 
@@ -48,6 +50,6 @@ class GuidedSelectionOption(BaseModel):
 class GuidedSelection(BaseModel):
     """Safe, read-only choices presented when a write target is ambiguous."""
 
-    kind: Literal["RECTIFICATION_TARGET", "CAMERA_TARGET"]
+    kind: Literal["RECTIFICATION_TARGET", "CAMERA_TARGET", "TRAINING_REPORT"]
     prompt: str
     options: list[GuidedSelectionOption] = Field(default_factory=list)

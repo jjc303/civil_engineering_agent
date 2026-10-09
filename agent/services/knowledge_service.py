@@ -15,11 +15,12 @@ from agent.core.config import (
     validate_rag_inbox_subdirectories,
 )
 from agent.contracts.knowledge import (
-    DocumentType, StandardValidity, KnowledgeDocumentDetailResponse, KnowledgeDocumentPage, KnowledgeDocumentResponse,
+    DocumentType, StandardValidity, KnowledgeMetadataUpdate, KnowledgeDocumentDetailResponse, KnowledgeDocumentPage, KnowledgeDocumentResponse,
     KnowledgeIndexJobPage, KnowledgeIndexJobResponse, KnowledgeVersionResponse,
 )
 from agent.db.base import Database
 from agent.db.models import KnowledgeAuditModel, KnowledgeDocumentModel, KnowledgeDocumentVersionModel, KnowledgeIndexJobModel
+from agent.llm.protocol import ChatModelPort
 from agent.rag.chroma_adapter import ChromaKnowledgeRetriever
 from agent.rag.manager import RagManager
 
@@ -50,6 +51,11 @@ class KnowledgeService:
         # A failed external embedding request should be retried after a process
         # restart, but never hammered once per inbox polling interval.
         self._failed_retry_attempted: set[str] = set()
+        self.summary_model: ChatModelPort | None = None
+        self._summary_failed_attempted: set[str] = set()
+
+    def set_summary_model(self, model: ChatModelPort) -> None:
+        self.summary_model = model
 
     def sync_inbox(self) -> dict[str, int]:
         """Index new files and repair a missing or failed local vector index."""
@@ -111,7 +117,9 @@ class KnowledgeService:
                         if prior_source != source_label and prior_source.startswith("inbox/") and not (inbox_root / prior_source.removeprefix("inbox/")).exists():
                             self.rag_manager.update_version_source(document_type, existing_version.document_version_id, source_label)
                             with self.database.session() as session:
-                                session.get(KnowledgeDocumentModel, existing_version.document_id).source_label = source_label
+                                moved_doc = session.get(KnowledgeDocumentModel, existing_version.document_id)
+                                if moved_doc.source_display == prior_source: moved_doc.source_display = source_label
+                                moved_doc.source_label = source_label
                         skipped += 1
                         continue
                     if existing_version.document_version_id in self._failed_retry_attempted:
@@ -145,10 +153,18 @@ class KnowledgeService:
             except Exception:
                 failed += 1
                 logger.exception("Failed to import knowledge inbox file: %s", path)
-        return {"imported": imported, "recovered": recovered, "retried": retried, "skipped": skipped, "failed": failed}
+        summaries = self.backfill_missing_summaries(limit=5)
+        return {"imported": imported, "recovered": recovered, "retried": retried, "skipped": skipped, "failed": failed, "summaries_generated": summaries["generated"]}
 
-    def upload(self, *, filename: str, content: bytes, title: str, source_label: str, actor: str, document_id: str | None = None, expected_current_version: int | None = None, document_type: DocumentType | None = None) -> tuple[KnowledgeDocumentDetailResponse, KnowledgeIndexJobResponse, bool]:
+    def upload(self, *, filename: str, content: bytes, title: str, source_label: str, actor: str, document_id: str | None = None, expected_current_version: int | None = None, document_type: DocumentType | None = None, document_date: datetime | None = None, risk_tags: list[str] | None = None, summary: str | None = None) -> tuple[KnowledgeDocumentDetailResponse, KnowledgeIndexJobResponse, bool]:
         suffix = Path(filename).suffix.lower()
+        title = title.strip()
+        source_label = source_label.strip()
+        if not title or len(title) > 255 or not source_label or len(source_label) > 512:
+            raise ValueError("document title or source is invalid")
+        if risk_tags is not None:
+            risk_tags = [tag.strip()[:64] for tag in risk_tags if tag.strip()][:20]
+        summary = summary.strip()[:2000] if summary else None
         if document_type not in (None, "STANDARD", "ACCIDENT_REPORT"):
             raise ValueError("invalid document type")
         if suffix not in self.allowed or not content or len(content) > self.max_upload_bytes:
@@ -175,8 +191,14 @@ class KnowledgeService:
             else:
                 document_type = document_type or "ACCIDENT_REPORT"
                 document_id, version_no = str(uuid4()), 1
-                document = KnowledgeDocumentModel(document_id=document_id, title=title, source_label=source_label, document_type=document_type, checksum_sha256=checksum, current_version=version_no, status="UPLOADED", created_at_utc=now, created_by=actor)
+                document = KnowledgeDocumentModel(document_id=document_id, title=title, source_label=source_label, source_display=source_label, document_type=document_type, checksum_sha256=checksum, current_version=version_no, status="UPLOADED", created_at_utc=now, created_by=actor, document_date=document_date, risk_tags=risk_tags or [], summary=summary)
                 session.add(document)
+            if version_no > 1:
+                document.title = title
+                if actor != "inbox" and source_label: document.source_display = source_label
+                if document_date is not None: document.document_date = document_date
+                if risk_tags is not None: document.risk_tags = risk_tags
+                if summary is not None: document.summary = summary
             version_id = str(uuid4())
             storage_key = f"{document_id}/{version_id}{suffix}"
             path = self.root / storage_key
@@ -189,7 +211,75 @@ class KnowledgeService:
             self._audit(session, actor, "UPLOAD" if version_no == 1 else "NEW_VERSION", document_id, version_id, job.job_id, {"filename": Path(filename).name, "bytes": len(content)})
         self.run_job(job.job_id)
         with self.database.session() as session:
+            indexed = session.get(KnowledgeIndexJobModel, job.job_id).status == "SUCCEEDED"
+        if indexed and self.summary_model is not None:
+            try:
+                self.summarize_document(document_id)
+            except Exception:
+                logger.exception("Failed to generate summary for knowledge document: %s", document_id)
+                self._summary_failed_attempted.add(document_id)
+        with self.database.session() as session:
             return self._detail(session, document_id), self._job(session.get(KnowledgeIndexJobModel, job.job_id)), False
+
+    def summarize_document(self, document_id: str, *, force: bool = False) -> KnowledgeDocumentDetailResponse:
+        """Summarize indexed source text; retain a curator's existing summary unless forced."""
+        if self.summary_model is None:
+            raise RuntimeError("summary model is unavailable")
+        with self.database.session() as session:
+            doc = session.get(KnowledgeDocumentModel, document_id)
+            if not doc or doc.status != "ACTIVE":
+                raise KeyError("active knowledge document not found")
+            if doc.summary and not force:
+                return self._detail(session, document_id)
+            title, document_type, validity_status = doc.title, doc.document_type, doc.validity_status
+            current_version = doc.current_version
+        chunks = self.document_chunks(document_id)
+        if not chunks:
+            raise ValueError("document has no indexed text to summarize")
+        count = len(chunks)
+        sample_indices = sorted(set([*range(min(4, count)), *range(max(0, count // 2 - 2), min(count, count // 2 + 2)), *range(max(0, count - 4), count)]))
+        excerpts = [{"section": chunks[index].page_or_section, "text": chunks[index].text[:1000]} for index in sample_indices]
+        payload = self.summary_model.generate_structured(
+            "生成文档摘要，仅输出 JSON 对象 {\"summary\": \"...\"}。根据提供的原文片段，用 80 至 180 个汉字概括文档主题、主要风险或规范适用内容。不得把推测写成事故事实，不得编造标准名称、编号、条款或日期。规范有效性为 UNKNOWN 时不得称其为现行规范。片段不足时说明原文未提供的内容。",
+            {"title": title, "document_type": document_type, "validity_status": validity_status, "excerpts": excerpts},
+        )
+        summary = str(payload.get("summary") or "").strip()
+        if not summary:
+            raise ValueError("summary model returned empty content")
+        if len(summary) > 400:
+            raise ValueError("summary model returned oversized content")
+        with self.database.session() as session:
+            doc = session.get(KnowledgeDocumentModel, document_id)
+            if not doc or doc.status != "ACTIVE" or doc.current_version != current_version:
+                raise RuntimeError("document changed during summary generation")
+            if not doc.summary or force:
+                doc.summary = summary
+                self._audit(session, "agent", "SUMMARY_GENERATED", document_id, None, None, {"chars": len(summary)})
+            session.flush()
+            return self._detail(session, document_id)
+
+    def backfill_missing_summaries(self, limit: int = 5) -> dict[str, int]:
+        if self.summary_model is None or not self.rag_manager:
+            return {"generated": 0, "failed": 0}
+        with self.database.session() as session:
+            ids = list(session.scalars(select(KnowledgeDocumentModel.document_id).where(
+                KnowledgeDocumentModel.status == "ACTIVE",
+                (KnowledgeDocumentModel.summary.is_(None)) | (KnowledgeDocumentModel.summary == ""),
+            ).order_by(KnowledgeDocumentModel.created_at_utc)))
+        generated = failed = 0
+        for document_id in ids:
+            if document_id in self._summary_failed_attempted:
+                continue
+            try:
+                self.summarize_document(document_id)
+                generated += 1
+            except Exception:
+                failed += 1
+                self._summary_failed_attempted.add(document_id)
+                logger.exception("Failed to backfill document summary: %s", document_id)
+            if generated + failed >= limit:
+                break
+        return {"generated": generated, "failed": failed}
 
     def run_job(self, job_id: str) -> None:
         if not self.retriever:
@@ -301,6 +391,29 @@ class KnowledgeService:
     def detail(self, document_id: str) -> KnowledgeDocumentDetailResponse:
         with self.database.session() as session: return self._detail(session, document_id)
 
+    def update_metadata(self, document_id: str, payload: KnowledgeMetadataUpdate, actor: str) -> KnowledgeDocumentDetailResponse:
+        with self.database.session() as session:
+            doc = session.get(KnowledgeDocumentModel, document_id)
+            if not doc: raise KeyError("knowledge document not found")
+            doc.document_date = payload.document_date
+            doc.risk_tags = [tag.strip()[:64] for tag in payload.risk_tags if tag.strip()][:20]
+            doc.summary = payload.summary.strip()[:2000] if payload.summary else None
+            doc.source_display = payload.source_display.strip()[:512] if payload.source_display else None
+            self._audit(session, actor, "METADATA_UPDATED", document_id, None, None, {})
+            return self._detail(session, document_id)
+
+    def document_chunks(self, document_id: str) -> list:
+        if not self.rag_manager: raise RuntimeError("RAG is disabled")
+        with self.database.session() as session:
+            doc = session.get(KnowledgeDocumentModel, document_id)
+            if not doc or doc.status != "ACTIVE": raise KeyError("active knowledge document not found")
+            if doc.document_type == "STANDARD" and doc.validity_status == "SUPERSEDED": raise ValueError("standard is superseded")
+            version = session.scalar(select(KnowledgeDocumentVersionModel).where(KnowledgeDocumentVersionModel.document_id == document_id, KnowledgeDocumentVersionModel.status == "ACTIVE"))
+            if not version: raise KeyError("active document version not found")
+            document_type = doc.document_type
+            version_id = version.document_version_id
+        return self.rag_manager.get_version(document_type, version_id)
+
     def set_standard_validity(self, document_id: str, validity_status: StandardValidity, actor: str) -> KnowledgeDocumentDetailResponse:
         with self.database.session() as session:
             doc = session.get(KnowledgeDocumentModel, document_id)
@@ -374,7 +487,7 @@ class KnowledgeService:
             return self._job(row)
 
     @staticmethod
-    def _document(row: KnowledgeDocumentModel) -> KnowledgeDocumentResponse: return KnowledgeDocumentResponse(document_id=row.document_id, title=row.title, source_label=row.source_label, document_type=row.document_type, validity_status=row.validity_status, current_version=row.current_version, status=row.status, created_at_utc=row.created_at_utc)
+    def _document(row: KnowledgeDocumentModel) -> KnowledgeDocumentResponse: return KnowledgeDocumentResponse(document_id=row.document_id, title=row.title, source_label=row.source_label, source_display=row.source_display or row.source_label, document_type=row.document_type, validity_status=row.validity_status, current_version=row.current_version, status=row.status, created_at_utc=row.created_at_utc, document_date=row.document_date, risk_tags=row.risk_tags or [], summary=row.summary)
     def _detail(self, session, document_id: str) -> KnowledgeDocumentDetailResponse:
         doc = session.get(KnowledgeDocumentModel, document_id)
         if not doc: raise KeyError("knowledge document not found")

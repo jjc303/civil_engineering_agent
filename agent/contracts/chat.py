@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .actions import GuidedSelection, PendingActionResponse
 from .query import ViolationQuery
+from .learning import TrainingQuestion
 
 
 ToolName = Literal[
@@ -14,6 +15,10 @@ ToolName = Literal[
     "get_all_camera_statuses", "get_workforce_summary", "get_current_weather", "search_knowledge", "list_standard_catalog",
     "create_rectification_task", "update_rectification_task", "start_monitoring", "stop_monitoring",
     "list_rectification_targets", "list_monitoring_targets",
+    "get_learning_overview", "get_learning_insights", "list_safety_reports", "get_safety_report",
+    "list_training_tasks", "get_training_task", "get_training_statistics", "prepare_training_task",
+    "create_safety_report", "update_safety_report", "confirm_safety_report", "delete_safety_report",
+    "create_training_task", "update_training_task", "publish_training_task", "delete_training_task",
 ]
 
 
@@ -47,6 +52,21 @@ class ToolDecision(BaseModel):
     task_status: Literal["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"] | None = None
     task_note: str | None = Field(default=None, max_length=2000)
     selection_action: Literal["start", "stop"] | None = None
+    report_id: str | None = Field(default=None, max_length=36)
+    report_period: Literal["THIS_WEEK"] | None = None
+    report_period_start_utc: datetime | None = None
+    report_period_end_utc: datetime | None = None
+    report_summary: str | None = Field(default=None, min_length=1, max_length=10000)
+    report_risk_analysis: str | None = Field(default=None, min_length=1, max_length=10000)
+    report_remediation: str | None = Field(default=None, min_length=1, max_length=10000)
+    training_id: str | None = Field(default=None, max_length=36)
+    training_title: str | None = Field(default=None, min_length=1, max_length=255)
+    training_document_ids: list[str] | None = Field(default=None, max_length=10)
+    training_target_count: int | None = Field(default=None, ge=1)
+    training_question_count: int | None = Field(default=None, ge=1, le=20)
+    training_pass_score: int | None = Field(default=None, ge=0, le=100)
+    training_material: str | None = Field(default=None, min_length=1, max_length=30000)
+    training_questions: list[TrainingQuestion] | None = Field(default=None, min_length=1, max_length=20)
     purpose: str = Field(min_length=1, max_length=256)
 
     @model_validator(mode="after")
@@ -76,6 +96,21 @@ class ToolDecision(BaseModel):
             raise ValueError("camera_id is required for monitoring control")
         if self.tool_name == "list_monitoring_targets" and self.selection_action is None:
             raise ValueError("selection_action is required for list_monitoring_targets")
+        if self.tool_name == "create_safety_report":
+            if bool(self.report_period_start_utc) != bool(self.report_period_end_utc):
+                raise ValueError("report start and end must be provided together")
+            if self.report_period_start_utc and self.report_period_end_utc and self.report_period_end_utc <= self.report_period_start_utc:
+                raise ValueError("report end must be after start")
+        if self.tool_name in {"get_safety_report", "update_safety_report", "confirm_safety_report", "delete_safety_report"} and not self.report_id:
+            raise ValueError("report_id is required")
+        if self.tool_name == "update_safety_report" and not any((self.report_summary, self.report_risk_analysis, self.report_remediation)):
+            raise ValueError("at least one report content field is required")
+        if self.tool_name in {"get_training_task", "get_training_statistics", "update_training_task", "publish_training_task", "delete_training_task"} and not self.training_id:
+            raise ValueError("training_id is required")
+        if self.tool_name == "create_training_task" and not (self.report_id and self.training_title and self.training_target_count):
+            raise ValueError("report_id, training_title, training_target_count are required")
+        if self.tool_name == "update_training_task" and not any((self.training_title, self.training_target_count, self.training_pass_score is not None, self.training_material, self.training_questions)):
+            raise ValueError("at least one training change is required")
         return self
 
 
@@ -103,11 +138,36 @@ class KnowledgeCitation(BaseModel):
     document_type: str = "ACCIDENT_REPORT"
 
 
+class ReportPreview(BaseModel):
+    report_id: str
+    period_start_utc: datetime
+    period_end_utc: datetime
+    status: str
+    event_count: int = 0
+    summary: str = ""
+    pdf_url: str | None = None
+
+
+class TrainingPreview(BaseModel):
+    training_id: str
+    report_id: str
+    title: str
+    status: str
+    target_count: int
+    question_count: int = 0
+    material_preview: str = ""
+    public_url: str | None = None
+
+
 class ChatResponse(BaseModel):
     request_id: str
     answer: str
     evidence: list[Evidence] = Field(default_factory=list)
     knowledge_citations: list[KnowledgeCitation] = Field(default_factory=list)
+    report_previews: list[ReportPreview] = Field(default_factory=list)
+    report_count: int = 0
+    training_previews: list[TrainingPreview] = Field(default_factory=list)
+    training_count: int = 0
     tool_trace: list[ToolTraceItem] = Field(default_factory=list)
     pending_action: PendingActionResponse | None = None
     guided_selection: GuidedSelection | None = None

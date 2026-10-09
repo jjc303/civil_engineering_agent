@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 
-from agent.api.camera_management import require_admin
 from agent.contracts.ui_config import AssistantUiConfig, AssistantUiConfigUpdate
 from agent.services.ui_config_service import UiConfigService
 
 public_router = APIRouter(prefix="/api/v1/agent", tags=["agent-ui"])
-admin_router = APIRouter(prefix="/api/v1/admin/agent", tags=["agent-ui-admin"], dependencies=[Depends(require_admin)])
+admin_router = APIRouter(prefix="/api/v1/admin/agent", tags=["agent-ui-admin"])
 
 
 @public_router.get("/ui-config", response_model=AssistantUiConfig)
@@ -22,6 +21,6 @@ def get_ui_config(request: Request) -> AssistantUiConfig:
 def put_ui_config(value: AssistantUiConfigUpdate, request: Request) -> AssistantUiConfig:
     try:
         with request.app.state.database.session() as session:
-            return UiConfigService(session).put(value, "admin")
+            return UiConfigService(session).put(value, "local")
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

@@ -43,6 +43,28 @@
               <!-- Markdown 渲染的主回答 -->
               <div class="markdown-body" v-html="renderMarkdown(msg.text)"></div>
 
+              <section v-if="msg.reportPreviews?.length" class="report-previews" aria-label="安全报告预览">
+                <div class="report-previews-heading"><strong>安全报告预览</strong><span>共 {{ msg.reportCount ?? msg.reportPreviews.length }} 份</span></div>
+                <article v-for="report in msg.reportPreviews" :key="report.report_id" class="report-preview-card">
+                  <div class="report-preview-top"><strong>{{ reportDate(report.period_start_utc) }} — {{ reportDate(report.period_end_utc, true) }} 安全报告</strong><el-tag size="small" :type="report.status === 'CONFIRMED' ? 'success' : 'warning'">{{ report.status === 'CONFIRMED' ? '已确认' : '草稿' }}</el-tag></div>
+                  <div class="report-preview-meta">{{ report.event_count }} 条有效违规事件</div>
+                  <p>{{ report.summary || '暂无报告摘要' }}</p>
+                  <div class="report-preview-actions"><el-button link type="primary" @click="openReportDetail(report.report_id)">查看报告详情</el-button><el-button v-if="report.pdf_url" link type="primary" @click="previewReportPdf(report.report_id)">预览 PDF</el-button><el-button v-if="report.pdf_url" link @click="downloadReportPdf(report.report_id)">下载 PDF</el-button></div>
+                </article>
+                <router-link v-if="(msg.reportCount ?? 0) > msg.reportPreviews.length" to="/learning" class="report-more">前往学习中心查看全部报告 →</router-link>
+              </section>
+
+              <section v-if="msg.trainingPreviews?.length" class="report-previews" aria-label="培训任务预览">
+                <div class="report-previews-heading"><strong>培训任务预览</strong><span>共 {{ msg.trainingCount ?? msg.trainingPreviews.length }} 项</span></div>
+                <article v-for="training in msg.trainingPreviews" :key="training.training_id" class="report-preview-card">
+                  <div class="report-preview-top"><strong>{{ training.title }}</strong><el-tag size="small" :type="training.status === 'PUBLISHED' ? 'success' : 'warning'">{{ training.status === 'PUBLISHED' ? '已发布' : '草稿' }}</el-tag></div>
+                  <div class="report-preview-meta">目标 {{ training.target_count }} 人 · {{ training.question_count }} 道题</div>
+                  <p>{{ training.material_preview || '暂无学习材料摘要' }}</p>
+                  <div class="report-preview-actions"><el-button link type="primary" @click="openTrainingDetail(training.training_id)">查看培训详情</el-button><a v-if="training.public_url && learningPath(training.public_url)" class="training-link" :href="learningPath(training.public_url)" target="_blank" rel="noopener">打开学习页 ↗</a></div>
+                </article>
+                <router-link v-if="(msg.trainingCount ?? 0) > msg.trainingPreviews.length" to="/learning" class="report-more">前往学习中心查看全部培训 →</router-link>
+              </section>
+
               <!-- 证据卡片区 -->
               <div v-if="uiConfig?.show_evidence && msg.evidence && msg.evidence.length > 0" class="evidence-section">
                 <div class="evidence-header">
@@ -94,6 +116,7 @@
                     <span>{{ option.label }}</span><small>{{ option.description }}</small>
                   </el-button>
                 </div>
+                <el-button v-else-if="msg.guidedSelection.kind === 'TRAINING_REPORT'" type="primary" plain size="small" @click="selectPrompt('生成本周安全报告')">生成本周安全报告</el-button>
               </div>
 
               <div v-if="msg.pendingAction" class="pending-action">
@@ -108,6 +131,8 @@
                   <el-button size="small" :disabled="msg.actionBusy" @click="cancelAction(msg)">取消</el-button>
                 </div>
                 <div v-if="msg.actionResult" class="pending-action-result">{{ msg.actionResult }}</div>
+                <div v-if="msg.actionReportId" class="report-preview-actions"><el-button link type="primary" @click="openReportDetail(msg.actionReportId)">查看报告详情</el-button><el-button v-if="msg.actionReportPdf" link type="primary" @click="previewReportPdf(msg.actionReportId)">预览 PDF</el-button><el-button v-if="msg.actionReportPdf" link @click="downloadReportPdf(msg.actionReportId)">下载 PDF</el-button></div>
+                <div v-if="msg.actionTrainingId" class="report-preview-actions"><el-button link type="primary" @click="openTrainingDetail(msg.actionTrainingId)">查看培训详情</el-button><a v-if="msg.actionTrainingUrl && learningPath(msg.actionTrainingUrl)" class="training-link" :href="learningPath(msg.actionTrainingUrl)" target="_blank" rel="noopener">打开学习页 ↗</a></div>
               </div>
 
               <!-- 智能体执行链路 (Tool Trace) -->
@@ -192,6 +217,34 @@
     <!-- 证据弹窗 -->
     <EvidenceModal v-model="modalVisible" :record="selectedViolation" />
 
+    <el-dialog v-model="reportDetailOpen" title="安全报告详情" width="800px" destroy-on-close>
+      <div v-loading="reportLoading">
+        <template v-if="selectedReport">
+          <div class="report-detail-head"><strong>{{ reportDate(selectedReport.period_start_utc) }} — {{ reportDate(selectedReport.period_end_utc, true) }}</strong><el-tag :type="selectedReport.status === 'CONFIRMED' ? 'success' : 'warning'">{{ selectedReport.status === 'CONFIRMED' ? '已确认' : '草稿' }}</el-tag></div>
+          <p>有效违规 {{ selectedReport.statistics.total }} 条 · 重复出现 {{ selectedReport.statistics.repeat_occurrences }} 次</p>
+          <h4>总结</h4><p class="report-detail-text">{{ selectedReport.content.summary }}</p>
+          <h4>风险分析</h4><p class="report-detail-text">{{ selectedReport.content.risk_analysis }}</p>
+          <h4>整改建议</h4><p class="report-detail-text">{{ selectedReport.content.remediation }}</p>
+          <template v-if="selectedReport.citations.length"><h4>规范引用</h4><p v-for="citation in selectedReport.citations" :key="citation.chunk_id" class="report-citation">{{ citation.title }} · {{ citation.page_or_section }}</p></template>
+        </template>
+      </div>
+      <template #footer><el-button @click="reportDetailOpen = false">关闭</el-button><el-button v-if="selectedReport?.pdf_url" type="primary" @click="previewReportPdf(selectedReport.report_id)">预览 PDF</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="trainingDetailOpen" title="培训任务详情" width="800px" destroy-on-close @closed="clearTrainingQr">
+      <div v-loading="trainingLoading">
+        <template v-if="selectedTraining">
+          <div class="report-detail-head"><strong>{{ selectedTraining.title }}</strong><el-tag :type="selectedTraining.status === 'PUBLISHED' ? 'success' : 'warning'">{{ selectedTraining.status === 'PUBLISHED' ? '已发布' : '草稿' }}</el-tag></div>
+          <p>目标 {{ selectedTraining.target_count }} 人 · {{ selectedTraining.question_count }} 道题 · 及格分 {{ selectedTraining.pass_score }}</p>
+          <div v-if="trainingStats" class="training-detail-stats">已完成 {{ trainingStats.completed_count }}/{{ trainingStats.target_count }} 人 · 完成率 {{ trainingStats.completion_rate }}% · 平均分 {{ trainingStats.average_score }}</div>
+          <h4>学习材料</h4><p class="report-detail-text">{{ selectedTraining.material }}</p>
+          <h4>选择题</h4><div v-for="(question, index) in selectedTraining.questions" :key="index" class="training-question"><strong>{{ index + 1 }}. {{ question.stem }}</strong><p v-for="(option, optionIndex) in question.options" :key="optionIndex" :class="{ 'correct-option': optionIndex === question.answer }">{{ String.fromCharCode(65 + optionIndex) }}. {{ option }}</p><small v-if="question.evidence">出题依据：{{ question.evidence }}</small></div>
+          <div v-if="selectedTraining.public_url" class="training-access"><img v-if="trainingQrUrl" :src="trainingQrUrl" alt="培训任务二维码" /><a v-if="learningPath(selectedTraining.public_url)" :href="learningPath(selectedTraining.public_url)" target="_blank" rel="noopener">打开工人学习页 ↗</a></div>
+        </template>
+      </div>
+      <template #footer><el-button @click="trainingDetailOpen = false">关闭</el-button><router-link to="/learning" class="training-link" @click="trainingDetailOpen = false">前往学习中心管理 →</router-link></template>
+    </el-dialog>
+
     <el-dialog v-model="rectificationDialogVisible" title="创建整改任务" width="520px" destroy-on-close>
       <el-form label-position="top">
         <el-form-item label="已选违规">
@@ -215,11 +268,35 @@
         <el-button type="primary" @click="submitRectification">生成待确认操作</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="trainingSetupDialogVisible" title="生成培训任务" width="520px" destroy-on-close>
+      <el-form label-position="top">
+        <el-form-item label="依据报告">
+          <el-input :model-value="selectedTrainingReport?.label || ''" disabled />
+        </el-form-item>
+        <el-form-item label="培训主题" required>
+          <el-input v-model="trainingSetupForm.title" maxlength="255" show-word-limit placeholder="例如：本周施工安全教育" />
+        </el-form-item>
+        <el-form-item label="目标人数" required>
+          <el-input-number v-model="trainingSetupForm.targetCount" :min="1" :step="1" controls-position="right" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="题目数量">
+          <el-input-number v-model="trainingSetupForm.questionCount" :min="1" :max="20" :step="1" controls-position="right" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="及格分">
+          <el-input-number v-model="trainingSetupForm.passScore" :min="0" :max="100" :step="1" controls-position="right" style="width: 100%" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="trainingSetupDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="trainingSetupBusy" @click="submitTrainingSetup">生成待确认操作</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, nextTick, onMounted } from 'vue'
+import { ref, reactive, nextTick, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   UserFilled,
@@ -231,10 +308,11 @@ import {
   Cpu,
 } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
-import { cancelPendingAction, confirmPendingAction, sendChatMessage } from '@/api/chat'
+import { cancelPendingAction, confirmPendingAction, proposeTrainingAction, sendChatMessage } from '@/api/chat'
+import * as learningApi from '@/api/learning'
 import { fetchAssistantUiConfig } from '@/api/uiConfig'
 import { resolveMediaUrl } from '@/api/client'
-import type { AssistantUiConfig, ChatEvidence, GuidedSelection, GuidedSelectionOption, PendingAction, PendingActionStatus, ToolTraceItem, ViolationRecord } from '@/types/contract'
+import type { AssistantUiConfig, ChatEvidence, GuidedSelection, GuidedSelectionOption, PendingAction, PendingActionStatus, ReportPreview, TrainingPreview, ToolTraceItem, ViolationRecord } from '@/types/contract'
 import EvidenceModal from '@/components/EvidenceModal.vue'
 
 interface ChatMessage {
@@ -242,6 +320,10 @@ interface ChatMessage {
   text: string
   evidence?: ChatEvidence[]
   knowledgeCitations?: import('@/types/contract').KnowledgeCitation[]
+  reportPreviews?: ReportPreview[]
+  reportCount?: number
+  trainingPreviews?: TrainingPreview[]
+  trainingCount?: number
   toolTrace?: ToolTraceItem[]
   degraded?: boolean
   errorCode?: string | null
@@ -249,6 +331,10 @@ interface ChatMessage {
   guidedSelection?: GuidedSelection
   actionBusy?: boolean
   actionResult?: string
+  actionReportId?: string
+  actionReportPdf?: boolean
+  actionTrainingId?: string
+  actionTrainingUrl?: string
 }
 
 const md = new MarkdownIt({
@@ -262,10 +348,22 @@ const inputQuestion = ref('')
 const thinking = ref(false)
 
 const modalVisible = ref(false)
+const reportDetailOpen = ref(false)
+const reportLoading = ref(false)
+const selectedReport = ref<learningApi.Report | null>(null)
+const trainingDetailOpen = ref(false)
+const trainingLoading = ref(false)
+const selectedTraining = ref<learningApi.Training | null>(null)
+const trainingStats = ref<learningApi.TrainingStatistics | null>(null)
+const trainingQrUrl = ref('')
 const selectedViolation = ref<ViolationRecord | null>(null)
 const rectificationDialogVisible = ref(false)
 const selectedRectificationTarget = ref<GuidedSelectionOption | null>(null)
 const rectificationForm = reactive({ title: '', owner: '', dueAt: null as Date | null, description: '' })
+const trainingSetupDialogVisible = ref(false)
+const trainingSetupBusy = ref(false)
+const selectedTrainingReport = ref<GuidedSelectionOption | null>(null)
+const trainingSetupForm = reactive({ title: '', targetCount: undefined as number | undefined, questionCount: 5, passScore: 80 })
 
 const uiConfig = ref<AssistantUiConfig | null>(null)
 const quickQuestions = ref<string[]>([])
@@ -304,6 +402,10 @@ async function handleSend() {
       text: res.answer,
       evidence: res.evidence,
       knowledgeCitations: res.knowledge_citations,
+      reportPreviews: res.report_previews,
+      reportCount: res.report_count,
+      trainingPreviews: res.training_previews,
+      trainingCount: res.training_count,
       toolTrace: res.tool_trace,
       degraded: res.degraded,
       errorCode: res.error_code,
@@ -330,12 +432,50 @@ function selectGuidedTarget(msg: ChatMessage, option: GuidedSelectionOption) {
     handleSend()
     return
   }
+  if (msg.guidedSelection?.kind === 'TRAINING_REPORT') {
+    selectedTrainingReport.value = option
+    trainingSetupForm.title = '本期施工安全教育'
+    trainingSetupForm.targetCount = undefined
+    trainingSetupForm.questionCount = 5
+    trainingSetupForm.passScore = 80
+    trainingSetupDialogVisible.value = true
+    return
+  }
   selectedRectificationTarget.value = option
   rectificationForm.title = ''
   rectificationForm.owner = ''
   rectificationForm.dueAt = null
   rectificationForm.description = ''
   rectificationDialogVisible.value = true
+}
+
+async function submitTrainingSetup() {
+  const report = selectedTrainingReport.value
+  const title = trainingSetupForm.title.trim()
+  const targetCount = trainingSetupForm.targetCount
+  if (!report || !title || !targetCount || !Number.isInteger(targetCount) || targetCount < 1) {
+    ElMessage.warning('请填写培训主题和目标人数')
+    return
+  }
+  trainingSetupBusy.value = true
+  try {
+    const pending = await proposeTrainingAction(getConversationId(), {
+      report_id: report.option_id,
+      title,
+      document_ids: [],
+      target_count: targetCount,
+      question_count: trainingSetupForm.questionCount,
+      pass_score: trainingSetupForm.passScore,
+    })
+    trainingSetupDialogVisible.value = false
+    messages.push({ role: 'assistant', text: '已根据选定报告生成培训待确认操作。请确认后生成草稿。', pendingAction: pending })
+    saveMessages()
+    scrollToBottom()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail || err?.message || '培训操作创建失败')
+  } finally {
+    trainingSetupBusy.value = false
+  }
 }
 
 function submitRectification() {
@@ -364,6 +504,14 @@ async function confirmAction(msg: ChatMessage) {
     const result = await confirmPendingAction(msg.pendingAction.confirmation_id, getConversationId())
     msg.pendingAction.status = result.status
     msg.actionResult = actionResultText(result)
+    if (result.result.report_id && result.result.status !== 'DELETED') {
+      msg.actionReportId = result.result.report_id
+      msg.actionReportPdf = Boolean(result.result.pdf_url)
+    }
+    if (result.result.training_id && result.result.status !== 'DELETED') {
+      msg.actionTrainingId = result.result.training_id
+      msg.actionTrainingUrl = result.result.public_url || undefined
+    }
     ElMessage.success('操作已执行')
   } catch (err: any) {
     ElMessage.error(err?.response?.data?.detail || err?.message || '操作未完成')
@@ -389,6 +537,8 @@ async function cancelAction(msg: ChatMessage) {
 }
 
 function actionResultText(result: import('@/types/contract').ActionExecutionResponse): string {
+  if (result.result.report_id) return `已执行：安全报告 ${result.result.report_id}，状态 ${result.result.status || '-'}。`
+  if (result.result.training_id) return `已执行：培训任务 ${result.result.training_id}，状态 ${result.result.status || '-'}。`
   if (result.result.task_id) return `已执行：整改任务 ${result.result.task_id}，当前状态 ${result.result.status || '-'}。`
   if (result.result.camera_id) return `已执行：摄像头 ${result.result.camera_id} 当前为 ${result.result.desired_state || '-'}。`
   return result.idempotent ? '该操作此前已执行。' : '操作已执行。'
@@ -450,6 +600,88 @@ function viewEvidence(ev: ChatEvidence) {
   modalVisible.value = true
 }
 
+function reportDate(value: string, exclusiveEnd = false): string {
+  const utcValue = /(?:Z|[+-]\d\d:\d\d)$/.test(value) ? value : `${value}Z`
+  const date = new Date(new Date(utcValue).getTime() - (exclusiveEnd ? 1 : 0))
+  return date.toLocaleDateString('zh-CN', { timeZone: import.meta.env.VITE_LEARNING_TIMEZONE || 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' })
+}
+
+async function openReportDetail(id: string) {
+  reportDetailOpen.value = true
+  reportLoading.value = true
+  selectedReport.value = null
+  try {
+    selectedReport.value = await learningApi.getReport(id)
+  } catch {
+    ElMessage.error('报告详情加载失败')
+  } finally {
+    reportLoading.value = false
+  }
+}
+
+async function previewReportPdf(id: string) {
+  const tab = window.open('', '_blank')
+  if (!tab) return ElMessage.warning('浏览器阻止了新标签页，请使用下载 PDF')
+  try {
+    const url = URL.createObjectURL(await learningApi.downloadReport(id))
+    tab.location.href = url
+    window.setTimeout(() => URL.revokeObjectURL(url), 300000)
+  } catch {
+    tab.close()
+    ElMessage.error('PDF 预览失败')
+  }
+}
+
+async function downloadReportPdf(id: string) {
+  try {
+    const url = URL.createObjectURL(await learningApi.downloadReport(id))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `safety-report-${id}.pdf`
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } catch {
+    ElMessage.error('PDF 下载失败')
+  }
+}
+
+function learningPath(publicUrl: string): string | undefined {
+  try {
+    const path = new URL(publicUrl).pathname
+    return /^\/learn\/[A-Za-z0-9_-]+\/?$/.test(path) ? path : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function clearTrainingQr() {
+  if (trainingQrUrl.value) URL.revokeObjectURL(trainingQrUrl.value)
+  trainingQrUrl.value = ''
+}
+
+async function openTrainingDetail(id: string) {
+  clearTrainingQr()
+  selectedTraining.value = null
+  trainingStats.value = null
+  trainingDetailOpen.value = true
+  trainingLoading.value = true
+  try {
+    const task = await learningApi.getTraining(id)
+    if (!trainingDetailOpen.value) return
+    selectedTraining.value = task
+    if (task.status === 'PUBLISHED') {
+      const [statistics, qr] = await Promise.allSettled([learningApi.getTrainingStats(id), learningApi.getTrainingQr(id)])
+      if (!trainingDetailOpen.value || selectedTraining.value?.task_id !== id) return
+      if (statistics.status === 'fulfilled') trainingStats.value = statistics.value
+      if (qr.status === 'fulfilled') trainingQrUrl.value = URL.createObjectURL(qr.value)
+    }
+  } catch {
+    ElMessage.error('培训详情加载失败')
+  } finally {
+    trainingLoading.value = false
+  }
+}
+
 function formatTime(utcStr: string): string {
   if (!utcStr) return '-'
   return new Date(utcStr).toLocaleTimeString()
@@ -477,6 +709,7 @@ onMounted(() => {
   }).catch(() => undefined)
   scrollToBottom()
 })
+onUnmounted(clearTrainingQr)
 </script>
 
 <style scoped>
@@ -577,6 +810,23 @@ onMounted(() => {
   padding-left: 20px;
   margin: 6px 0;
 }
+.report-previews{margin-top:16px;padding-top:14px;border-top:1px dashed #d8deea;display:grid;gap:10px}
+.report-previews-heading,.report-preview-top,.report-detail-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.report-previews-heading strong{font-size:14px;color:#344054}
+.report-previews-heading span,.report-preview-meta{font-size:12px;color:#7b8798}
+.report-preview-card{padding:14px 16px;border:1px solid #e1e6f1;border-radius:12px;background:#fff;min-width:0}
+.report-preview-top strong{font-size:14px;color:#303b51}
+.report-preview-meta{margin-top:7px}
+.report-preview-card p{margin:9px 0 10px;color:#526078;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+.report-preview-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.report-preview-actions .el-button{margin:0}
+.report-more{font-size:12px;color:#5c58bd;text-decoration:none}
+.report-detail-text{line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere}
+.report-citation{font-size:12px;color:#718096;border-left:2px solid #aea6df;padding-left:9px}
+.training-link{color:#5b55bb;font-size:12px;font-weight:600;text-decoration:none}.training-link:hover{text-decoration:underline}
+.training-detail-stats{padding:10px 12px;background:#f0f3ff;border-radius:9px;color:#555cac;font-size:13px}
+.training-question{padding:14px 0;border-top:1px solid #e7eaf0}.training-question strong{display:block;margin-bottom:8px}.training-question p{margin:4px 0 4px 16px}.training-question .correct-option{color:#278263;font-weight:600}.training-question small{display:block;color:#7a8596;margin-top:8px}
+.training-access{display:flex;align-items:center;gap:20px;margin-top:18px}.training-access img{width:150px;height:150px;object-fit:contain}
 .evidence-section {
   margin-top: 14px;
   border-top: 1px dashed #e2e8f0;
