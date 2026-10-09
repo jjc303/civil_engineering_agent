@@ -8,6 +8,17 @@ from dotenv import load_dotenv
 # Local .env values fill missing variables; deployed environment values always win.
 load_dotenv(override=False)
 
+DEFAULT_RAG_STANDARDS_SUBDIRECTORY = "standards"
+DEFAULT_RAG_ACCIDENT_REPORTS_SUBDIRECTORY = "accident_reports"
+
+
+def validate_rag_inbox_subdirectories(standards: str, accident_reports: str) -> None:
+    for name in (standards, accident_reports):
+        if not name or name != name.strip() or name in {".", ".."} or any(char in name for char in ("/", "\\", "\x00")):
+            raise RuntimeError("RAG inbox subdirectories must be distinct, non-empty directory names")
+    if standards.casefold() == accident_reports.casefold():
+        raise RuntimeError("RAG inbox subdirectories must be distinct, non-empty directory names")
+
 @dataclass(frozen=True)
 class Settings:
     """Runtime settings loaded from environment variables."""
@@ -32,6 +43,8 @@ class Settings:
     rag_persist_directory: str = "./runs/chroma"
     rag_document_directory: str = "./runs/knowledge"
     rag_inbox_directory: str = "./runs/knowledge/inbox"
+    rag_standards_subdirectory: str = DEFAULT_RAG_STANDARDS_SUBDIRECTORY
+    rag_accident_reports_subdirectory: str = DEFAULT_RAG_ACCIDENT_REPORTS_SUBDIRECTORY
     rag_sync_interval_seconds: int = 30
     rag_embedding_provider: str = "dashscope"
     rag_embedding_model: str = "text-embedding-v4"
@@ -71,6 +84,8 @@ class Settings:
             rag_persist_directory=os.getenv("AGENT_RAG_PERSIST_DIRECTORY", "./runs/chroma"),
             rag_document_directory=os.getenv("AGENT_RAG_DOCUMENT_DIRECTORY", "./runs/knowledge"),
             rag_inbox_directory=os.getenv("AGENT_RAG_INBOX_DIRECTORY", "./runs/knowledge/inbox"),
+            rag_standards_subdirectory=os.getenv("AGENT_RAG_STANDARDS_SUBDIRECTORY", DEFAULT_RAG_STANDARDS_SUBDIRECTORY),
+            rag_accident_reports_subdirectory=os.getenv("AGENT_RAG_ACCIDENT_REPORTS_SUBDIRECTORY", DEFAULT_RAG_ACCIDENT_REPORTS_SUBDIRECTORY),
             rag_sync_interval_seconds=int(os.getenv("AGENT_RAG_SYNC_INTERVAL_SECONDS", "30")),
             rag_embedding_provider=os.getenv("AGENT_RAG_EMBEDDING_PROVIDER", "dashscope").lower(),
             rag_embedding_model=os.getenv("AGENT_RAG_EMBEDDING_MODEL", "text-embedding-v4"),
@@ -111,6 +126,7 @@ class Settings:
             raise RuntimeError("AGENT_RAG_CHUNK_OVERLAP must be non-negative and smaller than AGENT_RAG_CHUNK_SIZE")
         if self.rag_sync_interval_seconds <= 0:
             raise RuntimeError("AGENT_RAG_SYNC_INTERVAL_SECONDS must be positive")
+        validate_rag_inbox_subdirectories(self.rag_standards_subdirectory, self.rag_accident_reports_subdirectory)
         if not 1 <= self.rag_top_k <= self.rag_top_k_max:
             raise RuntimeError("AGENT_RAG_TOP_K must be between 1 and AGENT_RAG_TOP_K_MAX")
         if self.rag_embedding_provider not in {"dashscope", "sentence_transformers"}:

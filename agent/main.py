@@ -86,10 +86,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         settings.rag_embedding_base_url,
         settings.rag_embedding_dimensions,
     ) if settings.rag_enabled else None
-    app.state.knowledge_service = KnowledgeService(database, retriever, settings.rag_document_directory, settings.rag_inbox_directory, settings.rag_max_upload_bytes, settings.rag_allowed_extensions, settings.rag_chunk_size, settings.rag_chunk_overlap, settings.rag_top_k_max)
+    app.state.knowledge_service = KnowledgeService(
+        database, retriever, settings.rag_document_directory, settings.rag_inbox_directory,
+        settings.rag_max_upload_bytes, settings.rag_allowed_extensions, settings.rag_chunk_size,
+        settings.rag_chunk_overlap, settings.rag_top_k_max,
+        standards_subdirectory=settings.rag_standards_subdirectory,
+        accident_reports_subdirectory=settings.rag_accident_reports_subdirectory,
+    )
     app.state.agent_write_action_service = AgentWriteActionService(database, app.state.camera_management_service)
     app.state.rectification_task_service = RectificationTaskService(database, app.state.agent_write_action_service)
-    app.state.chat_service = ChatService(database, create_chat_model(settings), settings.tool_max_calls, settings.memory_enabled, settings.memory_ttl_hours, settings.memory_recent_turns, app.state.knowledge_service if retriever else None, app.state.agent_write_action_service)
+    app.state.chat_service = ChatService(database, create_chat_model(settings), settings.tool_max_calls, settings.memory_enabled, settings.memory_ttl_hours, settings.memory_recent_turns, app.state.knowledge_service if retriever else None, app.state.agent_write_action_service, settings.rag_top_k)
     app.include_router(camera_config_router)
     app.include_router(public_router)
     app.include_router(camera_management_router)

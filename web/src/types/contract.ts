@@ -100,10 +100,12 @@ export interface KnowledgeCitation {
   page_or_section: string;
   chunk_id: string;
   relevance_score: number;
+  source_label: string;
+  document_type: "STANDARD" | "ACCIDENT_REPORT";
 }
 
 export interface ToolTraceItem {
-  tool_name: "query_violations" | "get_violation_statistics" | "get_camera_status" | "get_all_camera_statuses" | "get_workforce_summary" | "get_current_weather" | "search_knowledge" | "create_rectification_task" | "update_rectification_task" | "start_monitoring" | "stop_monitoring";
+  tool_name: "query_violations" | "get_violation_statistics" | "get_camera_status" | "get_all_camera_statuses" | "get_workforce_summary" | "get_current_weather" | "search_knowledge" | "list_standard_catalog" | "create_rectification_task" | "update_rectification_task" | "start_monitoring" | "stop_monitoring";
   success: boolean;
   purpose: string;
   duration_ms: number;

@@ -11,7 +11,7 @@ from .query import ViolationQuery
 
 ToolName = Literal[
     "query_violations", "get_violation_statistics", "get_camera_status",
-    "get_all_camera_statuses", "get_workforce_summary", "get_current_weather", "search_knowledge",
+    "get_all_camera_statuses", "get_workforce_summary", "get_current_weather", "search_knowledge", "list_standard_catalog",
     "create_rectification_task", "update_rectification_task", "start_monitoring", "stop_monitoring",
     "list_rectification_targets", "list_monitoring_targets",
 ]
@@ -99,6 +99,8 @@ class KnowledgeCitation(BaseModel):
     page_or_section: str
     chunk_id: str
     relevance_score: float = Field(ge=0, le=1)
+    source_label: str = ""
+    document_type: str = "ACCIDENT_REPORT"
 
 
 class ChatResponse(BaseModel):

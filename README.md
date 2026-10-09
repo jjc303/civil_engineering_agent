@@ -12,7 +12,7 @@
 │   ├── db/                        # SQLAlchemy 模型与 Alembic 迁移
 │   ├── graph/                     # Agent 多步工具规划图
 │   ├── llm/                       # DeepSeek / Fake 模型适配器
-│   ├── rag/                       # Chroma 检索与 Embedding 适配器
+│   ├── rag/                       # RagManager、Chroma 检索与 Embedding 适配器
 │   ├── services/                  # 领域服务、写操作确认、整改任务服务
 │   └── tools/                     # Agent 可调用的只读工具
 ├── perception/                    # CV 推理、跟踪、危险区域与控制节点
@@ -67,7 +67,11 @@ Agent API (FastAPI :8000) ── MySQL
 ### 文档知识库（RAG）
 
 - 支持 `.pdf`、`.docx`、`.md`、`.txt` 文档切分、向量化、检索和引用。
-- 直接把文件放入 `runs/knowledge/inbox/`；启动时及后续定时同步会自动入库，无需管理员令牌。
+- 事故报告和工程规范分别放入收件箱下配置的目录；默认是 `runs/knowledge/inbox/accident_reports/` 和 `runs/knowledge/inbox/standards/`。通过 `AGENT_RAG_ACCIDENT_REPORTS_SUBDIRECTORY`、`AGENT_RAG_STANDARDS_SUBDIRECTORY` 调整目录名；同步器只扫描这两个目录及其子目录。规范存入独立的 `standards` 向量集合，每轮回答前按当前问题自动检索；事故报告仅由 `search_knowledge` 工具按需检索。
+- API 上传时在表单中设置 `document_type=STANDARD` 或 `ACCIDENT_REPORT`；已有文档可调用 `POST /api/v1/knowledge/documents/{document_id}:classify?document_type=STANDARD` 重新分类并重建索引。部署前执行数据库迁移。
+- `agent/rag/manager.py` 的 `RagManager` 统一处理解析、分块、向量写入与检索；两类文档通过类型路由到各自集合。
+- 用户询问规范目录时，模型选择只读的 `list_standard_catalog`，列出文件及索引状态；无需维护问句关键词表。扫描版 PDF 若没有可提取文本，会标为“需 OCR”，在转换为可检索文本前不能作为规范依据。
+- 规范有效性存储在文档元数据 `validity_status` 中，取值为 `CURRENT`、`SUPERSEDED` 或 `UNKNOWN`（默认）；不根据文件名判断。可调用 `PATCH /api/v1/knowledge/documents/{document_id}/validity`，提交 `{"validity_status":"CURRENT"}` 等值。`SUPERSEDED` 不参与日常规范检索，`UNKNOWN` 可引用但不会称为现行标准。
 - 默认使用阿里云百炼 DashScope OpenAI 兼容接口和 `text-embedding-v4`；向量数据持久化到 `runs/chroma/`。
 - 同时提供知识文档、版本与索引任务接口，便于接入管理后台。
 
@@ -170,6 +174,8 @@ AGENT_RAG_ENABLED=true
 AGENT_RAG_PERSIST_DIRECTORY=./runs/chroma
 AGENT_RAG_DOCUMENT_DIRECTORY=./runs/knowledge
 AGENT_RAG_INBOX_DIRECTORY=./runs/knowledge/inbox
+AGENT_RAG_STANDARDS_SUBDIRECTORY=standards
+AGENT_RAG_ACCIDENT_REPORTS_SUBDIRECTORY=accident_reports
 AGENT_RAG_SYNC_INTERVAL_SECONDS=30
 AGENT_RAG_EMBEDDING_PROVIDER=dashscope
 AGENT_RAG_EMBEDDING_MODEL=text-embedding-v4
@@ -252,8 +258,9 @@ runs/logs/alembic.log
 RAG 已启用时，直接复制资料：
 
 ```bash
-mkdir -p runs/knowledge/inbox
-cp /path/to/施工安全规范.pdf runs/knowledge/inbox/
+mkdir -p runs/knowledge/inbox/standards runs/knowledge/inbox/accident_reports
+cp /path/to/施工安全规范.pdf runs/knowledge/inbox/standards/
+cp /path/to/事故调查报告.pdf runs/knowledge/inbox/accident_reports/
 ```
 
 服务启动后会立即扫描一次，之后按 `AGENT_RAG_SYNC_INTERVAL_SECONDS`（默认 30 秒）扫描；向量和索引数据写入 `runs/chroma/`。保留该目录即可复用已向量化结果；删除它会触发重新建库。
@@ -283,7 +290,7 @@ cd .. && alembic current
 
 ### RAG 查询不到资料
 
-确认：`AGENT_RAG_ENABLED=true`、DashScope Key 有效、文件在 `runs/knowledge/inbox/`、文件扩展名受 `AGENT_RAG_ALLOWED_EXTENSIONS` 支持，并查看 `runs/logs/agent.log` 中的索引错误。文档原件在 `runs/knowledge/`，向量库在 `runs/chroma/`。
+确认：`AGENT_RAG_ENABLED=true`、DashScope Key 有效、文件在 `runs/knowledge/inbox/standards/` 或 `runs/knowledge/inbox/accident_reports/`、文件扩展名受 `AGENT_RAG_ALLOWED_EXTENSIONS` 支持，并查看 `runs/logs/agent.log` 中的索引错误。文档原件在 `runs/knowledge/`，向量库在 `runs/chroma/`。
 
 ### 违规图片无法预览
 

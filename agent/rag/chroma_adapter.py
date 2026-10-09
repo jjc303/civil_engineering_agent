@@ -15,6 +15,8 @@ class KnowledgeChunk:
     title: str
     page_or_section: str
     relevance_score: float
+    source_label: str = ""
+    document_type: str = "ACCIDENT_REPORT"
 
 
 class DashScopeEmbeddingFunction:
@@ -78,20 +80,56 @@ class ChromaKnowledgeRetriever:
             collection_name,
             embedding_function=embedding_function,
         )
+        self._standards = self._client.get_or_create_collection("standards", embedding_function=embedding_function)
 
     def replace_version(self, version_id: str, chunks: list[dict[str, Any]]) -> None:
-        self._collection.delete(where={"document_version_id": version_id})
-        if chunks:
-            self._collection.add(ids=[c["chunk_id"] for c in chunks], documents=[c["text"] for c in chunks], metadatas=[c["metadata"] for c in chunks])
+        self._replace(self._collection, version_id, chunks)
 
     def delete_version(self, version_id: str) -> None:
         self._collection.delete(where={"document_version_id": version_id})
+
+    def replace_standard_version(self, version_id: str, chunks: list[dict[str, Any]]) -> None:
+        self._replace(self._standards, version_id, chunks)
+
+    @staticmethod
+    def _replace(collection: Any, version_id: str, chunks: list[dict[str, Any]]) -> None:
+        collection.delete(where={"document_version_id": version_id})
+        if chunks:
+            collection.add(ids=[c["chunk_id"] for c in chunks], documents=[c["text"] for c in chunks], metadatas=[c["metadata"] for c in chunks])
+
+    def delete_standard_version(self, version_id: str) -> None:
+        self._standards.delete(where={"document_version_id": version_id})
+
+    def update_version_source(self, document_type: str, version_id: str, source_label: str) -> None:
+        collection = self._standards if document_type == "STANDARD" else self._collection
+        result = collection.get(where={"document_version_id": version_id}, include=["metadatas"])
+        ids = result.get("ids", [])
+        if ids:
+            collection.update(ids=ids, metadatas=[{**(meta or {}), "source_label": source_label} for meta in result["metadatas"]])
+
+    def count_standards(self) -> int:
+        return int(self._standards.count())
 
     def count(self) -> int:
         """Return the number of persisted chunks in the fixed collection."""
         return int(self._collection.count())
 
     def search(self, query: str, top_k: int) -> list[KnowledgeChunk]:
-        result = self._collection.query(query_texts=[query], n_results=top_k, where={"status": "ACTIVE"})
+        return self._search_collection(self._collection, query, top_k)
+
+    def search_standards(self, query: str, top_k: int) -> list[KnowledgeChunk]:
+        return self._search_collection(self._standards, query, top_k)
+
+    def search_active(self, document_type: str, query: str, top_k: int, version_ids: list[str]) -> list[KnowledgeChunk]:
+        if not version_ids:
+            return []
+        collection = self._standards if document_type == "STANDARD" else self._collection
+        return self._search_collection(collection, query, top_k, where={"document_version_id": {"$in": version_ids}})
+
+    @staticmethod
+    def _search_collection(collection: Any, query: str, top_k: int, where: dict[str, Any] | None = None) -> list[KnowledgeChunk]:
+        if collection.count() == 0:
+            return []
+        result = collection.query(query_texts=[query], n_results=top_k, where=where or {"status": "ACTIVE"})
         ids, docs, metas, distances = (result.get("ids", [[]])[0], result.get("documents", [[]])[0], result.get("metadatas", [[]])[0], result.get("distances", [[]])[0])
-        return [KnowledgeChunk(str(chunk_id), str(text), str(meta["document_id"]), str(meta["document_version_id"]), int(meta["version_no"]), str(meta["title"]), str(meta["page_or_section"]), max(0.0, min(1.0, 1.0 - float(distance)))) for chunk_id, text, meta, distance in zip(ids, docs, metas, distances)]
+        return [KnowledgeChunk(str(chunk_id), str(text), str(meta["document_id"]), str(meta["document_version_id"]), int(meta["version_no"]), str(meta["title"]), str(meta["page_or_section"]), max(0.0, min(1.0, 1.0 - float(distance))), str(meta.get("source_label", "")), str(meta.get("document_type", "ACCIDENT_REPORT"))) for chunk_id, text, meta, distance in zip(ids, docs, metas, distances)]

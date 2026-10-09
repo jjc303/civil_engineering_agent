@@ -33,7 +33,7 @@
               <!-- 降级提醒 -->
               <el-alert
                 v-if="msg.degraded"
-                title="服务处于降级保护模式，以下回答来自本地规则或缓存数据"
+                :title="msg.errorCode === 'UNSUPPORTED_STANDARD_REFERENCE' ? '规范依据不足，已阻止未经证实的标准引用' : msg.errorCode === 'STANDARDS_RETRIEVAL_FAILED' ? '规范库检索暂时不可用' : '服务暂时降级，请核对回答依据'"
                 type="warning"
                 show-icon
                 :closable="false"
@@ -76,7 +76,7 @@
               <div v-if="msg.knowledgeCitations && msg.knowledgeCitations.length > 0" class="evidence-section">
                 <div class="evidence-header"><el-icon><Document /></el-icon><span>知识资料引用 ({{ msg.knowledgeCitations.length }} 项):</span></div>
                 <div v-for="citation in msg.knowledgeCitations" :key="citation.chunk_id" class="tool-item">
-                  <span>{{ citation.title }}（v{{ citation.version_no }}，{{ citation.page_or_section }}）</span>
+                  <span>{{ citation.document_type === 'STANDARD' ? '规范' : '事故报告' }}：{{ citation.title }}（v{{ citation.version_no }}，{{ citation.page_or_section }}）<small v-if="citation.source_label"> · {{ citation.source_label }}</small></span>
                   <el-tag size="small" type="info">相关度 {{ citation.relevance_score.toFixed(2) }}</el-tag>
                 </div>
               </div>
@@ -244,6 +244,7 @@ interface ChatMessage {
   knowledgeCitations?: import('@/types/contract').KnowledgeCitation[]
   toolTrace?: ToolTraceItem[]
   degraded?: boolean
+  errorCode?: string | null
   pendingAction?: PendingAction
   guidedSelection?: GuidedSelection
   actionBusy?: boolean
@@ -305,6 +306,7 @@ async function handleSend() {
       knowledgeCitations: res.knowledge_citations,
       toolTrace: res.tool_trace,
       degraded: res.degraded,
+      errorCode: res.error_code,
       pendingAction: res.pending_action || undefined,
       guidedSelection: res.guided_selection || undefined,
     })

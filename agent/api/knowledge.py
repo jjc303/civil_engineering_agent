@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
-from agent.contracts.knowledge import KnowledgeDocumentDetailResponse, KnowledgeDocumentPage, KnowledgeIndexJobPage, KnowledgeIndexJobResponse
+from agent.contracts.knowledge import DocumentType, StandardValidityUpdate, KnowledgeDocumentDetailResponse, KnowledgeDocumentPage, KnowledgeIndexJobPage, KnowledgeIndexJobResponse
 from agent.services.knowledge_service import KnowledgeService
 
 router = APIRouter(prefix="/api/v1/knowledge", tags=["knowledge"])
@@ -23,9 +23,9 @@ def _error(exc: Exception) -> HTTPException:
 
 
 @router.post("/documents", response_model=KnowledgeDocumentDetailResponse, status_code=201)
-async def upload_document(request: Request, file: UploadFile = File(...), title: str = Form(...), source_label: str = Form("")) -> KnowledgeDocumentDetailResponse:
+async def upload_document(request: Request, file: UploadFile = File(...), title: str = Form(...), source_label: str = Form(""), document_type: DocumentType = Form("ACCIDENT_REPORT")) -> KnowledgeDocumentDetailResponse:
     try:
-        detail, _, duplicate = _service(request).upload(filename=file.filename or "upload", content=await file.read(), title=title, source_label=source_label or title, actor="admin")
+        detail, _, duplicate = _service(request).upload(filename=file.filename or "upload", content=await file.read(), title=title, source_label=source_label or title, actor="admin", document_type=document_type)
         if duplicate: raise HTTPException(409, detail="identical document already exists")
         return detail
     except HTTPException: raise
@@ -33,13 +33,25 @@ async def upload_document(request: Request, file: UploadFile = File(...), title:
 
 
 @router.get("/documents", response_model=KnowledgeDocumentPage)
-def list_documents(request: Request, limit: int = 20, offset: int = 0, status: str | None = None) -> KnowledgeDocumentPage:
-    return _service(request).list_documents(min(max(limit, 1), 100), max(offset, 0), status)
+def list_documents(request: Request, limit: int = 20, offset: int = 0, status: str | None = None, document_type: DocumentType | None = None) -> KnowledgeDocumentPage:
+    return _service(request).list_documents(min(max(limit, 1), 100), max(offset, 0), status, document_type)
 
 
 @router.get("/documents/{document_id}", response_model=KnowledgeDocumentDetailResponse)
 def get_document(document_id: str, request: Request) -> KnowledgeDocumentDetailResponse:
     try: return _service(request).detail(document_id)
+    except Exception as exc: raise _error(exc) from exc
+
+
+@router.post("/documents/{document_id}:classify", response_model=KnowledgeDocumentDetailResponse)
+def classify_document(document_id: str, request: Request, document_type: DocumentType) -> KnowledgeDocumentDetailResponse:
+    try: return _service(request).classify(document_id, document_type, "admin")
+    except Exception as exc: raise _error(exc) from exc
+
+
+@router.patch("/documents/{document_id}/validity", response_model=KnowledgeDocumentDetailResponse)
+def update_standard_validity(document_id: str, payload: StandardValidityUpdate, request: Request) -> KnowledgeDocumentDetailResponse:
+    try: return _service(request).set_standard_validity(document_id, payload.validity_status, "admin")
     except Exception as exc: raise _error(exc) from exc
 
 

@@ -140,6 +140,8 @@ class KnowledgeDocumentModel(Base):
     document_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     source_label: Mapped[str] = mapped_column(String(512), nullable=False)
+    document_type: Mapped[str] = mapped_column(String(32), nullable=False, default="ACCIDENT_REPORT", index=True)
+    validity_status: Mapped[str] = mapped_column(String(32), nullable=False, default="UNKNOWN")
     checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     current_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)

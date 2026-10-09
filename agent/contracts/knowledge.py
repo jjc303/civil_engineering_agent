@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from typing import Literal
+
+DocumentType = Literal["STANDARD", "ACCIDENT_REPORT"]
+StandardValidity = Literal["CURRENT", "SUPERSEDED", "UNKNOWN"]
+
+
+class StandardValidityUpdate(BaseModel):
+    validity_status: StandardValidity
 
 
 class KnowledgeCitationResponse(BaseModel):
@@ -17,6 +25,8 @@ class KnowledgeDocumentResponse(BaseModel):
     document_id: str
     title: str
     source_label: str
+    document_type: DocumentType
+    validity_status: StandardValidity
     current_version: int
     status: str
     created_at_utc: datetime
