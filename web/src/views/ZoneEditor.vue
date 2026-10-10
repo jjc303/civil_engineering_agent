@@ -36,7 +36,7 @@
         </template>
 
         <div class="canvas-container" ref="containerRef">
-          <img v-if="previewImageSrc" class="preview-background" :src="previewImageSrc" alt="监控画面" @error="onPreviewError" />
+          <img v-if="previewImageSrc" class="preview-background" :src="previewImageSrc" alt="监控画面" @load="onPreviewLoad" @error="onPreviewError" />
           <canvas
             ref="canvasRef"
             class="interactive-canvas"
@@ -372,6 +372,14 @@ function resumePreview() {
   if (!selectedCameraId.value) return
   previewState.value = 'live'
   previewImageSrc.value = `${previewUrl(selectedCameraId.value)}?t=${Date.now()}`
+  // Multipart MJPEG does not consistently fire an image load event. Probe a
+  // single real frame as well, without interrupting the live stream.
+  const cameraId = selectedCameraId.value
+  const frame = new Image()
+  frame.onload = () => {
+    if (selectedCameraId.value === cameraId) updatePreviewResolution(frame)
+  }
+  frame.src = `${previewFrameUrl(cameraId)}?t=${Date.now()}`
 }
 
 function pausePreview() {
@@ -383,6 +391,29 @@ function pausePreview() {
 function onPreviewError() {
   previewImageSrc.value = ''
   previewState.value = 'unavailable'
+}
+
+function onPreviewLoad(event: Event) {
+  updatePreviewResolution(event.target as HTMLImageElement)
+}
+
+function updatePreviewResolution(image: HTMLImageElement) {
+  const width = image.naturalWidth
+  const height = image.naturalHeight
+  const previous = sourceResolution.value
+  if (!width || !height || (width === previous.width && height === previous.height)) return
+  // Preserve the drawn boundary's position when an old/default coordinate
+  // system differs from the actual camera frame. Explicit saving publishes it.
+  const scale = (point: [number, number]): [number, number] => [
+    Math.round(point[0] * width / previous.width),
+    Math.round(point[1] * height / previous.height),
+  ]
+  syncSelectedZone()
+  zones.value = zones.value.map(zone => ({ ...zone, polygon: zone.polygon.map(scale) }))
+  polygonPoints.value = polygonPoints.value.map(scale)
+  sourceResolution.value = { width, height }
+  dirty.value = true
+  nextTick(() => { resizeCanvas(); drawCanvas() })
 }
 
 function resizeCanvas() {

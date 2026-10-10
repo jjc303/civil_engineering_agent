@@ -78,7 +78,7 @@
               </section>
 
               <!-- 证据卡片区 -->
-              <div v-if="uiConfig?.show_evidence && msg.evidence && msg.evidence.length > 0" class="evidence-section">
+              <div v-if="uiConfig?.show_evidence !== false && msg.evidence && msg.evidence.length > 0" class="evidence-section">
                 <div class="evidence-header">
                   <el-icon><Picture /></el-icon>
                   <span>关联证据快照 ({{ msg.evidence.length }} 项):</span>
