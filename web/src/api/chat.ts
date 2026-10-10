@@ -12,7 +12,8 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
       answer: `针对您的提问 **“${request.question}”**：\n\n` + mockChatResponse.answer,
     }
   }
-  const res = await apiClient.post<ChatResponse>('/api/v1/agent/chat', request)
+  // Chat includes model planning, tool execution and answer generation.
+  const res = await apiClient.post<ChatResponse>('/api/v1/agent/chat', request, { timeout: 180000 })
   return res.data
 }
 

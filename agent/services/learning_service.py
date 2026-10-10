@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import re
 import secrets
 from threading import Lock
@@ -32,6 +33,10 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
 def _citation(chunk) -> dict:
     return {"document_id": chunk.document_id, "version_no": chunk.version_no, "title": chunk.title, "page_or_section": chunk.page_or_section, "chunk_id": chunk.chunk_id, "document_type": chunk.document_type}
 
@@ -49,7 +54,10 @@ def _guard_standard_references(texts: list[str], standards: list[str], other_tit
     evidence = re.sub(r"\s+", "", "\n".join([*standards, *(other_titles or [])])).casefold()
     for text in texts:
         for match in _STANDARD_REFERENCE.finditer(text):
-            if re.sub(r"\s+", "", match.group()).casefold() not in evidence:
+            reference = match.group()
+            if reference.startswith("《") and reference.endswith("》"):
+                reference = reference[1:-1]
+            if re.sub(r"\s+", "", reference).casefold() not in evidence:
                 raise ValueError(f"generated text cites unsupported standard or clause: {match.group()}")
 
 
@@ -95,11 +103,21 @@ class LearningService:
                       "excluded_status": "FALSE_ALARM", "end_exclusive": True}
         fragments, citations = [], []
         if self.knowledge.rag_manager and by_type:
-            fragments, citations = self.knowledge.search_standards("施工安全 " + " ".join(by_type), min(4, self.knowledge.top_k_max))
+            fragments, citations = self.knowledge.search_standards("施工安全 " + " ".join(_RISK_LABELS.get(code, code) for code in by_type), min(4, self.knowledge.top_k_max))
         evidence = [{"content": item["content"][:1200], "title": item["title"], "section": item["page_or_section"], "validity_status": item["validity_status"]} for item in fragments]
-        generated = self.model.generate_structured("输出 summary、risk_analysis、remediation 三个非空字符串。所有数量只能来自统计数据，引用规范只允许使用给定片段的标题与章节；有效性为 UNKNOWN 的资料不得称为现行规范；无依据时明确说明。", {"statistics": statistics, "standards": evidence})
-        content = ReportContent.model_validate(generated)
-        _guard_standard_references([content.summary, content.risk_analysis, content.remediation], [text for item in evidence for text in (item["title"], item["content"], item["section"])])
+        instruction = "输出 summary、risk_analysis、remediation 三个非空字符串。用自然中文，不要输出系统枚举代码。所有数量只能来自统计数据，重复出现次数不代表重复违规人数，也不能据此断言管理措施失效。明确说明 data_source；如果是视频回放演示，不得将循环播放产生的告警推断为真实现场风险恶化。引用规范只允许使用给定片段的标题与章节。引用名称和条款编号必须原样摘录，不要改变中文或阿拉伯数字写法；不能确认具体条款时仅引用文档标题和给定页码。有效性为 UNKNOWN 的资料不得称为现行规范；无依据时明确说明。"
+        generation_context = {"statistics": statistics, "standards": evidence, "data_source": os.getenv("REPORT_SOURCE_LABEL", "现场监控记录")}
+        for attempt in range(2):
+            generated = self.model.generate_structured(instruction, generation_context)
+            try:
+                content = ReportContent.model_validate(generated)
+                _guard_standard_references([content.summary, content.risk_analysis, content.remediation], [text for item in evidence for text in (item["title"], item["content"], item["section"])])
+                break
+            except ValueError as exc:
+                if attempt:
+                    raise
+                generation_context["validation_error"] = str(exc)
+                instruction += " 上次输出未通过依据校验，请根据 validation_error 纠正，只使用提供的原文依据。"
         report = SafetyReportModel(report_id=str(uuid4()), period_start_utc=request.period_start_utc, period_end_utc=request.period_end_utc,
                                    status="DRAFT", statistics_json=statistics, citations_json=[item.model_dump(mode="json") for item in citations],
                                    content_json=content.model_dump(), created_at_utc=_now())
@@ -231,7 +249,6 @@ class LearningService:
             row = session.get(SafetyReportModel, report_id)
             if not row: raise KeyError("report not found")
             if row.status != "DRAFT": raise ValueError("report is already confirmed")
-            from weasyprint import HTML
             path = self.report_directory / f"{row.report_id}.pdf"
             path.parent.mkdir(parents=True, exist_ok=True)
             start = row.period_start_utc.replace(tzinfo=timezone.utc) if row.period_start_utc.tzinfo is None else row.period_start_utc
@@ -239,7 +256,15 @@ class LearningService:
             html = Environment(autoescape=True).from_string(_REPORT_HTML).render(
                 start=start.astimezone(self.display_timezone).date(), end=(end - timedelta(microseconds=1)).astimezone(self.display_timezone).date(), stats=row.statistics_json,
                 content=row.content_json, citations=row.citations_json)
-            HTML(string=html).write_pdf(str(path))
+            if os.name == "nt":
+                from agent.services.report_pdf import write_windows_report
+                write_windows_report(path,
+                    start=str(start.astimezone(self.display_timezone)),
+                    end=str(end.astimezone(self.display_timezone)),
+                    stats=row.statistics_json, content=row.content_json, citations=row.citations_json or [])
+            else:
+                from weasyprint import HTML
+                HTML(string=html).write_pdf(str(path))
             row.pdf_path = f"{row.report_id}.pdf"
             row.status, row.confirmed_at_utc = "CONFIRMED", _now()
             session.flush()
@@ -312,7 +337,7 @@ class LearningService:
                              "version_no": detail.current_version, "validity_status": detail.validity_status,
                              "chunks": [{"content": c.text, "section": c.page_or_section, "chunk_id": c.chunk_id} for c in chunks[:6]]})
         if self.knowledge.rag_manager:
-            standard_fragments, standard_citations = self.knowledge.search_standards("施工安全 " + " ".join(report_snapshot["statistics"]["by_type"]), min(4, self.knowledge.top_k_max))
+            standard_fragments, standard_citations = self.knowledge.search_standards("施工安全 " + " ".join(_RISK_LABELS.get(code, code) for code in report_snapshot["statistics"]["by_type"]), min(4, self.knowledge.top_k_max))
             selected_ids = {doc["document_id"] for doc in selected}
             for fragment, citation in zip(standard_fragments, standard_citations):
                 if citation.document_id in selected_ids: continue
@@ -432,4 +457,4 @@ class LearningService:
                     "completion_rate": round(100 * completed / task.target_count, 1),
                     "average_score": round(sum(item.score for item in submissions) / completed, 1) if completed else 0,
                     "pass_rate": round(100 * sum(item.passed for item in submissions) / completed, 1) if completed else 0,
-                    "submissions": [{"worker_id": item.worker_id, "worker_name": item.worker_name, "score": item.score, "passed": item.passed, "submitted_at_utc": item.submitted_at_utc.isoformat()} for item in submissions]}
+                    "submissions": [{"worker_id": item.worker_id, "worker_name": item.worker_name, "score": item.score, "passed": item.passed, "submitted_at_utc": _as_utc(item.submitted_at_utc).isoformat()} for item in submissions]}

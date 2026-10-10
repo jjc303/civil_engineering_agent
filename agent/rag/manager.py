@@ -82,11 +82,17 @@ def _extract_text(path: Path) -> tuple[str, int | None, str]:
     if suffix == ".pdf":
         from pypdf import PdfReader
         pages = PdfReader(str(path)).pages
-        return "\n".join(page.extract_text() or "" for page in pages), len(pages), "pypdf"
+        return "\n".join(_pdf_text(page) for page in pages), len(pages), "pypdf"
     if suffix == ".docx":
         from docx import Document
         return "\n".join(p.text for p in Document(str(path)).paragraphs), None, "python-docx"
     raise ValueError("unsupported knowledge document")
+
+
+def _pdf_text(page: Any) -> str:
+    # Broken PDF font maps can produce lone UTF-16 surrogates. Keep an explicit
+    # replacement marker while preserving page locations and the original PDF.
+    return re.sub(r"[\ud800-\udfff]", "\ufffd", page.extract_text() or "")
 
 
 def _chunks(text: str, size: int, overlap: int) -> list[str]:
@@ -107,7 +113,7 @@ def _standard_chunks(path: Path, size: int, overlap: int) -> list[tuple[str, str
     """Keep section headings and PDF page locations attached to vector chunks."""
     if path.suffix.lower() == ".pdf":
         from pypdf import PdfReader
-        sources = [(page.extract_text() or "", f"第 {index} 页") for index, page in enumerate(PdfReader(str(path)).pages, 1)]
+        sources = [(_pdf_text(page), f"第 {index} 页") for index, page in enumerate(PdfReader(str(path)).pages, 1)]
     elif path.suffix.lower() == ".docx":
         from docx import Document
         paragraphs = Document(str(path)).paragraphs

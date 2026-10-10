@@ -7,6 +7,14 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
+      path: '/demo',
+      redirect: '/dashboard',
+    },
+    {
+      path: '/materials',
+      redirect: '/dashboard',
+    },
+    {
       path: '/',
       redirect: '/dashboard',
     },

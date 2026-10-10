@@ -86,21 +86,22 @@ def test_knowledge_inbox_indexes_new_and_changed_files(tmp_path) -> None:
     database = Database("sqlite+pysqlite:///:memory:")
     database.create_schema()
     inbox = tmp_path / "to-index"
-    (inbox / "安全规范.md").parent.mkdir(parents=True)
-    (inbox / "安全规范.md").write_text("高处作业必须佩戴安全带。", encoding="utf-8")
+    original = inbox / "accident_reports" / "安全规范.md"
+    original.parent.mkdir(parents=True)
+    original.write_text("高处作业必须佩戴安全带。", encoding="utf-8")
     retriever = FakeRetriever()
     service = KnowledgeService(
         database, retriever, str(tmp_path / "managed"), str(inbox),
         1024 * 1024, ".md,.txt", 800, 120, 8,
     )
 
-    assert service.sync_inbox() == {"imported": 1, "recovered": 0, "retried": 0, "skipped": 0, "failed": 0}
-    assert service.sync_inbox() == {"imported": 0, "recovered": 0, "retried": 0, "skipped": 1, "failed": 0}
+    assert service.sync_inbox() == {"imported": 1, "recovered": 0, "retried": 0, "skipped": 0, "failed": 0, "summaries_generated": 0}
+    assert service.sync_inbox() == {"imported": 0, "recovered": 0, "retried": 0, "skipped": 1, "failed": 0, "summaries_generated": 0}
     assert len(retriever.versions) == 1
 
-    (inbox / "安全规范.md").write_text("高处作业必须佩戴安全带，并设置防护栏。", encoding="utf-8")
+    original.write_text("高处作业必须佩戴安全带，并设置防护栏。", encoding="utf-8")
 
-    assert service.sync_inbox() == {"imported": 1, "recovered": 0, "retried": 0, "skipped": 0, "failed": 0}
+    assert service.sync_inbox() == {"imported": 1, "recovered": 0, "retried": 0, "skipped": 0, "failed": 0, "summaries_generated": 0}
     assert len(retriever.versions) == 1
     page = service.list_documents(20, 0, None)
     assert len(page.items) == 1
@@ -108,7 +109,7 @@ def test_knowledge_inbox_indexes_new_and_changed_files(tmp_path) -> None:
 
     retriever.versions.clear()
 
-    assert service.sync_inbox() == {"imported": 0, "recovered": 1, "retried": 0, "skipped": 1, "failed": 0}
+    assert service.sync_inbox() == {"imported": 0, "recovered": 1, "retried": 0, "skipped": 1, "failed": 0, "summaries_generated": 0}
     assert len(retriever.versions) == 1
 
 
@@ -129,8 +130,9 @@ def test_knowledge_inbox_restores_a_missing_managed_original_before_retrying(tmp
     database = Database("sqlite+pysqlite:///:memory:")
     database.create_schema()
     inbox, managed = tmp_path / "to-index", tmp_path / "managed"
-    inbox.mkdir()
-    (inbox / "规程.md").write_text("必须执行班前安全检查。", encoding="utf-8")
+    original = inbox / "accident_reports" / "规程.md"
+    original.parent.mkdir(parents=True)
+    original.write_text("必须执行班前安全检查。", encoding="utf-8")
     service = KnowledgeService(database, FakeRetriever(), str(managed), str(inbox), 1024 * 1024, ".md", 800, 120, 8)
     service.sync_inbox()
     with database.session() as session:
@@ -139,7 +141,7 @@ def test_knowledge_inbox_restores_a_missing_managed_original_before_retrying(tmp
         storage_path = managed / version.storage_key
     storage_path.unlink()
 
-    assert service.sync_inbox() == {"imported": 0, "recovered": 0, "retried": 1, "skipped": 0, "failed": 0}
+    assert service.sync_inbox() == {"imported": 0, "recovered": 0, "retried": 1, "skipped": 0, "failed": 0, "summaries_generated": 0}
     assert storage_path.read_text(encoding="utf-8") == "必须执行班前安全检查。"
 
 

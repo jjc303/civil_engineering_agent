@@ -267,12 +267,12 @@ def _selection_response(state: ChatGraphState, decision: ToolDecision, selection
     }
 
 
-_STANDARD_REFERENCE = re.compile(r"《[^》\n]{0,80}(?:规范|标准|规程|导则|图集)[^》\n]{0,80}》|第[一二三四五六七八九十百千零〇\d.]+条|\b(?:GB|JGJ|JTG|DL|SL|DB)\s*(?:/T\s*)?\d{2,6}(?:[.-]\d+)*(?:-\d{4})?\b", re.I)
+_STANDARD_REFERENCE = re.compile(r"《[^》\n]{0,80}(?:规范|标准|规程|导则|图集)[^》\n]{0,80}》|第[一二三四五六七八九十百千零〇\d.]+条|(?<![A-Za-z0-9])(?:GB|JGJ|JTG|DL|SL|DB)\s*(?:/T\s*)?\d{2,6}(?:[.-]\d+)*(?:-\d{4})?(?![A-Za-z0-9])", re.I)
 
 
 def _contains_unsupported_standard_reference(answer: str, standards_context: str) -> bool:
     source = re.sub(r"\s+", "", standards_context).casefold()
-    return any(re.sub(r"\s+", "", match.group()).casefold() not in source for match in _STANDARD_REFERENCE.finditer(answer))
+    return any(re.sub(r"\s+", "", match.group().strip("《》")).casefold() not in source for match in _STANDARD_REFERENCE.finditer(answer))
 
 
 def _validity_label(validity: str) -> str:

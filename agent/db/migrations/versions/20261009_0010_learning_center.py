@@ -17,7 +17,8 @@ def upgrade() -> None:
     op.add_column("knowledge_documents", sa.Column("source_display", sa.String(512)))
     op.add_column("knowledge_documents", sa.Column("risk_tags", sa.JSON(), nullable=True))
     op.execute("UPDATE knowledge_documents SET risk_tags = '[]' WHERE risk_tags IS NULL")
-    op.alter_column("knowledge_documents", "risk_tags", nullable=False, existing_type=sa.JSON())
+    with op.batch_alter_table("knowledge_documents") as batch:
+        batch.alter_column("risk_tags", nullable=False, existing_type=sa.JSON())
     op.add_column("knowledge_documents", sa.Column("summary", sa.Text()))
     op.create_table("safety_reports",
         sa.Column("report_id", sa.String(36), primary_key=True),

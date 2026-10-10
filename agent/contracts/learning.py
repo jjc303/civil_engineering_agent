@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ReportCreate(BaseModel):
@@ -33,6 +33,11 @@ class ReportResponse(BaseModel):
     content: ReportContent
     pdf_url: str | None = None
     created_at_utc: datetime
+
+    @field_validator("period_start_utc", "period_end_utc", "created_at_utc", mode="after")
+    @classmethod
+    def normalize_utc(cls, value: datetime) -> datetime:
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
 class CaseDetail(BaseModel):

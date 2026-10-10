@@ -1,13 +1,8 @@
 <template>
-  <div class="zone-editor-page">
-    <div class="header-section">
-      <div class="title-area">
-        <h2>危险区域标定 (Zone Editor)</h2>
-        <p class="subtitle">基于视频原始像素 (1080P) 的电子围栏几何标定与防抖策略配置</p>
-      </div>
-
+  <div class="zone-editor-page operations-workbench">
+    <WorkspaceIntro eyebrow="SAFETY ZONES" title="危险区域标定" description="在监控画面上绘制区域边界，设置停留阈值与报警规则。">
       <div class="camera-picker">
-        <span class="label">选择目标摄像头：</span>
+        <span class="label">摄像头</span>
         <el-select v-model="selectedCameraId" style="width: 200px" @change="handleCameraChange">
           <el-option
             v-for="cam in cameras"
@@ -16,18 +11,19 @@
             :value="cam.camera_id"
           />
         </el-select>
-        <el-tag :type="currentVersion > 0 ? 'success' : 'info'" effect="dark">
-          {{ currentVersion > 0 ? `当前配置: v${currentVersion}` : '未标定 (首次创建)' }}
+        <el-tag :type="currentVersion > 0 ? 'success' : 'info'" effect="light">
+          {{ currentVersion > 0 ? `配置 v${currentVersion}` : '尚未标定' }}
         </el-tag>
       </div>
-    </div>
+    </WorkspaceIntro>
+    <section class="zone-workflow" aria-label="标定操作步骤"><div><b>01</b><span><strong>选择监控画面</strong><small>{{ selectedCameraId || '先选择摄像头' }}</small></span></div><div><b>02</b><span><strong>绘制区域边界</strong><small>当前区域 {{ polygonPoints.length }} 个顶点</small></span></div><div :class="{ unsaved: dirty }"><b>03</b><span><strong>保存并下发</strong><small>{{ dirty ? '有尚未保存的修改' : currentVersion > 0 ? `已加载配置 v${currentVersion}` : '等待首次保存' }}</small></span></div></section>
 
     <div class="workspace-grid">
       <!-- 画布标定操作区 -->
       <el-card shadow="never" class="canvas-card">
         <template #header>
           <div class="canvas-toolbar">
-            <span class="font-bold">监控帧标定画布 (原始帧: {{ sourceResolution.width }}×{{ sourceResolution.height }})</span>
+            <div class="canvas-title"><strong>区域绘制画布</strong><small>标定坐标系 {{ sourceResolution.width }} × {{ sourceResolution.height }} 像素</small></div>
             <div class="tool-btns">
               <el-tag size="small" :type="previewState === 'live' ? 'success' : previewState === 'paused' ? 'warning' : 'info'">{{ previewLabel }}</el-tag>
               <el-button size="small" :disabled="!selectedCameraId" @click="pausePreview">{{ previewState === 'paused' ? '刷新帧' : '暂停画面' }}</el-button>
@@ -51,14 +47,14 @@
         </div>
 
         <div class="canvas-hint">
-          <span>💡 单击画布添加顶点，拖拽<strong>黄色圆点</strong>调整边界。坐标始终按原始视频帧反算；{{ previewState === 'unavailable' ? '当前没有可用预览，正在使用网格兜底。' : '可暂停为最新帧后精确标定。' }}</span>
+          <span>单击画布添加顶点，拖拽<strong>黄色圆点</strong>调整边界。{{ previewState === 'unavailable' ? '当前没有可用预览，使用网格绘制。' : '暂停画面后，可更准确地调整边界。' }}</span>
         </div>
       </el-card>
 
       <!-- 参数配置面板 -->
       <el-card shadow="never" class="settings-card">
         <template #header>
-          <span class="font-bold">防抖与报警参数 (Run Config)</span>
+          <div class="section-card-heading"><strong>区域与报警设置</strong><span>保存后生效</span></div>
         </template>
 
         <div class="zones-panel">
@@ -70,11 +66,11 @@
           </div>
         </div>
         <el-form label-position="top" :model="form" class="config-form">
-          <el-form-item label="危险区域标识 (Zone ID)">
+          <el-form-item label="区域编号">
             <el-input v-model="zoneConfig.zone_id" placeholder="如 zone-crane-01" />
           </el-form-item>
 
-          <el-form-item label="危险区域显示名 (Zone Name)">
+          <el-form-item label="区域名称">
             <el-input v-model="zoneConfig.zone_name" placeholder="如 塔吊回转作业区" />
           </el-form-item>
 
@@ -91,15 +87,15 @@
 
           <el-divider />
 
-          <el-form-item label="进入防抖判定帧数 (enter_debounce_frames)">
+          <el-form-item label="进入区域确认帧数">
             <el-slider v-model="form.enter_debounce_frames" :min="1" :max="30" show-input />
           </el-form-item>
 
-          <el-form-item label="离开防抖判定帧数 (exit_debounce_frames)">
+          <el-form-item label="离开区域确认帧数">
             <el-slider v-model="form.exit_debounce_frames" :min="1" :max="30" show-input />
           </el-form-item>
 
-          <el-form-item label="安全帽状态平滑帧数 (helmet_debounce_frames)">
+          <el-form-item label="安全帽状态平滑帧数">
             <el-slider v-model="form.helmet_debounce_frames" :min="1" :max="30" show-input />
           </el-form-item>
 
@@ -108,7 +104,7 @@
           </el-form-item>
 
           <div class="polygon-points-preview">
-            <div class="preview-title">当前顶点 (物理绝对坐标, 数量: {{ polygonPoints.length }}):</div>
+            <div class="preview-title">原始画面像素坐标 · {{ polygonPoints.length }} 个顶点</div>
             <div class="points-chips">
               <el-tag
                 v-for="(p, idx) in polygonPoints"
@@ -148,6 +144,7 @@ import { fetchCameras } from '@/api/cameras'
 import { fetchCameraZones, updateCameraZones } from '@/api/zones'
 import { previewFrameUrl, previewUrl } from '@/api/cameraManagement'
 import type { CameraStatusResponse, DangerZoneConfig } from '@/types/contract'
+import WorkspaceIntro from '@/components/WorkspaceIntro.vue'
 
 const route = useRoute()
 
@@ -623,27 +620,8 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.zone-editor-page {
-  padding: 24px;
-  overflow-y: auto;
-  height: 100%;
-}
-.header-section {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-.title-area h2 {
-  margin: 0;
-  font-size: 22px;
-  color: #0f172a;
-}
-.subtitle {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: #64748b;
-}
+
+
 .camera-picker {
   display: flex;
   align-items: center;
@@ -721,4 +699,7 @@ onBeforeUnmount(() => {
 .submit-section {
   margin-top: 24px;
 }
+
+.camera-picker{flex-wrap:wrap;gap:10px}.camera-picker .label{font-size:11px;color:#9a9eae}.workspace-grid{grid-template-columns:minmax(0,1fr) 340px;gap:22px;align-items:start}.canvas-card,.settings-card{min-width:0;border-radius:20px}.canvas-toolbar{align-items:flex-start;gap:16px;flex-wrap:wrap}.canvas-title strong{display:block;font-size:14px;font-weight:600;color:#4b546e}.canvas-title small{display:block;font-size:10px;color:#989cad;margin-top:7px}.tool-btns{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.tool-btns .el-button{margin-left:0}.canvas-container{border-radius:12px}.canvas-hint{padding:13px 15px;background:#f7f4fc;border:1px solid #eee7f6;border-radius:10px;line-height:1.8;color:#9489a4;font-size:11px}.zones-panel{border-radius:12px;border-color:#ebe5f4;background:#faf8fe;padding:14px}.zones-toolbar{font-size:12px;color:#7f7298}.zones-toolbar>div{display:flex;gap:6px}.zones-toolbar .el-button{margin:0}.zone-list-item{border-radius:8px;border-color:#eee9f5;padding:10px 11px;font-size:12px;color:#7d7890;gap:10px}.zone-list-item.active{border-color:#c1afe1;background:#f1ebfb;color:#8370ad}.polygon-points-preview{border-radius:12px;background:#f8f5fd;padding:14px}.preview-title{font-size:11px;color:#9b8ead}.zone-workflow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding:22px 24px;margin-bottom:24px;background:#fff;border:1px solid #ece9f4;border-radius:18px}.zone-workflow>div{display:flex;gap:12px;align-items:center;min-width:0}.zone-workflow b{font-size:12px;font-weight:500;color:#9d87c6;background:#f5f0fc;border-radius:10px;padding:10px}.zone-workflow strong{display:block;font-size:12px;font-weight:500;color:#61617c}.zone-workflow small{display:block;font-size:10px;margin-top:7px;color:#a0a0b0;overflow-wrap:anywhere}.zone-workflow .unsaved small{color:#b18960}.settings-card .el-form-item{margin-bottom:22px}.settings-card .el-input-number{width:100%}.submit-section{padding-top:16px;border-top:1px solid #eee9f5}.submit-section .el-button{font-size:12px}.zone-editor-page .el-slider{max-width:100%}@media(max-width:1100px){.workspace-grid{grid-template-columns:minmax(0,1fr)}.config-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px}.config-form>.el-divider,.polygon-points-preview,.submit-section{grid-column:1/-1}.config-form>.el-button{justify-self:start;align-self:start;margin-bottom:18px}}@media(max-width:650px){.canvas-card,.settings-card{border-radius:16px}.camera-picker{width:100%;gap:8px}.camera-picker .label{display:none}.zone-workflow{padding:17px 12px;gap:8px;border-radius:14px}.zone-workflow>div{flex-direction:column;align-items:flex-start;gap:10px}.zone-workflow strong{font-size:11px}.zone-workflow small{font-size:10px;line-height:1.7}.zone-workflow b{padding:7px 8px}.config-form{display:block}.canvas-hint{font-size:10px}.tool-btns{gap:6px}.tool-btns .el-button{padding:7px 9px}.canvas-title small{font-size:10px}}
+
 </style>

@@ -14,6 +14,8 @@ export const apiClient = axios.create({
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError<{ detail?: string | Array<{ msg: string }> }>) => {
+    // The conversation displays a persistent, contextual error itself.
+    if (error.config?.url === '/api/v1/agent/chat') return Promise.reject(error)
     if (error.response) {
       const status = error.response.status
       const detail = error.response.data?.detail

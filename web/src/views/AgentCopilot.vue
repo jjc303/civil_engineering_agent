@@ -1,19 +1,30 @@
 <template>
   <div class="copilot-page">
-    <div class="header-section">
+    <header class="header-section">
       <div class="title-area">
+        <span class="eyebrow">SAFETY COPILOT</span>
         <h2>{{ uiConfig?.assistant_name || '智能助手' }}</h2>
+        <p class="subtitle">查询现场风险，核对安全依据，衔接报告与培训。</p>
       </div>
-      <el-tag type="success" effect="plain">
-        <el-icon><Cpu /></el-icon> 事实依据驱动 · 防幻觉架构
-      </el-tag>
-    </div>
+      <router-link to="/learning" class="learning-entry"><el-icon><Document /></el-icon>进入学习中心 ↗</router-link>
+    </header>
 
     <!-- 问答主体区 -->
+    <div class="copilot-layout">
     <div class="chat-container">
+      <div class="chat-heading"><div><span class="assistant-dot" /><strong>安全咨询</strong><span class="chat-heading-note">现场 · 规范 · 教育</span></div><span class="session-label">{{ thinking ? '正在处理' : '当前会话' }}</span></div>
       <!-- 消息列表 -->
-      <div class="messages-scroll" ref="scrollRef">
-        <div v-for="(msg, idx) in messages" :key="idx" :class="['message-row', msg.role]">
+      <div class="messages-scroll" ref="scrollRef" role="log" aria-label="安全助手对话" :aria-busy="thinking">
+        <section v-if="!hasUserMessages" class="welcome-panel">
+          <span class="welcome-icon"><el-icon><Service /></el-icon></span>
+          <span class="section-kicker">你的施工安全助手</span>
+          <h3>从现场风险，到安全教育</h3>
+          <p>从一个问题开始，查看现场数据、报告与培训任务。<br />涉及执行的操作，会先请你确认。</p>
+          <div class="starter-grid">
+            <button v-for="starter in starters" :key="starter.question" :disabled="thinking" @click="selectPrompt(starter.question)"><el-icon><component :is="starter.icon" /></el-icon><strong>{{ starter.title }}</strong><span>{{ starter.description }}</span><b aria-hidden="true">↗</b></button>
+          </div>
+        </section>
+        <div v-for="(msg, idx) in visibleMessages" :key="idx" :class="['message-row', msg.role]">
           <!-- 头像 -->
           <div class="avatar">
             <el-avatar :icon="msg.role === 'user' ? UserFilled : Service" :size="36" />
@@ -33,7 +44,7 @@
               <!-- 降级提醒 -->
               <el-alert
                 v-if="msg.degraded"
-                :title="msg.errorCode === 'UNSUPPORTED_STANDARD_REFERENCE' ? '规范依据不足，已阻止未经证实的标准引用' : msg.errorCode === 'STANDARDS_RETRIEVAL_FAILED' ? '规范库检索暂时不可用' : '服务暂时降级，请核对回答依据'"
+                :title="degradedTitle(msg.errorCode)"
                 type="warning"
                 show-icon
                 :closable="false"
@@ -42,6 +53,7 @@
 
               <!-- Markdown 渲染的主回答 -->
               <div class="markdown-body" v-html="renderMarkdown(msg.text)"></div>
+              <button v-if="msg.retryQuestion" class="retry-question" :disabled="thinking" @click="selectPrompt(msg.retryQuestion)">重新提问 ↗</button>
 
               <section v-if="msg.reportPreviews?.length" class="report-previews" aria-label="安全报告预览">
                 <div class="report-previews-heading"><strong>安全报告预览</strong><span>共 {{ msg.reportCount ?? msg.reportPreviews.length }} 份</span></div>
@@ -120,7 +132,7 @@
               </div>
 
               <div v-if="msg.pendingAction" class="pending-action">
-                <div class="pending-action-title">待确认写操作</div>
+                <div class="pending-action-title">请确认后执行</div>
                 <div class="pending-action-summary">{{ msg.pendingAction.summary }}</div>
                 <div class="pending-action-meta">
                   <el-tag :type="actionTagType(msg.pendingAction.status)" size="small">{{ actionStatusText(msg.pendingAction.status) }}</el-tag>
@@ -142,7 +154,7 @@
                     <template #title>
                       <div class="trace-title">
                         <el-icon><Operation /></el-icon>
-                        <span>智能体工具调用轨迹 ({{ msg.toolTrace.length }} 次调用，已审计)</span>
+                        <span>查看查询过程 · {{ msg.toolTrace.length }} 次工具调用</span>
                       </div>
                     </template>
                     <el-timeline style="padding-left: 8px; margin-top: 8px">
@@ -175,7 +187,7 @@
             <div class="sender-name">{{ uiConfig?.assistant_name || '智能助手' }}</div>
             <div class="agent-bubble thinking-bubble">
               <el-icon class="is-loading"><Loading /></el-icon>
-              <span>正在分析施工安全数据与调用工具中...</span>
+              <div><strong>{{ waitSeconds >= 20 ? '回答仍在准备中，请稍候' : '正在查询并整理回答' }}</strong><small>已等待 {{ waitSeconds }} 秒{{ waitSeconds >= 20 ? ' · 模型和工具查询可能需要一些时间，请勿重复提交。' : ' · 完成后会显示在这里。' }}</small></div>
             </div>
           </div>
         </div>
@@ -184,34 +196,36 @@
       <!-- 快捷提问推荐 -->
       <div class="quick-prompts">
         <span v-if="quickQuestions.length" class="prompt-hint">快捷提问：</span>
-        <el-tag
+        <button
           v-for="(q, qIdx) in quickQuestions"
           :key="qIdx"
           class="prompt-chip"
-          effect="plain"
+          :disabled="thinking"
           @click="selectPrompt(q)"
         >
           {{ q }}
-        </el-tag>
+        </button>
       </div>
 
       <!-- 输入框 -->
       <div class="input-area">
         <el-input
           v-model="inputQuestion"
-          :placeholder="uiConfig?.input_placeholder || '请输入问题'"
-          size="large"
-          clearable
+          :placeholder="uiConfig?.input_placeholder || '例如：查看本周安全报告，或查询长沙当前天气'"
+          type="textarea"
+          :autosize="{ minRows: 2, maxRows: 5 }"
+          aria-label="输入安全问题"
           :disabled="thinking"
-          @keyup.enter="handleSend"
-        >
-          <template #append>
-            <el-button type="primary" :loading="thinking" @click="handleSend">
-              发送提问
-            </el-button>
-          </template>
-        </el-input>
+          @keydown.enter="handleComposerEnter"
+        />
+        <div class="composer-footer"><span>Enter 发送 · Shift + Enter 换行</span><el-button type="primary" :loading="thinking" :disabled="!inputQuestion.trim() && !thinking" @click="handleSend">{{ thinking ? '正在处理' : '发送提问' }} <span v-if="!thinking" aria-hidden="true">↗</span></el-button></div>
       </div>
+    </div>
+    <aside class="copilot-aside" aria-label="安全教育工作流">
+      <section class="education-guide"><span class="guide-icon"><el-icon><Document /></el-icon></span><span class="section-kicker">连接学习中心</span><h3>让风险有跟进，<br />让学习有依据。</h3><p>将现场问题带入安全报告，再通过案例与规范组织培训。</p><router-link to="/learning">打开安全教育工作台 <span>↗</span></router-link></section>
+      <section class="workflow-card"><span class="section-kicker">建议工作顺序</span><h3>把问题落到行动</h3><ol><li><b>01</b><div><strong>了解现场风险</strong><span>查询事件、摄像头与当前天气</span></div></li><li><b>02</b><div><strong>核对证据和资料</strong><span>查看快照与已检索的规范引用</span></div></li><li><b>03</b><div><strong>衔接报告与培训</strong><span>确认方案后，跟进学习任务</span></div></li></ol><router-link to="/violations">查看违规事件 →</router-link></section>
+      <p class="aside-note">天气查询提供当前状况；全天预报和预警需另行核实。规范依据以回答中的文档引用为准。</p>
+    </aside>
     </div>
 
     <!-- 证据弹窗 -->
@@ -296,7 +310,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   UserFilled,
@@ -305,7 +319,6 @@ import {
   Document,
   Operation,
   Loading,
-  Cpu,
 } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import { cancelPendingAction, confirmPendingAction, proposeTrainingAction, sendChatMessage } from '@/api/chat'
@@ -327,6 +340,7 @@ interface ChatMessage {
   toolTrace?: ToolTraceItem[]
   degraded?: boolean
   errorCode?: string | null
+  retryQuestion?: string
   pendingAction?: PendingAction
   guidedSelection?: GuidedSelection
   actionBusy?: boolean
@@ -346,6 +360,13 @@ const md = new MarkdownIt({
 const scrollRef = ref<HTMLDivElement | null>(null)
 const inputQuestion = ref('')
 const thinking = ref(false)
+const waitSeconds = ref(0)
+let waitTimer: ReturnType<typeof setInterval> | undefined
+const starters = [
+  { title: '现场状态', description: '查看摄像头运行情况', question: '查看所有摄像头状态', icon: Picture },
+  { title: '安全报告', description: '查阅已有风险总结', question: '查看安全报告', icon: Document },
+  { title: '培训任务', description: '跟进安全教育安排', question: '查看培训任务', icon: Operation },
+]
 
 const modalVisible = ref(false)
 const reportDetailOpen = ref(false)
@@ -369,6 +390,8 @@ const uiConfig = ref<AssistantUiConfig | null>(null)
 const quickQuestions = ref<string[]>([])
 
 const messages = reactive<ChatMessage[]>([])
+const hasUserMessages = computed(() => messages.some(message => message.role === 'user'))
+const visibleMessages = computed(() => hasUserMessages.value ? messages : [])
 
 const chatHistoryKey = 'agent_chat_messages'
 
@@ -377,8 +400,29 @@ function renderMarkdown(content: string): string {
 }
 
 function selectPrompt(q: string) {
+  if (thinking.value) return
   inputQuestion.value = q
   handleSend()
+}
+
+function handleComposerEnter(event: KeyboardEvent) {
+  if (event.shiftKey || event.isComposing || event.keyCode === 229) return
+  event.preventDefault()
+  handleSend()
+}
+
+function degradedTitle(code?: string | null): string {
+  if (code === 'REQUEST_TIMEOUT') return '回答等待超时'
+  if (code === 'REQUEST_SERVER_ERROR') return '服务暂时无法完成请求'
+  if (code === 'REQUEST_FAILED') return '暂时无法连接服务'
+  if (code === 'UNSUPPORTED_STANDARD_REFERENCE') return '规范依据不足，请核对原文'
+  if (code === 'STANDARDS_RETRIEVAL_FAILED') return '规范资料暂时无法检索'
+  return '回答未完整完成，请核对依据'
+}
+
+function stopWaitTimer() {
+  if (waitTimer) clearInterval(waitTimer)
+  waitTimer = undefined
 }
 
 async function handleSend() {
@@ -389,6 +433,9 @@ async function handleSend() {
   saveMessages()
   inputQuestion.value = ''
   thinking.value = true
+  waitSeconds.value = 0
+  stopWaitTimer()
+  waitTimer = setInterval(() => { waitSeconds.value += 1 }, 1000)
   scrollToBottom()
 
   try {
@@ -414,13 +461,18 @@ async function handleSend() {
     })
     saveMessages()
   } catch (err: any) {
+    const timedOut = ['ECONNABORTED', 'ETIMEDOUT'].includes(err.code)
+    const serverFailed = err.response?.status >= 500
     messages.push({
       role: 'assistant',
-      text: `请求未能正常完成: ${err.message || '网络连接超时'}`,
+      text: timedOut ? '等待回答超过 3 分钟。服务可能仍在处理，请稍后重新提问。涉及执行的操作，请先查看已有待确认卡片。' : serverFailed ? '后台暂时未能完成请求，请稍后再试。如果持续出现，请检查服务日志及磁盘剩余空间。' : '未能连接到助手服务，请检查网络和后台运行状态后重新提问。',
       degraded: true,
+      errorCode: timedOut ? 'REQUEST_TIMEOUT' : serverFailed ? 'REQUEST_SERVER_ERROR' : 'REQUEST_FAILED',
+      retryQuestion: q,
     })
     saveMessages()
   } finally {
+    stopWaitTimer()
     thinking.value = false
     scrollToBottom()
   }
@@ -705,59 +757,102 @@ onMounted(() => {
   fetchAssistantUiConfig().then((config) => {
     uiConfig.value = config
     quickQuestions.value = config.quick_questions
-    if (!messages.length) messages.push({ role: 'assistant', text: config.welcome_message })
   }).catch(() => undefined)
-  scrollToBottom()
+  if (hasUserMessages.value) scrollToBottom()
 })
-onUnmounted(clearTrainingQr)
+onUnmounted(() => { clearTrainingQr(); stopWaitTimer() })
 </script>
 
 <style scoped>
 .copilot-page {
-  padding: 24px;
+  --el-color-primary: #7563d4;
+  --el-color-primary-light-3: #9b8dde;
+  --el-color-primary-light-5: #bab0ea;
+  --el-color-primary-light-7: #d7d0f4;
+  --el-color-primary-light-9: #f2effb;
+  --el-color-primary-dark-2: #6150b5;
+  padding: 8px 8px 0;
   display: flex;
   flex-direction: column;
+  max-width: 1440px;
+  margin: 0 auto;
   height: 100%;
+  min-height: 0;
   box-sizing: border-box;
+  color: #39425b;
 }
 .header-section {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  gap: 16px;
+  margin-bottom: 26px;
 }
+.eyebrow { display: block; color: #9382ca; font-size: 10px; font-weight: 700; letter-spacing: 2px; margin-bottom: 10px; }
 .title-area h2 {
   margin: 0;
-  font-size: 22px;
-  color: #0f172a;
+  font-size: 27px;
+  color: #323a50;
+  letter-spacing: -.6px;
 }
 .subtitle {
-  margin: 4px 0 0;
+  margin: 10px 0 0;
   font-size: 13px;
-  color: #64748b;
+  color: #8590a0;
 }
+.learning-entry { display: inline-flex; align-items: center; gap: 8px; padding: 11px 15px; background: #fff; border: 1px solid #e3ddf5; border-radius: 12px; font-size: 12px; color: #7563bf; text-decoration: none; white-space: nowrap; }
+.learning-entry:hover { background: #f1edfb; }
+.copilot-layout { display: grid; grid-template-columns: minmax(0, 1fr) 276px; gap: 22px; flex: 1; min-height: 0; }
 .chat-container {
-  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  border: 1px solid #ececf4;
+  border-radius: 20px;
   overflow: hidden;
+  box-shadow: 0 6px 24px #41336b03;
 }
+.chat-heading { display: flex; justify-content: space-between; gap: 12px; padding: 20px 24px; border-bottom: 1px solid #f0eef6; font-size: 13px; flex-shrink: 0; }
+.chat-heading > div { display: flex; gap: 9px; align-items: center; }
+.assistant-dot { width: 7px; height: 7px; border-radius: 50%; background: #9481d8; box-shadow: 0 0 0 4px #f1edfb; margin-right: 5px; }
+.chat-heading-note, .session-label { font-size: 11px; color: #9a9eaf; }
+.chat-heading-note { margin-left: 9px; }
 .messages-scroll {
   flex: 1;
-  padding: 20px;
+  min-height: 0;
+  padding: 26px 24px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
+  scrollbar-width: thin;
+  scrollbar-color: #ded8ec transparent;
 }
+.welcome-panel { margin: auto 0; padding: 24px 8px 38px; text-align: center; flex-shrink: 0; }
+.welcome-icon { display: grid; place-items: center; width: 62px; height: 62px; margin: 0 auto 22px; background: linear-gradient(140deg, #f1edfb, #faf8ff); border: 1px solid #e8e1f8; border-radius: 20px; color: #8972d0; font-size: 29px; }
+.section-kicker { display: block; color: #9b8abc; font-size: 11px; letter-spacing: .5px; }
+.welcome-panel h3 { font-size: 27px; margin: 12px 0; letter-spacing: -.6px; color: #3d4059; }
+.welcome-panel p { font-size: 13px; line-height: 1.9; color: #8c94a4; margin: 0 0 26px; }
+.starter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-width: 670px; margin: 0 auto; }
+.starter-grid button { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 18px 15px; text-align: left; border: 1px solid #ebe6f4; background: #fdfcfe; border-radius: 14px; cursor: pointer; color: #5d526f; font: inherit; }
+.starter-grid button > .el-icon { font-size: 20px; color: #9a86cc; margin-bottom: 6px; }
+.starter-grid strong { font-size: 13px; font-weight: 600; }
+.starter-grid span { font-size: 11px; color: #9b94a8; }
+.starter-grid b { position: absolute; top: 17px; right: 16px; font-size: 13px; color: #b7a8cf; font-weight: 400; }
+.starter-grid button:hover { border-color: #c9bbe9; background: #f6f2fd; }
 .message-row {
   display: flex;
   gap: 12px;
-  max-width: 85%;
+  max-width: 94%;
+  min-width: 0;
+  flex-shrink: 0;
 }
+.message-content { min-width: 0; }
+.avatar { flex-shrink: 0; padding-top: 2px; }
+.assistant .avatar :deep(.el-avatar) { background: #eee8f9; color: #8b74bd; }
+.user .avatar :deep(.el-avatar) { background: #f0f1f5; color: #969daf; }
 .message-row.user {
   align-self: flex-end;
   flex-direction: row-reverse;
@@ -767,35 +862,61 @@ onUnmounted(clearTrainingQr)
 }
 .sender-name {
   font-size: 12px;
-  color: #94a3b8;
-  margin-bottom: 4px;
+  color: #9b9fad;
+  margin-bottom: 8px;
 }
 .message-row.user .sender-name {
   text-align: right;
 }
 .user-bubble {
-  background: #2563eb;
+  background: #806acd;
   color: #ffffff;
   padding: 12px 16px;
-  border-radius: 12px 2px 12px 12px;
+  border-radius: 16px 4px 16px 16px;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .agent-bubble {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  color: #1e293b;
-  padding: 16px;
-  border-radius: 2px 12px 12px 12px;
+  background: #f9f8fc;
+  border: 1px solid #ede9f4;
+  color: #4a5269;
+  padding: 18px 20px;
+  border-radius: 4px 16px 16px 16px;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
 }
+.agent-bubble :deep(.el-alert) { border-radius: 10px; }
+.retry-question { margin-top: 12px; color: #7962bd; background: #f0ebf9; border: 1px solid #e1d7f2; border-radius: 8px; padding: 7px 11px; cursor: pointer; font-size: 12px; }
 .thinking-bubble {
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: #64748b;
+  gap: 12px;
+  color: #8873bb;
 }
+.thinking-bubble strong { font-size: 13px; font-weight: 500; }
+.thinking-bubble small { display: block; font-size: 11px; color: #a29bad; }
+.copilot-aside { display: flex; flex-direction: column; gap: 18px; overflow: auto; scrollbar-width: thin; }
+.education-guide { padding: 26px 23px 24px; color: #fff; background: linear-gradient(148deg, #6355be, #8c77d8); border-radius: 20px; position: relative; overflow: hidden; }
+.education-guide:after { content: ''; position: absolute; width: 170px; height: 170px; border: 1px solid #ffffff18; border-radius: 50%; top: -74px; right: -61px; pointer-events: none; }
+.guide-icon { display: grid; place-items: center; width: 38px; height: 38px; background: #ffffff1a; border: 1px solid #ffffff26; border-radius: 12px; margin-bottom: 22px; font-size: 20px; }
+.education-guide .section-kicker { color: #e0d9f5; }
+.education-guide h3 { font-size: 22px; line-height: 1.5; letter-spacing: -.3px; margin: 12px 0; font-weight: 600; }
+.education-guide p { font-size: 12px; line-height: 1.9; color: #e3def3; margin: 0 0 24px; }
+.education-guide a { display: flex; justify-content: space-between; background: #ffffff18; color: #fff; text-decoration: none; font-size: 12px; padding: 12px 13px; border-radius: 10px; border: 1px solid #ffffff22; }
+.education-guide a:hover { background: #ffffff28; }
+.workflow-card { padding: 24px 22px; background: #fff; border: 1px solid #eeebf5; border-radius: 20px; }
+.workflow-card h3 { font-size: 16px; font-weight: 600; margin: 10px 0 22px; }
+.workflow-card ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 22px; }
+.workflow-card li { display: flex; gap: 12px; }
+.workflow-card li > b { font-size: 11px; color: #a694c9; font-weight: 500; background: #f6f2fc; border-radius: 8px; padding: 7px; align-self: flex-start; }
+.workflow-card strong { font-size: 12px; font-weight: 500; }
+.workflow-card li span { display: block; margin-top: 5px; font-size: 11px; line-height: 1.6; color: #9a9fac; }
+.workflow-card > a { display: block; margin-top: 24px; padding-top: 18px; border-top: 1px solid #f0edf6; font-size: 12px; color: #9380bd; text-decoration: none; }
+.aside-note { margin: 0; padding: 0 10px 14px; font-size: 11px; line-height: 1.9; color: #aaa5b4; }
+.education-guide, .workflow-card, .aside-note { flex-shrink: 0; }
 .markdown-body :deep(h1),
 .markdown-body :deep(h2),
 .markdown-body :deep(h3) {
@@ -935,25 +1056,54 @@ onUnmounted(clearTrainingQr)
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
-  background: #f8fafc;
-  border-top: 1px solid #f1f5f9;
+  padding: 12px 22px 0;
+  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 .prompt-hint {
   font-size: 12px;
   color: #64748b;
 }
 .prompt-chip {
+  font: inherit;
+  font-size: 11px;
+  color: #8b7ca5;
+  background: #faf8fd;
+  border: 1px solid #ece5f5;
+  border-radius: 8px;
+  padding: 7px 9px;
   cursor: pointer;
   transition: all 0.2s;
 }
 .prompt-chip:hover {
-  border-color: #2563eb;
-  color: #2563eb;
+  border-color: #c8b9e5;
+  color: #7861ad;
 }
 .input-area {
-  padding: 16px;
+  padding: 14px 22px 18px;
   background: #ffffff;
-  border-top: 1px solid #e2e8f0;
+  flex-shrink: 0;
 }
+.input-area :deep(.el-textarea__inner) { padding: 14px 16px; border-radius: 12px; background: #faf9fc; box-shadow: 0 0 0 1px #e9e3f2 inset; resize: none; font-size: 13px; line-height: 1.7; }
+.input-area :deep(.el-textarea__inner:focus) { box-shadow: 0 0 0 1px #a18acd inset; }
+.composer-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding-top: 12px; }
+.composer-footer > span { font-size: 10px; color: #aaa4b3; }
+.composer-footer :deep(.el-button) { border-radius: 10px; font-size: 12px; min-height: 35px; }
+.composer-footer :deep(.el-button span) { gap: 12px; }
+.markdown-body :deep(table) { display: block; overflow-x: auto; max-width: 100%; border-collapse: collapse; }
+.markdown-body :deep(td), .markdown-body :deep(th) { border: 1px solid #e2dcec; padding: 6px 10px; }
+.markdown-body :deep(pre) { overflow-x: auto; padding: 12px; border-radius: 8px; background: #f0ecf7; }
+.markdown-body :deep(a) { color: #8064bd; }
+.guided-selection { background: #f6f2fc; border-color: #d9ccef; border-radius: 12px; }
+.guided-selection-title { color: #8270b0; }
+.pending-action { border-radius: 12px; }
+.tool-item { flex-wrap: wrap; }
+.copilot-page button:disabled { cursor: default; opacity: .6; }
+.copilot-page a:focus-visible, .copilot-page button:focus-visible { outline: 2px solid #9b86d2; outline-offset: 3px; }
+@media (max-width: 1180px) { .copilot-layout { grid-template-columns: minmax(0, 1fr) 240px; gap: 16px; } .education-guide, .workflow-card { padding: 22px 18px; } .chat-heading-note { display: none; } }
+@media (max-width: 1000px) { .copilot-layout { grid-template-columns: minmax(0, 1fr); } .copilot-aside { display: none; } }
+@media (max-width: 760px) { .copilot-page { padding: 4px 0 0; min-height: 520px; } .header-section { margin-bottom: 16px; align-items: flex-start; } .title-area h2 { font-size: 23px; } .subtitle { font-size: 11px; line-height: 1.7; } .learning-entry { font-size: 11px; padding: 9px 10px; margin-top: 18px; } .eyebrow { font-size: 9px; margin-bottom: 7px; } .chat-heading { padding: 16px; } .messages-scroll { padding: 20px 12px; } .message-row { gap: 8px; max-width: 100%; } .agent-bubble { padding: 12px 14px; font-size: 13px; } .welcome-panel { padding: 10px 0 22px; } .welcome-panel h3 { font-size: 23px; } .welcome-panel p { font-size: 12px; } .starter-grid { gap: 7px; } .starter-grid button { padding: 13px 10px; } .starter-grid span { font-size: 10px; line-height: 1.6; } .starter-grid b { display: none; } .quick-prompts { padding: 10px 14px 0; gap: 6px; } .input-area { padding: 12px 14px 14px; } .composer-footer > span { font-size: 9px; } }
+@media (prefers-reduced-motion: reduce) { .prompt-chip, .evidence-card { transition: none; } }
+@media (max-width: 760px) { .title-area { flex: 1; min-width: 0; } }
+@media (max-height: 800px) { .welcome-panel { padding-top: 2px; padding-bottom: 8px; } .welcome-icon { display: none; } .welcome-panel h3 { font-size: 22px; margin: 8px 0; } .welcome-panel p { margin-bottom: 16px; font-size: 12px; } .starter-grid button { padding: 13px; gap: 6px; } .starter-grid button > .el-icon { margin-bottom: 2px; } .header-section { margin-bottom: 18px; } }
 </style>

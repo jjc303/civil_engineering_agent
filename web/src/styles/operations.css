@@ -1,0 +1,30 @@
+/* Shared surfaces for the four configuration and event workspaces. */
+.operations-workbench{max-width:1440px;margin:0 auto;padding:8px 8px 28px;color:#485169;min-width:0}
+.operations-workbench .el-card{border:1px solid #eceaf3;border-radius:20px;box-shadow:0 4px 22px #53427003!important;min-width:0}
+.operations-workbench .el-card__header{padding:20px 24px;border-bottom:1px solid #f0edf6;color:#48516a;font-size:14px;font-weight:600}
+.operations-workbench .el-card__body{padding:22px 24px}
+.operations-workbench .filter-card{margin-bottom:22px;background:linear-gradient(110deg,#fff,#fbf9fe)}
+.operations-workbench .filter-card .el-form{display:flex;align-items:flex-end;flex-wrap:wrap;gap:16px}
+.operations-workbench .filter-card .el-form-item{display:flex;flex-direction:column;align-items:flex-start;margin:0}
+.operations-workbench .filter-card .el-form-item__label{font-size:11px;color:#9098aa;line-height:20px;margin-bottom:6px;padding:0;height:auto}
+.operations-workbench .filter-card .el-form-item__content{width:100%}
+.operations-workbench .el-input__wrapper,.operations-workbench .el-select__wrapper{min-height:37px;border-radius:10px;box-shadow:0 0 0 1px #e7e3ef inset;background:#fff}
+.operations-workbench .el-button{font-size:12px;border-radius:10px}
+.operations-workbench .el-form-item__label{font-size:12px;color:#798396}
+.operations-workbench .el-table{--el-table-border-color:#eeebf4;--el-table-header-bg-color:#f8f6fc;--el-table-header-text-color:#8990a2;--el-table-text-color:#515b70;--el-table-row-hover-bg-color:#f9f6fd;font-size:12px}
+.operations-workbench .el-table th.el-table__cell{font-size:11px;font-weight:500;padding:13px 0}
+.operations-workbench .el-table td.el-table__cell{padding:16px 0}
+.operations-workbench .el-table .cell{line-height:1.7;padding:0 14px}
+.operations-workbench .el-table small{color:#9a9fb0;font-size:10px}
+.operations-workbench .el-tag{border-radius:7px;font-size:10px}
+.operations-workbench .el-table .el-button+.el-button{margin-left:10px}
+.operations-workbench .section-card-heading{display:flex;justify-content:space-between;align-items:center;gap:14px}
+.operations-workbench .section-card-heading strong{font-size:14px;font-weight:600;color:#49516b}
+.operations-workbench .section-card-heading span{font-size:11px;font-weight:400;color:#9b9fb0}
+.operations-workbench .pagination,.operations-workbench .pagination-wrapper{display:flex;justify-content:flex-end;margin-top:22px;padding-top:18px;border-top:1px solid #f0edf6;overflow-x:auto}
+.operations-workbench .el-pagination{font-weight:400;--el-pagination-button-bg-color:#f8f5fc;--el-pagination-hover-color:#8a72c0}
+.operations-workbench .workbench-error{margin-bottom:18px;border-radius:12px}
+.operations-workbench .muted-note{font-size:11px;line-height:1.8;color:#9c9eaf;margin:14px 0 0}
+.operations-workbench .table-scroll-hint{display:none}
+.operations-workbench .filter-heading{display:flex;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap}.operations-workbench .filter-heading strong{font-size:13px;font-weight:600;color:#596079}.operations-workbench .filter-heading span{font-size:11px;color:#9ca0af}.operations-workbench .related-workspace{padding:11px 14px;border:1px solid #e4ddf1;border-radius:11px;background:#fff;text-decoration:none;color:#8a75b9;font-size:12px}
+@media(max-width:760px){.operations-workbench{padding:4px 0 18px}.operations-workbench .el-card{border-radius:16px}.operations-workbench .el-card__body,.operations-workbench .el-card__header{padding:17px 16px}.operations-workbench .filter-card .el-form{gap:14px}.operations-workbench .filter-card .el-form-item{max-width:100%}.operations-workbench .section-card-heading{align-items:flex-start;flex-wrap:wrap;gap:8px}.operations-workbench .table-scroll-hint{display:block;margin:12px 0 0;font-size:10px;color:#a49aaa}.operations-workbench .pagination,.operations-workbench .pagination-wrapper{justify-content:flex-start}.operations-workbench .el-table td.el-table__cell{padding:13px 0}}

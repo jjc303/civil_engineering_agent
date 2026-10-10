@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .actions import PendingActionResponse
 from .query import ViolationRecord
@@ -30,6 +30,13 @@ class RectificationTaskRecord(BaseModel):
     occurred_at_utc: datetime
     snapshot_uri: str | None = None
 
+    @field_validator("due_at_utc", "completed_at_utc", "created_at_utc", "updated_at_utc", "occurred_at_utc", mode="after")
+    @classmethod
+    def normalize_utc(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
 
 class RectificationTaskAudit(BaseModel):
     audit_id: str
@@ -38,6 +45,11 @@ class RectificationTaskAudit(BaseModel):
     actor: str
     detail_safe_json: dict[str, object] = Field(default_factory=dict)
     created_at_utc: datetime
+
+    @field_validator("created_at_utc", mode="after")
+    @classmethod
+    def normalize_utc(cls, value: datetime) -> datetime:
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
 class RectificationTaskPageResponse(BaseModel):

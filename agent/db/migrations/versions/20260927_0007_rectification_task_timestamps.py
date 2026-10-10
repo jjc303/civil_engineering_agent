@@ -14,16 +14,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.alter_column(
-        "rectification_tasks", "created_at_utc", existing_type=sa.DateTime(timezone=True),
-        existing_nullable=False, server_default=sa.text("CURRENT_TIMESTAMP"),
-    )
-    op.alter_column(
-        "rectification_tasks", "updated_at_utc", existing_type=sa.DateTime(timezone=True),
-        existing_nullable=False, server_default=sa.text("CURRENT_TIMESTAMP"),
-    )
+    with op.batch_alter_table("rectification_tasks") as batch:
+        for column in ("created_at_utc", "updated_at_utc"):
+            batch.alter_column(column, existing_type=sa.DateTime(timezone=True),
+                               existing_nullable=False, server_default=sa.text("CURRENT_TIMESTAMP"))
 
 
 def downgrade() -> None:
-    op.alter_column("rectification_tasks", "updated_at_utc", existing_type=sa.DateTime(timezone=True), existing_nullable=False, server_default=None)
-    op.alter_column("rectification_tasks", "created_at_utc", existing_type=sa.DateTime(timezone=True), existing_nullable=False, server_default=None)
+    with op.batch_alter_table("rectification_tasks") as batch:
+        for column in ("updated_at_utc", "created_at_utc"):
+            batch.alter_column(column, existing_type=sa.DateTime(timezone=True), existing_nullable=False, server_default=None)

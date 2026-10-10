@@ -20,6 +20,9 @@ __pycache__/
 
 # Environments & Virtual environments
 .env
+.env.*
+!.env.example
+!.env.review.example
 .venv
 env/
 venv/
@@ -53,6 +56,17 @@ inference/output/
 data/
 *.db
 *.log
+
+# Private review inputs and machine-specific deployment copies
+web/public/materials/
+knowledge/*
+!knowledge/README.md
+deploy/cloud_bundle/
+deploy/cloud_app/
+*.pem
+*.key
+*.pfx
+*.p12
 
 # Operating System & Windows Metadata
 .DS_Store
