@@ -75,12 +75,13 @@ table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #d8
 
 
 class LearningService:
-    def __init__(self, database: Database, knowledge: KnowledgeService, model: ChatModelPort, report_directory: str, public_base_url: str, display_timezone: str = "Asia/Shanghai", insights_ttl_seconds: int = 600) -> None:
+    def __init__(self, database: Database, knowledge: KnowledgeService, model: ChatModelPort, report_directory: str, public_base_url: str, display_timezone: str = "Asia/Shanghai", insights_ttl_seconds: int = 600, app_base_path: str = "") -> None:
         self.database = database
         self.knowledge = knowledge
         self.model = model
         self.report_directory = Path(report_directory)
         self.public_base_url = public_base_url.rstrip("/")
+        self.app_base_path = app_base_path.rstrip("/")
         self.display_timezone = ZoneInfo(display_timezone)
         self.insights_ttl_seconds = insights_ttl_seconds
         self._insights_lock = Lock()
@@ -154,10 +155,13 @@ class LearningService:
         main_risks = [{"code": code, "label": _RISK_LABELS.get(code, code), "count": count} for code, count in ranked_risks[:3]]
         target_count = sum(task.target_count for task in weekly_tasks if task.status == "PUBLISHED")
         completed_count = sum(item["count"] for item in completions.values())
+        covered_count = sum(min(task.target_count, completions.get(task.task_id, {}).get("count", 0))
+                            for task in weekly_tasks if task.status == "PUBLISHED")
         return {"period_start_utc": week_start.isoformat(), "period_end_utc": now.isoformat(),
                 "total_events": total, "high_risk_events": critical, "training_count": len(weekly_tasks),
                 "completed_count": completed_count, "target_count": target_count,
-                "completion_rate": round(100 * completed_count / target_count, 1) if target_count else 0,
+                "completion_rate": round(100 * covered_count / target_count, 1) if target_count else 0,
+                "excess_completed_count": completed_count - covered_count,
                 "main_risks": main_risks,
                 "weekly_tasks": [{"task_id": task.task_id, "status": task.status, "completed_count": completions.get(task.task_id, {}).get("count", 0),
                                   "average_score": completions.get(task.task_id, {}).get("average_score", 0),
@@ -279,11 +283,10 @@ class LearningService:
             if not path.is_file(): raise KeyError("confirmed report PDF not found")
             return path
 
-    @staticmethod
-    def _report(row: SafetyReportModel) -> ReportResponse:
+    def _report(self, row: SafetyReportModel) -> ReportResponse:
         return ReportResponse(report_id=row.report_id, period_start_utc=row.period_start_utc, period_end_utc=row.period_end_utc,
                               status=row.status, statistics=row.statistics_json, citations=row.citations_json or [],
-                              content=ReportContent.model_validate(row.content_json), pdf_url=f"/api/v1/learning/reports/{row.report_id}/pdf" if row.pdf_path else None,
+                              content=ReportContent.model_validate(row.content_json), pdf_url=f"{self.app_base_path}/api/v1/learning/reports/{row.report_id}/pdf" if row.pdf_path else None,
                               created_at_utc=row.created_at_utc)
 
     def search_documents(self, query: str, risk_type: str | None, document_type: str | None, limit: int, offset: int, date_start: datetime | None = None, date_end: datetime | None = None) -> dict:
@@ -411,7 +414,7 @@ class LearningService:
                                 target_count=row.target_count, question_count=row.question_count, pass_score=row.pass_score,
                                 selected_documents=[{key: doc[key] for key in ("document_id", "title", "document_type", "version_no", "validity_status")} for doc in (row.selected_documents_json or [])], material=row.material,
                                 questions=[TrainingQuestion.model_validate(q) for q in row.questions_json], public_url=url,
-                                qr_url=f"/api/v1/learning/training/{row.task_id}/qr" if url else None)
+                                qr_url=f"{self.app_base_path}/api/v1/learning/training/{row.task_id}/qr" if url else None)
 
     def qr_png(self, task_id: str) -> bytes:
         import qrcode
@@ -454,7 +457,8 @@ class LearningService:
             submissions = list(session.scalars(select(TrainingSubmissionModel).where(TrainingSubmissionModel.task_id == task_id).order_by(TrainingSubmissionModel.submitted_at_utc.desc())))
             completed = len(submissions)
             return {"target_count": task.target_count, "completed_count": completed,
-                    "completion_rate": round(100 * completed / task.target_count, 1),
+                    "completion_rate": min(100, round(100 * completed / task.target_count, 1)),
+                    "excess_completed_count": max(0, completed - task.target_count),
                     "average_score": round(sum(item.score for item in submissions) / completed, 1) if completed else 0,
                     "pass_rate": round(100 * sum(item.passed for item in submissions) / completed, 1) if completed else 0,
                     "submissions": [{"worker_id": item.worker_id, "worker_name": item.worker_name, "score": item.score, "passed": item.passed, "submitted_at_utc": _as_utc(item.submitted_at_utc).isoformat()} for item in submissions]}

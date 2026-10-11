@@ -52,3 +52,9 @@ class CameraRunConfigV1(BaseModel):
     helmet_debounce_frames: int
     alarm_dwell_threshold_seconds: float
     zones: list[DangerZoneConfigV1]
+
+
+class CameraZonesResponse(CameraRunConfigV1):
+    """The editor can read an unconfigured camera without publishing a CV version."""
+
+    config_version: int = Field(ge=0)

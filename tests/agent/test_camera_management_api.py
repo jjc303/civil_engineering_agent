@@ -9,18 +9,16 @@ def _settings() -> Settings:
     return Settings(
         database_url="sqlite+pysqlite:///:memory:",
         internal_perception_token="perception-token",
-        admin_token="admin-token",
         credential_encryption_key=Fernet.generate_key().decode(),
         llm_provider="fake",
         auto_create_schema=True,
     )
 
 
-def test_cv_node_camera_source_and_heartbeat_are_protected(monkeypatch) -> None:
+def test_cv_credentials_are_masked_and_internal_heartbeat_is_protected(monkeypatch) -> None:
     with TestClient(create_app(_settings())) as client:
-        headers = {"Authorization": "Bearer admin-token"}
-        missing_admin = client.get("/api/v1/cv-nodes")
-        assert missing_admin.status_code == 401
+        headers = {}
+        assert client.get("/api/v1/cv-nodes").status_code == 200
 
         node = client.post("/api/v1/cv-nodes", headers=headers, json={
             "node_id": "cv-east-01", "display_name": "东区 GPU 节点", "control_url": "http://cv-east.local:8100", "capacity": 4,
@@ -29,6 +27,14 @@ def test_cv_node_camera_source_and_heartbeat_are_protected(monkeypatch) -> None:
         node_body = node.json()
         assert node_body["control_token"]
         assert node_body["is_online"] is False
+
+        for auth, expected in (({}, 401), ({"Authorization": "Bearer wrong-node-token"}, 403)):
+            assert client.put("/internal/v1/cv-nodes/cv-east-01/heartbeat", headers=auth,
+                json={"active_sessions": 1, "capacity": 4}).status_code == expected
+
+        public_nodes = client.get("/api/v1/cv-nodes").json()
+        assert "control_token" not in public_nodes[0]
+        assert node_body["control_token"] not in str(public_nodes)
 
         heartbeat = client.put(
             "/internal/v1/cv-nodes/cv-east-01/heartbeat",

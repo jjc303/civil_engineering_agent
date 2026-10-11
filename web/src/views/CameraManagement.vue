@@ -23,8 +23,8 @@
         <el-table v-else :data="nodes" size="small">
           <el-table-column prop="display_name" label="节点" />
           <el-table-column prop="node_id" label="ID" />
-          <el-table-column label="状态"><template #default="{ row }"><el-tag :type="row.is_online ? 'success' : 'danger'">{{ row.is_online ? '在线' : '离线' }}</el-tag></template></el-table-column>
-          <el-table-column label="负载"><template #default="{ row }">{{ row.active_sessions }}/{{ row.capacity }}</template></el-table-column>
+          <el-table-column label="状态" min-width="110"><template #default="{ row }"><el-tag :type="!row.is_online ? 'danger' : row.active_sessions > row.capacity ? 'warning' : 'success'">{{ !row.is_online ? '离线' : row.active_sessions > row.capacity ? '在线 · 超载' : '在线' }}</el-tag></template></el-table-column>
+          <el-table-column label="负载" min-width="155"><template #default="{ row }">{{ row.active_sessions }}/{{ row.capacity }}<small v-if="row.active_sessions > row.capacity" style="display:block;color:#b7791f">超过容量 {{ row.active_sessions - row.capacity }} 路，请分流</small></template></el-table-column>
         </el-table>
       </el-card>
 

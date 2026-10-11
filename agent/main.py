@@ -97,7 +97,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     model = create_chat_model(settings)
     app.state.knowledge_service.set_summary_model(model)
-    app.state.learning_service = LearningService(database, app.state.knowledge_service, model, settings.learning_report_directory, settings.learning_public_base_url, settings.learning_timezone, settings.learning_insights_ttl_seconds)
+    app.state.learning_service = LearningService(database, app.state.knowledge_service, model, settings.learning_report_directory, settings.learning_public_base_url, settings.learning_timezone, settings.learning_insights_ttl_seconds, app_base_path=settings.app_base_path)
     app.state.agent_write_action_service = AgentWriteActionService(database, app.state.camera_management_service, app.state.learning_service)
     app.state.rectification_task_service = RectificationTaskService(database, app.state.agent_write_action_service)
     app.state.chat_service = ChatService(database, model, settings.tool_max_calls, settings.memory_enabled, settings.memory_ttl_hours, settings.memory_recent_turns, app.state.knowledge_service if retriever else None, app.state.agent_write_action_service, settings.rag_top_k, app.state.learning_service)

@@ -3,21 +3,25 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from agent.api.dependencies import get_perception_service
-from agent.contracts.camera_config import CameraConfigUpdateRequest, CameraRunConfigV1
+from agent.contracts.camera_config import CameraConfigUpdateRequest, CameraRunConfigV1, CameraZonesResponse
 from agent.repositories.camera_configs import ConfigVersionConflict
 from agent.services.perception_service import PerceptionService
 
 router = APIRouter(prefix="/api/v1", tags=["camera-configurations"])
 
 
-@router.get("/cameras/{camera_id}/zones", response_model=CameraRunConfigV1)
+@router.get("/cameras/{camera_id}/zones", response_model=CameraZonesResponse)
 def get_camera_zones(
     camera_id: str,
     service: PerceptionService = Depends(get_perception_service),
-) -> CameraRunConfigV1:
+) -> CameraZonesResponse:
     result = service.get_camera_config(camera_id)
     if result is None:
-        raise HTTPException(status_code=404, detail="camera config not found")
+        if not service.camera_exists(camera_id):
+            raise HTTPException(status_code=404, detail="camera not found")
+        # No database write and no fabricated active boundary on first visit.
+        return CameraZonesResponse(camera_id=camera_id, config_version=0,
+                                   **CameraConfigUpdateRequest().model_dump(exclude={"expected_version"}))
     return result
 
 

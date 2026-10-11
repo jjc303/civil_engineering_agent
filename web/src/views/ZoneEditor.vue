@@ -119,10 +119,12 @@
           </div>
 
           <div class="submit-section">
+            <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon style="margin-bottom: 12px" />
             <el-button
               type="primary"
               size="large"
               :loading="saving"
+              :disabled="!selectedCameraId || loadedCameraId !== selectedCameraId"
               style="width: 100%"
               @click="saveConfiguration"
             >
@@ -152,6 +154,7 @@ const cameras = ref<CameraStatusResponse[]>([])
 const selectedCameraId = ref<string>('')
 const currentVersion = ref<number>(0)
 const saving = ref(false)
+const saveError = ref('')
 const loadedCameraId = ref<string>('')
 const dirty = ref(false)
 const hydrating = ref(false)
@@ -267,6 +270,7 @@ async function handleCameraChange(nextCameraId: string) {
 
 async function loadCameraConfig() {
   if (!selectedCameraId.value) return
+  loadedCameraId.value = ''
   try {
     const res = await fetchCameraZones(selectedCameraId.value)
     if (res) {
@@ -285,6 +289,8 @@ async function loadCameraConfig() {
     hydrateSelectedZone()
     loadedCameraId.value = selectedCameraId.value
     dirty.value = false
+    saveError.value = ''
+    restoreDraft()
     resumePreview()
   } catch {
     ElMessage.error('无法读取围栏配置，请检查 Agent 服务连接后重试。')
@@ -576,23 +582,32 @@ function onMouseUp() {
 }
 
 async function saveConfiguration() {
+  if (saving.value) return
+  saveError.value = ''
   if (!selectedCameraId.value) {
     ElMessage.warning('请先选择一个真实摄像头。')
     return
   }
+  if (loadedCameraId.value !== selectedCameraId.value) {
+    saveError.value = '配置尚未读取成功，请等待加载或刷新后重试。'
+    ElMessage.warning(saveError.value)
+    return
+  }
+  saving.value = true
+  try {
   syncSelectedZone()
   const invalidZone = zones.value.find((zone) => !zone.zone_id.trim() || !zone.zone_name.trim() || zone.polygon.length < 3)
   if (invalidZone) {
+    saveError.value = '每个危险区域都必须填写 ID、名称并至少包含 3 个顶点'
     ElMessage.error('每个危险区域都必须填写 ID、名称并至少包含 3 个顶点')
     return
   }
   if (new Set(zones.value.map((zone) => zone.zone_id)).size !== zones.value.length) {
+    saveError.value = '危险区域标识不能重复'
     ElMessage.error('危险区域标识不能重复')
     return
   }
 
-  saving.value = true
-  try {
     const res = await updateCameraZones(selectedCameraId.value, {
       expected_version: currentVersion.value > 0 ? currentVersion.value : null,
       source_resolution: sourceResolution.value,
@@ -608,16 +623,21 @@ async function saveConfiguration() {
     selectedZoneIndex.value = Math.min(selectedZoneIndex.value, zones.value.length - 1)
     hydrateSelectedZone()
     dirty.value = false
-    ElMessage.success(`围栏配置成功保存并下发！当前配置版本升级至 v${res.config_version}`)
+    try { sessionStorage.removeItem(draftKey()) } catch { /* browser storage may be disabled */ }
+    ElMessage.success(`围栏配置已保存为 v${res.config_version}，运行中节点将轮询加载新版本。`)
   } catch (err: any) {
+    const detail = err.response?.data?.detail
+    saveError.value = typeof detail === 'string' ? `保存失败：${detail}` : `保存失败：${err.message || '请检查连接后重试'}`
     if (err.response?.status === 409) {
-      ElMessageBox.confirm(
+      void ElMessageBox.confirm(
         '该摄像头配置已被其他客户端更新，当前版本已失效，是否立即重新拉取最新版本？',
         '乐观并发冲突提示 (409)',
         { confirmButtonText: '重新拉取', cancelButtonText: '取消', type: 'warning' }
       ).then(() => {
         loadCameraConfig()
-      })
+      }).catch(() => { /* retain the local edits until the user chooses to reload */ })
+    } else {
+      ElMessage.error(saveError.value)
     }
   } finally {
     saving.value = false
@@ -626,7 +646,32 @@ async function saveConfiguration() {
 
 watch(zoneConfig, () => { if (!hydrating.value) dirty.value = true }, { deep: true })
 
+function draftKey() { return `camera-zone-draft:${selectedCameraId.value}` }
+function saveDraft() {
+  if (!dirty.value || !selectedCameraId.value || hydrating.value || saving.value) return
+  try {
+    sessionStorage.setItem(draftKey(), JSON.stringify({ version: currentVersion.value,
+      zones: displayZones.value, index: selectedZoneIndex.value,
+      resolution: sourceResolution.value, rules: form }))
+  } catch { /* saving to the server must still work when storage is unavailable */ }
+}
+function restoreDraft() {
+  try {
+    const draft = JSON.parse(sessionStorage.getItem(draftKey()) || 'null')
+    if (!draft || draft.version !== currentVersion.value || !Array.isArray(draft.zones) || !draft.zones.length) return
+    zones.value = draft.zones
+    selectedZoneIndex.value = Math.min(draft.index || 0, zones.value.length - 1)
+    sourceResolution.value = draft.resolution
+    Object.assign(form, draft.rules)
+    hydrateSelectedZone()
+    dirty.value = true
+    ElMessage.info('已恢复本标签页的未保存草稿；点击保存后才会下发。')
+  } catch { /* ignore obsolete or malformed browser drafts */ }
+}
+watch([zoneConfig, polygonPoints, zones, sourceResolution, form], saveDraft, { deep: true, flush: 'post' })
+
 const beforeUnload = (event: BeforeUnloadEvent) => {
+  saveDraft()
   if (!dirty.value) return
   event.preventDefault()
   event.returnValue = ''

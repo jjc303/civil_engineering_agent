@@ -6,6 +6,7 @@ from agent.contracts.camera_config import CameraConfigUpdateRequest, CameraRunCo
 from agent.contracts.event_v1 import CameraStatusReportV1, EventUpsertResponse, SafetyViolationEventV1
 from agent.contracts.query import CameraStatusResponse, SafetyQueryRequest, SafetyQueryResponse, ViolationPageResponse, ViolationQuery, ViolationRecord, ViolationStatisticsResponse
 from agent.db.base import Database
+from agent.db.models import CameraStatusModel, ManagedCameraModel
 from agent.repositories.camera_configs import CameraConfigRepository
 from agent.repositories.violations import ViolationRepository
 
@@ -43,6 +44,10 @@ class PerceptionService:
     def get_camera_config(self, camera_id: str) -> CameraRunConfigV1 | None:
         with self.database.session() as session:
             return CameraConfigRepository(session).get(camera_id)
+
+    def camera_exists(self, camera_id: str) -> bool:
+        with self.database.session() as session:
+            return session.get(CameraStatusModel, camera_id) is not None or session.get(ManagedCameraModel, camera_id) is not None
 
     def update_camera_config(self, camera_id: str, request: CameraConfigUpdateRequest) -> CameraRunConfigV1:
         with self.database.session() as session:

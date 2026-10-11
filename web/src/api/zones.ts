@@ -7,17 +7,8 @@ export async function fetchCameraZones(cameraId: string): Promise<CameraRunConfi
     const config = mockCameraZones[cameraId]
     return Promise.resolve(config ? JSON.parse(JSON.stringify(config)) : null)
   }
-  try {
     const res = await apiClient.get<CameraRunConfig>(`/api/v1/cameras/${cameraId}/zones`)
     return res.data
-  } catch (err: any) {
-    if (err.response?.status === 404) {
-      // 404 说明尚未配置围栏
-      return null
-    }
-    // 实时联调模式绝不能使用 Mock 版本号保存到真实后端，否则会造成伪造的 409 冲突。
-    throw err
-  }
 }
 
 export async function updateCameraZones(

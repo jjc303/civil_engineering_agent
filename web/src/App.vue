@@ -5,7 +5,7 @@
     <button v-if="mobileOpen" class="nav-backdrop" aria-label="关闭导航" @click="mobileOpen = false" />
     <aside class="sidebar" aria-label="工作台导航">
       <router-link to="/dashboard" class="brand" aria-label="施工安全 · 返回监控看板">
-        <img class="brand-mark" src="/favicon.svg" width="40" height="40" alt="" />
+        <img class="brand-mark" :src="appPath('/favicon.svg')" width="40" height="40" alt="" />
         <span class="brand-copy"><b>施工安全</b><small>让安全管理更简单</small></span>
       </router-link>
       <div class="nav-caption">工作空间</div>
@@ -35,11 +35,16 @@ import { useRoute, useRouter } from 'vue-router'
 import { DataBoard, Warning, DocumentChecked, Crop, VideoCamera, ChatDotRound, Reading, Fold, Expand, Menu, Search } from '@element-plus/icons-vue'
 import { isMockEnabled } from '@/api/client'
 import { navigationFailure } from '@/router'
+import { appPath } from '@/utils/deployment'
 const route = useRoute()
 const router = useRouter()
 const searchOpen = ref(false), searchText = ref('')
 const searchInput = ref<HTMLInputElement | null>(null)
-const searchResults = computed(() => navigation.filter(item => (item.label + (item.path === '/dashboard' ? '视频 看板' : '')).includes(searchText.value.trim())))
+const searchResults = computed(() => {
+  const words = searchText.value.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean)
+  const aliases: Record<string, string> = { '/dashboard': '视频 看板 监控 monitor video', '/violations': '违规 告警 截图 event', '/rectification-tasks': '整改 任务 task', '/zones': '危险 区域 围栏 标定 zone', '/cameras': '摄像头 节点 设备 camera node', '/copilot': '智能 助手 咨询 agent', '/learning': '培训 教育 学习 报告 规范 learning' }
+  return navigation.filter(item => words.every(word => `${item.label} ${aliases[item.path] || ''}`.toLocaleLowerCase().includes(word)))
+})
 function goFirst() { const first = searchResults.value[0]; if (first) { void router.push(first.path); searchOpen.value = false } }
 function shortcuts(event: KeyboardEvent) {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); searchOpen.value = !searchOpen.value }

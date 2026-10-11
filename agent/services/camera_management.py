@@ -232,7 +232,7 @@ class CameraManagementService:
             host = parsed.hostname or "hidden"
             port = f":{parsed.port}" if parsed.port else ""
             return urlunsplit((parsed.scheme, f"***:***@{host}{port}", parsed.path, "", ""))
-        return f"file://…/{source_uri.rsplit('/', 1)[-1]}"
+        return f"file://…/{source_uri.replace(chr(92), '/').rsplit('/', 1)[-1]}"
 
     @staticmethod
     def _node_response(model: CvNodeModel, token: str | None = None) -> CvNodeResponse:
@@ -241,4 +241,4 @@ class CameraManagementService:
 
     @staticmethod
     def _camera_response(model: ManagedCameraModel) -> ManagedCameraResponse:
-        return ManagedCameraResponse(camera_id=model.camera_id, display_name=model.display_name, node_id=model.node_id, source_type=model.source_type, source_uri_masked=model.source_uri_masked, desired_state=model.desired_state, monitor_session_id=model.monitor_session_id)
+        return ManagedCameraResponse(camera_id=model.camera_id, display_name=model.display_name, node_id=model.node_id, source_type=model.source_type, source_uri_masked=CameraManagementService._mask(model.source_uri_masked), desired_state=model.desired_state, monitor_session_id=model.monitor_session_id)

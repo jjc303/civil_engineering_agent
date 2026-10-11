@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from dotenv import load_dotenv
+from agent.core.deployment import normalize_base_path
 
 
 # Local .env values fill missing variables; deployed environment values always win.
@@ -33,6 +34,7 @@ class Settings:
     llm_api_key: str = ""
     llm_timeout_seconds: float = 20.0
     media_root: str = "./runs/media"
+    app_base_path: str = ""
     learning_public_base_url: str = ""
     learning_report_directory: str = "./runs/learning/reports"
     learning_timezone: str = "Asia/Shanghai"
@@ -77,6 +79,7 @@ class Settings:
             internal_perception_token=os.getenv("INTERNAL_PERCEPTION_TOKEN", ""),
             auto_create_schema=os.getenv("AGENT_AUTO_CREATE_SCHEMA", "false").lower() == "true",
             media_root=os.getenv("AGENT_MEDIA_ROOT", "./runs/media"),
+            app_base_path=normalize_base_path(os.getenv("APP_BASE_PATH", "")),
             learning_public_base_url=os.getenv("LEARNING_PUBLIC_BASE_URL", ""),
             learning_report_directory=os.getenv("LEARNING_REPORT_DIRECTORY", "./runs/learning/reports"),
             learning_timezone=os.getenv("LEARNING_TIMEZONE", "Asia/Shanghai"),
