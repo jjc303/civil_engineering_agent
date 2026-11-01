@@ -81,3 +81,12 @@ class SafetyQueryResponse(BaseModel):
     operation: str
     result: dict[str, Any]
     summary: str
+
+
+class RiskHeatmapResponse(BaseModel):
+    lookback_days: int = Field(ge=1, le=30)
+    total_violations: int
+    daily_counts: list[int]
+    hourly_risk: list[dict[str, Any]]
+    zone_risks: list[dict[str, Any]]
+    summary: str

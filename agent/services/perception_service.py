@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from agent.contracts.camera_config import CameraConfigUpdateRequest, CameraRunConfigV1
 from agent.contracts.event_v1 import CameraStatusReportV1, EventUpsertResponse, SafetyViolationEventV1
-from agent.contracts.query import CameraStatusResponse, SafetyQueryRequest, SafetyQueryResponse, ViolationPageResponse, ViolationQuery, ViolationRecord, ViolationStatisticsResponse
+from agent.contracts.query import CameraStatusResponse, RiskHeatmapResponse, SafetyQueryRequest, SafetyQueryResponse, ViolationPageResponse, ViolationQuery, ViolationRecord, ViolationStatisticsResponse
 from agent.db.base import Database
 from agent.db.models import CameraStatusModel, ManagedCameraModel
 from agent.repositories.camera_configs import CameraConfigRepository
@@ -72,3 +72,7 @@ class PerceptionService:
             graph = build_safety_graph(ViolationRepository(session))
             output = graph.invoke({"operation": request.operation, "query": request.query.model_dump(mode="json"), "camera_id": request.camera_id})
         return SafetyQueryResponse(operation=output["operation"], result=output["result"], summary=output["summary"])
+
+    def get_risk_heatmap(self, lookback_days: int = 7, timezone_offset_hours: int = 8) -> RiskHeatmapResponse:
+        with self.database.session() as session:
+            return ViolationRepository(session).get_risk_heatmap(lookback_days, timezone_offset_hours)

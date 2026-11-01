@@ -44,6 +44,37 @@
       <p class="statistics-updated">{{ sourceTime('stats') }} · 与页面数据同步刷新</p>
     </section>
 
+    <section v-if="heatmap" class="risk-heatmap-section" aria-label="风险热力分析">
+      <div class="section-heading">
+        <div>
+          <h2>风险趋势分析</h2>
+          <p>近 {{ heatmap.lookback_days }} 天违规分布 · 时段热力与每日趋势</p>
+        </div>
+        <span class="heatmap-summary">{{ heatmap.summary }}</span>
+      </div>
+      <div class="heatmap-grid">
+        <div class="chart heatmap-chart">
+          <h3>时段热力分布 <span>24小时高发时段（本机时区）</span></h3>
+          <v-chart :option="heatmapChartOption" autoresize aria-label="违规时段热力图" />
+        </div>
+        <div class="chart daily-chart">
+          <h3>每日违规趋势 <span>近 {{ heatmap.lookback_days }} 天违规走势</span></h3>
+          <v-chart :option="dailyBarOption" autoresize aria-label="每日违规趋势" />
+        </div>
+      </div>
+      <div v-if="heatmap.zone_risks.length" class="zone-risk-list">
+        <h3>区域风险排行</h3>
+        <div class="zone-risk-items">
+          <div v-for="(zone, i) in heatmap.zone_risks.slice(0, 5)" :key="i" class="zone-risk-item">
+            <span class="zone-rank">{{ i + 1 }}</span>
+            <div class="zone-info"><strong>{{ zone.zone_name }}</strong><small>{{ zone.camera_id }}</small></div>
+            <div class="zone-count"><b>{{ zone.total }}</b><span>起</span></div>
+            <div class="risk-bar"><div class="risk-fill" :style="{ width: (zone.risk_score * 100) + '%', background: zone.risk_score > 0.6 ? '#e4a58c' : zone.risk_score > 0.3 ? '#e0c48c' : '#85b5b2' }"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <EvidenceModal v-model="evidenceVisible" :record="selectedEvent" />
   </div>
 </template>
@@ -52,7 +83,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, FullScreen, VideoCamera, ChatDotRound, CircleCheck, Warning, Search } from '@element-plus/icons-vue'
 import { fetchCameras } from '@/api/cameras'
-import { fetchViolations, fetchViolationStatistics } from '@/api/violations'
+import { fetchViolations, fetchViolationStatistics, fetchRiskHeatmap, type RiskHeatmapData } from '@/api/violations'
 import { isMockEnabled } from '@/api/client'
 import type { CameraStatusResponse, ViolationRecord, ViolationStatistics, ViolationType, ViolationSeverity } from '@/types/contract'
 import MonitorCamera from '@/components/MonitorCamera.vue'
@@ -66,6 +97,7 @@ function clearFilters() { cameraQuery.value = ''; cameraStatus.value = 'all' }
 const stats = ref<ViolationStatistics | null>(null)
 const events = ref<ViolationRecord[]>([])
 const eventTotal = ref(0)
+const heatmap = ref<RiskHeatmapData | null>(null)
 const cameraLoaded = ref(false), eventLoaded = ref(false), loading = ref(false), autoRefresh = ref(true)
 const pageVisible = ref(!document.hidden)
 const errors = reactive({ cameras: false, stats: false, events: false })
@@ -100,6 +132,9 @@ async function refreshAll() {
   const now = new Date()
   try {
     const [cameraResult, statsResult, eventResult] = await Promise.allSettled([fetchCameras(), fetchViolationStatistics(todayWindow(now)), fetchViolations({ status: 'ACTIVE', limit: 6, offset: 0 })])
+
+    // Fetch risk heatmap separately (not critical, don't block other loading)
+    fetchRiskHeatmap(7).then(data => { if (alive) heatmap.value = data }).catch(() => {})
     if (!alive) return
     errors.cameras = cameraResult.status === 'rejected'; errors.stats = statsResult.status === 'rejected'; errors.events = eventResult.status === 'rejected'
     if (cameraResult.status === 'fulfilled') {
@@ -131,6 +166,138 @@ const severityBarOption = computed(() => ({
   xAxis: { type: 'value', minInterval: 1, max: stats.value?.total_violations === 0 ? 1 : undefined, splitLine: { lineStyle: { color: '#ececf4', type: 'dashed' } }, axisLabel: { color: '#8a8fa0' } },
   yAxis: { type: 'category', data: ['提示', '警告', '严重'], axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#72798b', fontSize: 12 } },
   series: [{ type: 'bar', barWidth: 14, label: { show: true, position: 'right', color: '#817590' }, itemStyle: { borderRadius: [0, 5, 5, 0] }, data: [{ value: stats.value?.by_severity.INFO ?? 0, itemStyle: { color: '#85b5b2' } }, { value: stats.value?.by_severity.WARNING ?? 0, itemStyle: { color: '#b2a1e5' } }, { value: stats.value?.by_severity.CRITICAL ?? 0, itemStyle: { color: '#e4a58c' } }] }],
+}))
+
+const heatmapChartOption = computed(() => {
+  const hourlyData = heatmap.value?.hourly_risk ?? []
+  const maxCount = Math.max(1, ...(hourlyData.map(h => h.count) ?? [1]))
+
+  return {
+    animation: chartAnimation,
+    tooltip: {
+      position: 'top',
+      backgroundColor: 'rgba(255, 255, 255, 0.96)',
+      borderColor: '#ece9f4',
+      borderWidth: 1,
+      padding: [8, 12],
+      textStyle: { color: '#433d59', fontSize: 12 },
+      formatter: (params: any) => {
+        const raw = Array.isArray(params.value) ? params.value : [0, 0, 0]
+        const hour = Number(raw[0])
+        const count = Number(raw[2])
+        const nextHour = (hour + 1) % 24
+        const timeRange = `${String(hour).padStart(2, '0')}:00 - ${String(nextHour).padStart(2, '0')}:00`
+        const riskLevel = count === 0 ? '安全' : count >= (maxCount * 0.6) ? '极高风险' : count >= (maxCount * 0.25) ? '较高风险' : '一般风险'
+        const riskColor = count === 0 ? '#85b5b2' : count >= (maxCount * 0.6) ? '#ce7666' : count >= (maxCount * 0.25) ? '#caa266' : '#7969d0'
+        return `
+          <div style="font-size:12px; line-height:1.6;">
+            <div style="font-weight:600; color:#343b51; margin-bottom:2px;">${timeRange}</div>
+            <div>违规频次：<b style="color:${count > 0 ? '#645383' : '#888'}; font-size:13px;">${count}</b> 起</div>
+            <div style="font-size:11px; margin-top:2px;">风险评估：<span style="color:${riskColor}; font-weight:600;">${riskLevel}</span></div>
+          </div>
+        `
+      }
+    },
+    grid: { top: 12, bottom: 56, left: 14, right: 14 },
+    xAxis: {
+      type: 'category',
+      data: Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`),
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { color: '#989daf', fontSize: 10, interval: 2 },
+      splitArea: { show: false },
+      splitLine: { show: false }
+    },
+    yAxis: {
+      type: 'category',
+      data: [''],
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { show: false },
+      splitLine: { show: false }
+    },
+    visualMap: {
+      min: 0,
+      max: maxCount,
+      calculable: false,
+      orient: 'horizontal',
+      left: 'center',
+      bottom: 4,
+      itemWidth: 12,
+      itemHeight: 140,
+      inRange: {
+        color: ['#f4f3f9', '#ded6f7', '#bcabec', '#8f70db', '#6245b7']
+      },
+      text: ['高风险', '无违规'],
+      textGap: 8,
+      textStyle: { color: '#959caa', fontSize: 10 }
+    },
+    series: [{
+      type: 'heatmap',
+      data: hourlyData.map(h => [h.hour, 0, h.count]),
+      label: { show: false },
+      itemStyle: {
+        borderColor: '#ffffff',
+        borderWidth: 2,
+        borderRadius: 4
+      },
+      emphasis: {
+        itemStyle: {
+          shadowBlur: 8,
+          shadowColor: 'rgba(99, 69, 183, 0.35)',
+          borderColor: '#ffffff',
+          borderWidth: 2
+        }
+      }
+    }]
+  }
+})
+
+const dailyBarOption = computed(() => ({
+  animation: chartAnimation,
+  tooltip: {
+    trigger: 'axis',
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    borderColor: '#ece9f4',
+    borderWidth: 1,
+    padding: [8, 12],
+    textStyle: { color: '#433d59', fontSize: 12 },
+    formatter: (params: any) => {
+      const item = Array.isArray(params) ? params[0] : params
+      const count = Number(item?.value ?? 0)
+      return `
+        <div style="font-size:12px; line-height:1.6;">
+          <div style="font-weight:600; color:#343b51; margin-bottom:2px;">${item?.name}</div>
+          <div>违规频次：<b style="color:${count > 0 ? '#645383' : '#888'}; font-size:13px;">${count}</b> 起</div>
+        </div>
+      `
+    }
+  },
+  grid: { top: 18, bottom: 26, left: 36, right: 14 },
+  xAxis: {
+    type: 'category',
+    data: Array.from({ length: heatmap.value?.lookback_days ?? 7 }, (_, i) => {
+      const d = new Date()
+      d.setDate(d.getDate() - (heatmap.value?.lookback_days ?? 7) + i + 1)
+      return `${d.getMonth() + 1}/${d.getDate()}`
+    }),
+    axisLine: { lineStyle: { color: '#eeebf5' } },
+    axisTick: { show: false },
+    axisLabel: { color: '#989daf', fontSize: 10 }
+  },
+  yAxis: {
+    type: 'value',
+    minInterval: 1,
+    splitLine: { lineStyle: { color: '#f0edf6', type: 'dashed' } },
+    axisLabel: { color: '#989daf', fontSize: 10 }
+  },
+  series: [{
+    type: 'bar',
+    data: heatmap.value?.daily_counts ?? [],
+    itemStyle: { color: '#9b86d2', borderRadius: [4, 4, 0, 0] },
+    emphasis: { itemStyle: { color: '#7f66c4' } },
+    barWidth: '42%'
+  }]
 }))
 </script>
 <style scoped>
@@ -179,4 +346,22 @@ h1{font-size:28px;font-weight:600;letter-spacing:-.5px}.eyebrow{font-size:11px;l
 
 /* Match the safety education workbench surfaces. */
 .monitor-dashboard{max-width:1512px;padding:32px 32px 40px;--line:#ece9f3}.page-heading{margin-bottom:26px}.eyebrow{font-size:10px;font-weight:600;letter-spacing:1.8px;color:#9584c7;margin-bottom:10px}.page-heading h1{font-size:27px;font-weight:650;letter-spacing:-.5px;color:#343b51}.page-heading .subtitle{font-size:13px;line-height:1.8;color:#8791a2}.monitor-button{border-radius:11px;font-size:12px;min-height:37px;background:#fff;color:#8370b6}.quick-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:24px}.quick-actions a{background:#fff;border:1px solid #eae5f4;border-radius:12px;padding:14px 16px;font-size:12px;color:#84739e;display:flex;align-items:center;gap:9px}.quick-actions a:hover{background:#f3eefb;border-color:#cfc0e9}.quick-actions a>span{margin-left:auto}.metrics{grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;padding:0;border:0;margin-bottom:24px}.metrics>div,.metrics>div:first-child,.metrics>div:last-child{border:1px solid #ece9f4;border-radius:18px;background:#fff;padding:22px 24px}.metrics p{font-size:12px;color:#8590a2}.metrics p small{font-size:10px;color:#a1a3b3}.metrics strong{font-size:32px;font-weight:600;color:#645383}.metrics>div>span{color:#a19eaf;font-size:10px}.workspace-grid{grid-template-columns:minmax(0,1fr) 300px;gap:22px}.video-panel{padding:22px;border:1px solid #ece9f4;border-radius:20px;background:#fff;min-width:0}.event-column{border:0;padding-left:0}.events-panel{padding:22px 20px;background:#fff;border:1px solid #ece9f4;border-radius:20px}.section-heading h2{font-size:15px;font-weight:600;color:#4a526b}.section-heading p{color:#9c99ad;font-size:11px;line-height:1.7}.event-item{border-radius:8px;padding:19px 2px}.event-item.featured{background:linear-gradient(90deg,#f7f2fe,transparent)}.event-topline b{font-size:12px;color:#626076}.assistant-card{border-radius:18px;border:0;padding:24px 22px;background:linear-gradient(148deg,#6355be,#8c77d8)}.assistant-card h3,.assistant-card span{color:#fff}.assistant-card p{color:#e1dbf5}.assistant-icon{color:#eee8ff}.assistant-card span{border-color:#ffffff28}.statistics-panel.visible-statistics{background:#fff;border:1px solid #ece9f4;border-radius:20px;margin-top:24px}.visible-statistics .chart{border-radius:14px;background:#fcfbfe;border-color:#efebf6}.status-filter,.layout-switch{border-radius:10px}.video-panel:fullscreen{border-radius:0}@media(min-width:1650px){.monitor-dashboard{padding:36px 40px 44px}.workspace-grid{grid-template-columns:minmax(0,1fr) 310px;gap:24px}}@media(max-width:1100px){.workspace-grid{grid-template-columns:minmax(0,1fr)}.event-column{padding:0;display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:20px}.assistant-card{margin-top:0;align-self:start}}@media(max-width:760px){.monitor-dashboard{padding:24px 16px}.quick-actions{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.quick-actions a{padding:12px;font-size:11px}.metrics{gap:9px}.metrics>div,.metrics>div:first-child,.metrics>div:last-child{padding:17px 12px;border-radius:14px}.metrics p{font-size:11px}.metrics strong{font-size:27px}.metrics strong em{font-size:11px;margin-left:4px}.metrics>div>span{font-size:9px}.video-panel{padding:16px;border-radius:16px}.event-column{grid-template-columns:minmax(0,1fr)}.events-panel{border-radius:16px}.page-heading .subtitle{font-size:12px}.heading-actions{flex-direction:row;align-items:center}.auto-refresh{font-size:10px}.page-heading h1{font-size:24px}}
+
+/* Risk heatmap */
+.risk-heatmap-section{margin-top:24px;border:1px solid #ece9f4;border-radius:20px;padding:24px;background:#fff}
+.risk-heatmap-section>.section-heading{margin-bottom:20px;flex-wrap:wrap;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.heatmap-summary{font-size:12px;color:#7e6ba8;background:#f5f0fc;border:1px solid #e8def6;padding:8px 14px;border-radius:10px;max-width:560px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.heatmap-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:22px}
+.heatmap-grid .chart{background:#fcfbfe;border:1px solid #efebf6;border-radius:14px;padding:20px;min-width:0;display:flex;flex-direction:column}
+.heatmap-grid .chart h3{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;font-weight:500;color:#6e687f;margin:0 0 10px}
+.heatmap-grid .chart h3 span{font-size:11px;font-weight:400;color:#8d869b}
+.heatmap-grid .chart .echarts{height:180px;width:100%}
+.zone-risk-list h3{font-size:13px;font-weight:500;color:#6e687f;margin:0 0 16px}
+.zone-risk-items{display:grid;gap:10px}
+.zone-risk-item{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:10px;background:#fcfbfe;border:1px solid #efebf6}
+.zone-rank{width:26px;height:26px;display:grid;place-items:center;border-radius:50%;background:#ede5fa;color:#7b63b9;font-size:12px;font-weight:600;flex-shrink:0}
+.zone-info{flex:1;min-width:0}.zone-info strong{display:block;font-size:13px;color:#504963}.zone-info small{font-size:10px;color:#9b93ab}
+.zone-count b{font-size:16px;color:#695bb4;font-weight:600}.zone-count span{font-size:10px;color:#a29ab5;margin-left:3px}
+.risk-bar{width:90px;height:6px;background:#eae5f2;border-radius:3px;overflow:hidden;flex-shrink:0}.risk-fill{height:100%;border-radius:3px;transition:width .4s}
+@media(max-width:760px){.heatmap-grid{grid-template-columns:1fr}.risk-bar{width:60px}.heatmap-summary{max-width:100%;white-space:normal}}
 </style>

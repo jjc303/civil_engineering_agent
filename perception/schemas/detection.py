@@ -66,6 +66,7 @@ class TrackedPerson(BaseModel):
     danger_zone_name: Optional[str] = Field(None, description="Name of the invaded danger zone")
     dwell_time_seconds: float = Field(0.0, description="Continuous dwell duration in danger zone")
     trajectory: List[Tuple[float, float]] = Field(default_factory=list, description="Recent feet trajectory points")
+    global_id: Optional[str] = Field(None, description="Cross-camera person re-identification ID")
 
 
 

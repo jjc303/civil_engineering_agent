@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from agent.api.dependencies import get_perception_service
 from agent.contracts.event_v1 import EventStatus, ViolationSeverity, ViolationType
-from agent.contracts.query import CameraStatusResponse, SafetyQueryRequest, SafetyQueryResponse, ViolationPageResponse, ViolationQuery, ViolationStatisticsResponse
+from agent.contracts.query import CameraStatusResponse, RiskHeatmapResponse, SafetyQueryRequest, SafetyQueryResponse, ViolationPageResponse, ViolationQuery, ViolationStatisticsResponse
 from agent.services.perception_service import PerceptionService
 
 router = APIRouter(prefix="/api/v1", tags=["safety"])
@@ -43,3 +43,12 @@ def camera_status(camera_id: str, service: PerceptionService = Depends(get_perce
 @router.post("/agent/safety-query", response_model=SafetyQueryResponse)
 def safety_query(request: SafetyQueryRequest, service: PerceptionService = Depends(get_perception_service)) -> SafetyQueryResponse:
     return service.run_safety_query(request)
+
+
+@router.get("/safety/risk-heatmap", response_model=RiskHeatmapResponse)
+def risk_heatmap(
+    lookback_days: int = Query(default=7, ge=1, le=30),
+    timezone_offset_hours: int = Query(default=8, ge=-12, le=14),
+    service: PerceptionService = Depends(get_perception_service),
+) -> RiskHeatmapResponse:
+    return service.get_risk_heatmap(lookback_days, timezone_offset_hours)

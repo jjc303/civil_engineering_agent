@@ -23,6 +23,8 @@ from perception.tracking.state_machine import WorkerSafetyMonitor
 
 if TYPE_CHECKING:
     from perception.services.event_publisher import PerceptionEventPublisher
+    from perception.reid.feature_extractor import PersonFeatureExtractor
+    from perception.reid.cross_camera_matcher import CrossCameraMatcher
 
 
 class PipelineFrameResult(BaseModel):
@@ -35,6 +37,7 @@ class PipelineFrameResult(BaseModel):
     active_violations: List[ViolationEvent] = Field(default_factory=list, description="All currently active violations")
     raw_detections: List[BoundingBox] = Field(default_factory=list, description="Raw bounding boxes from detector")
     inference_time_ms: float = Field(0.0, description="Detection model execution time in ms")
+    reid_global_persons: int = Field(0, description="Total unique persons identified across all cameras")
 
 
 class SafetyPerceptionPipeline:
@@ -61,6 +64,8 @@ class SafetyPerceptionPipeline:
         head_classes: Optional[Iterable[Union[str, int]]] = None,
         model_name: str = "helmet_head_person_m",
         model_version: str = "legacy-yolov5",
+        feature_extractor: Optional["PersonFeatureExtractor"] = None,
+        cross_camera_matcher: Optional["CrossCameraMatcher"] = None,
     ):
         self.detector = detector
         self.danger_zones = danger_zones or []
@@ -86,6 +91,11 @@ class SafetyPerceptionPipeline:
 
         self.frame_counter: int = 0
         self.active_violations: List[ViolationEvent] = []
+
+        # Optional cross-camera ReID
+        self._feature_extractor = feature_extractor
+        self._cross_camera_matcher = cross_camera_matcher
+        self._reid_enabled = feature_extractor is not None and cross_camera_matcher is not None
 
     def set_danger_zones(self, zones: List[DangerZone]):
         self.danger_zones = zones
@@ -119,6 +129,42 @@ class SafetyPerceptionPipeline:
         )
         self.frame_counter = 0
         self.active_violations.clear()
+
+    def _run_reid_step(self, frame: np.ndarray, tracked_persons: List[TrackedPerson]) -> None:
+        """Extract appearance features and perform cross-camera matching on tracked persons."""
+        if not self._feature_extractor or not self._cross_camera_matcher:
+            return
+
+        h, w = frame.shape[:2]
+        crops: list[np.ndarray] = []
+        valid_persons: list[TrackedPerson] = []
+
+        for person in tracked_persons:
+            x1 = max(0, min(w - 1, int(person.bbox.x1)))
+            y1 = max(0, min(h - 1, int(person.bbox.y1)))
+            x2 = max(x1 + 1, min(w, int(person.bbox.x2)))
+            y2 = max(y1 + 1, min(h, int(person.bbox.y2)))
+            crop = frame[y1:y2, x1:x2]
+            if crop.size > 0:
+                crops.append(crop)
+                valid_persons.append(person)
+
+        if not crops:
+            return
+
+        # Extract embeddings
+        embeddings = self._feature_extractor.extract_batch(crops)
+
+        # Register with cross-camera matcher and assign global IDs
+        reid_time = time.monotonic()
+        for person, emb in zip(valid_persons, embeddings):
+            global_id = self._cross_camera_matcher.register(
+                track_id=person.track_id,
+                camera_id=self.camera_id,
+                embedding=emb,
+                current_time=reid_time,
+            )
+            person.global_id = global_id  # type: ignore[attr-defined]
 
     def process_frame(
         self,
@@ -156,6 +202,10 @@ class SafetyPerceptionPipeline:
 
         # 4. Multi-object tracking association
         tracked_persons = self.tracker.update(person_boxes)
+
+        # 4.5 Cross-camera person re-identification (optional)
+        if self._reid_enabled and frame is not None and frame.size > 0:
+            self._run_reid_step(frame, tracked_persons)
 
         # 5. Safety state machine evaluation (debounce & dwell timing)
         new_events, closed_events = self.safety_monitor.process(

@@ -33,6 +33,8 @@ from perception.detectors.legacy_yolo_adapter import LegacyYOLOv5Adapter
 from perception.tracking.safety_pipeline import SafetyPerceptionPipeline, PipelineFrameResult
 from perception.storage.event_store import EventStore
 from perception.services.event_publisher import PerceptionEventPublisher
+from perception.reid.feature_extractor import PersonFeatureExtractor
+from perception.reid.cross_camera_matcher import CrossCameraMatcher
 
 logger = logging.getLogger("perception.session_runner")
 
@@ -83,6 +85,8 @@ class CameraSessionRunner:
         track_thresh: float = 0.5,
         loop_video: bool = True,
         fps_throttle: bool = False,
+        feature_extractor: Optional[PersonFeatureExtractor] = None,
+        cross_camera_matcher: Optional[CrossCameraMatcher] = None,
     ):
         self.camera_id = camera_id
         self.source = int(source) if isinstance(source, str) and source.isdigit() else source
@@ -103,6 +107,8 @@ class CameraSessionRunner:
         self.track_thresh = track_thresh
         self.loop_video = loop_video
         self.fps_throttle = fps_throttle
+        self.feature_extractor = feature_extractor
+        self.cross_camera_matcher = cross_camera_matcher
 
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -230,7 +236,10 @@ class CameraSessionRunner:
                 cv2.rectangle(preview, (hx1, hy1), (hx2, hy2), (0, 0, 255), 2, cv2.LINE_AA)
 
             helmet_text = "HELMET" if person.has_helmet else "NO HELMET"
-            label = f"ID {person.track_id} | {helmet_text}"
+            label = f"ID {person.track_id}"
+            if getattr(person, 'global_id', None):
+                label += f" | {person.global_id}"
+            label += f" | {helmet_text}"
             if is_intrusion:
                 intrusion_count += 1
                 label += " | INTRUSION"
@@ -363,6 +372,8 @@ class CameraSessionRunner:
             exit_debounce_frames=self.exit_debounce_frames,
             helmet_debounce_frames=self.helmet_debounce_frames,
             track_thresh=self.track_thresh,
+            feature_extractor=self.feature_extractor,
+            cross_camera_matcher=self.cross_camera_matcher,
         )
 
         cap = cv2.VideoCapture(self.source)
@@ -465,6 +476,17 @@ class CameraSessionRunner:
                         self.publisher.report_camera_status(self.last_status)
                         self.publisher.flush_outbox(max_batch=10)
 
+                # Periodic performance benchmark log (every ~30 sec / 6 heartbeats)
+                if self.pipeline.frame_counter % 180 == 0 and self.pipeline.frame_counter > 0:
+                    measured_fps = frames_in_hb_window / max(0.001, time_since_hb) if time_since_hb > 0 else 0.0
+                    active_viols = len(self.pipeline.active_violations)
+                    inference_ms = result.inference_time_ms if hasattr(result, 'inference_time_ms') else 0.0
+                    logger.info(
+                        "[Benchmark] cam=%s frame=%d fps=%.1f workers=%d helmet=%.0f%% violations=%d inference=%.1fms",
+                        self.camera_id, self.pipeline.frame_counter, measured_fps,
+                        active_workers, compliance_rate * 100, active_viols, inference_ms,
+                    )
+
                 # Periodic Dynamic Config Polling
                 if now_monotonic - last_config_poll_time >= self.config_poll_interval:
                     last_config_poll_time = now_monotonic
@@ -493,6 +515,7 @@ class CivilSafetyPerceptionService:
         event_store: Optional[EventStore] = None,
         weights_path: Optional[str] = None,
         device: str = "auto",
+        reid_enabled: bool = False,
     ):
         self.device = get_optimal_device(device)
         self.event_publisher = event_publisher
@@ -500,6 +523,14 @@ class CivilSafetyPerceptionService:
         self.runners: Dict[str, CameraSessionRunner] = {}
         self.weights_path = weights_path
         self._detector = detector
+
+        # Cross-camera person re-identification (shared across all cameras)
+        self._reid_enabled = reid_enabled
+        self._feature_extractor: Optional[PersonFeatureExtractor] = None
+        self._cross_camera_matcher: Optional[CrossCameraMatcher] = None
+        if reid_enabled:
+            self._feature_extractor = PersonFeatureExtractor(device=self.device)
+            self._cross_camera_matcher = CrossCameraMatcher()
 
     @property
     def detector(self) -> BaseDetector:
@@ -545,6 +576,8 @@ class CivilSafetyPerceptionService:
             danger_zones=danger_zones,
             loop_video=loop_video,
             fps_throttle=fps_throttle,
+            feature_extractor=self._feature_extractor,
+            cross_camera_matcher=self._cross_camera_matcher,
         )
 
         runner.start()

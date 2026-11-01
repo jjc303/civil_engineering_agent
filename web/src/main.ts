@@ -10,12 +10,13 @@ import VueKonva from 'vue-konva'
 import ECharts from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { PieChart, BarChart, LineChart } from 'echarts/charts'
+import { PieChart, BarChart, LineChart, HeatmapChart } from 'echarts/charts'
 import {
   GridComponent,
   TooltipComponent,
   LegendComponent,
   TitleComponent,
+  VisualMapComponent,
 } from 'echarts/components'
 
 import router from './router'
@@ -28,10 +29,12 @@ use([
   PieChart,
   BarChart,
   LineChart,
+  HeatmapChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
   TitleComponent,
+  VisualMapComponent,
 ])
 
 const app = createApp(App)
