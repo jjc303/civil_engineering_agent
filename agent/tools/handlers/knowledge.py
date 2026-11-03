@@ -15,7 +15,9 @@ def _validity_label(validity: str) -> str:
 def _search_knowledge(decision: ToolDecision, ctx: ToolContext) -> ToolOutcome:
     if not ctx.knowledge_service:
         raise RuntimeError("knowledge search is disabled")
-    data, citations = ctx.knowledge_service.search(decision.knowledge_query or "", decision.top_k)
+    max_top_k = getattr(ctx.knowledge_service, "top_k_max", decision.top_k)
+    top_k = min(decision.top_k, max_top_k)
+    data, citations = ctx.knowledge_service.search(decision.knowledge_query or "", top_k)
     return ToolOutcome(data=data, evidence=extract_evidence(data), citations=citations)
 
 

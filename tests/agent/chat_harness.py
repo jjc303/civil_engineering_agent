@@ -73,6 +73,8 @@ class Recorder:
 
 
 class FakeKnowledge:
+    top_k_max = 8
+
     def __init__(self, recorder: Recorder) -> None:
         self.rec = recorder
 

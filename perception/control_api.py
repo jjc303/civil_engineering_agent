@@ -20,6 +20,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 
+from perception.config import DEFAULT_AGENT_URL
 from perception.services.event_publisher import OutboxStore, PerceptionEventPublisher
 from perception.services.session_runner import CivilSafetyPerceptionService
 from perception.storage.event_store import EventStore
@@ -43,7 +44,7 @@ class CvControlSettings:
         roots = tuple(Path(item).resolve() for item in os.getenv("CV_ALLOWED_MEDIA_ROOTS", ".").split(os.pathsep) if item)
         return cls(
             node_id=os.getenv("CV_NODE_ID", ""), node_token=os.getenv("CV_NODE_TOKEN", ""),
-            agent_url=os.getenv("AGENT_URL", "http://127.0.0.1:8000").rstrip("/"),
+            agent_url=os.getenv("AGENT_URL", DEFAULT_AGENT_URL).rstrip("/"),
             internal_perception_token=os.getenv("INTERNAL_PERCEPTION_TOKEN", ""), allowed_media_roots=roots,
             capacity=int(os.getenv("CV_NODE_CAPACITY", "8")),
             heartbeat_interval_seconds=float(os.getenv("CV_NODE_HEARTBEAT_INTERVAL_SECONDS", "5")),

@@ -2,10 +2,12 @@ import axios, { AxiosError } from 'axios'
 import { ElMessage } from 'element-plus'
 
 export const isMockEnabled = import.meta.env.VITE_USE_MOCK === 'true'
+export const CHAT_ENDPOINT = '/api/v1/agent/chat'
+export const API_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS) || 20000
 
 export const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '',
-  timeout: 20000,
+  timeout: API_TIMEOUT_MS,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -15,7 +17,7 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError<{ detail?: string | Array<{ msg: string }> }>) => {
     // The conversation displays a persistent, contextual error itself.
-    if (error.config?.url === '/api/v1/agent/chat') return Promise.reject(error)
+    if (error.config?.url === CHAT_ENDPOINT) return Promise.reject(error)
     if (error.response) {
       const status = error.response.status
       const detail = error.response.data?.detail

@@ -18,6 +18,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from perception.config import (
+    DEFAULT_AGENT_URL,
+    DEFAULT_EVENT_DB,
+    DEFAULT_OUTBOX_DB,
+    DEFAULT_SNAPSHOT_DIR,
+)
 from perception.detectors.base import get_optimal_device
 from perception.detectors.legacy_yolo_adapter import LegacyYOLOv5Adapter
 from perception.storage.event_store import EventStore
@@ -142,7 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("run", help="Run headless camera perception stream monitor")
     run_parser.add_argument("--camera-id", required=True, help="Camera identifier (e.g. cam_crane_01)")
     run_parser.add_argument("--source", required=True, help="RTSP URL, video file path, or webcam index")
-    run_parser.add_argument("--agent-url", default="http://127.0.0.1:8000", help="Agent API base URL")
+    run_parser.add_argument("--agent-url", default=DEFAULT_AGENT_URL, help="Agent API base URL")
     run_parser.add_argument(
         "--weights",
         default=str(PROJECT_ROOT / "perception" / "weights" / "helmet_head_person_s.pt"),
@@ -150,9 +156,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument("--device", default="auto", help="Inference device: auto, cpu, cuda")
     run_parser.add_argument("--zones-config", default=None, help="Path to danger zones JSON")
-    run_parser.add_argument("--outbox-db", default="data/outbox.db", help="SQLite path for outbox events")
-    run_parser.add_argument("--event-db", default="data/events.db", help="SQLite path for local events")
-    run_parser.add_argument("--snapshot-dir", default="data/snapshots", help="Directory for snapshot media")
+    run_parser.add_argument("--outbox-db", default=DEFAULT_OUTBOX_DB, help="SQLite path for outbox events")
+    run_parser.add_argument("--event-db", default=DEFAULT_EVENT_DB, help="SQLite path for local events")
+    run_parser.add_argument("--snapshot-dir", default=DEFAULT_SNAPSHOT_DIR, help="Directory for snapshot media")
     run_parser.add_argument("--heartbeat-interval", type=float, default=5.0, help="Heartbeat interval in seconds")
     run_parser.add_argument("--config-poll-interval", type=float, default=30.0, help="Config polling interval in seconds")
     run_parser.add_argument("--model-name", default="helmet_head_person_s", help="Model name identifier")
@@ -161,7 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Subcommand: report
     report_parser = subparsers.add_parser("report", help="Generate daily safety report")
     report_parser.add_argument("--date", required=True, help="Date in YYYYMMDD or YYYY-MM-DD")
-    report_parser.add_argument("--event-db", default="data/events.db", help="SQLite path for local events")
+    report_parser.add_argument("--event-db", default=DEFAULT_EVENT_DB, help="SQLite path for local events")
 
     return parser
 

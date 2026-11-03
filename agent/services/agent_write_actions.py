@@ -48,11 +48,19 @@ class AgentWriteActionService:
     no camera source URI, CV-node token, or other credential material.
     """
 
-    def __init__(self, database: Database, camera_management: CameraManagementService | None, learning_service: LearningService | None = None, notification_service: Any = None) -> None:
+    def __init__(
+        self,
+        database: Database,
+        camera_management: CameraManagementService | None,
+        learning_service: LearningService | None = None,
+        notification_service: Any = None,
+        pending_action_ttl_minutes: int = 15,
+    ) -> None:
         self.database = database
         self.camera_management = camera_management
         self.learning_service = learning_service
         self.notification_service = notification_service
+        self._ttl = timedelta(minutes=pending_action_ttl_minutes) if pending_action_ttl_minutes > 0 else _TTL
 
     def propose(self, conversation_id: str | None, decision: ToolDecision) -> PendingActionResponse:
         if not conversation_id:
@@ -193,7 +201,7 @@ class AgentWriteActionService:
         model = AgentPendingActionModel(
             confirmation_id=str(uuid4()), conversation_id=conversation_id, action_type=action_type,
             summary=summary[:512], payload_safe_json=payload, status="PENDING",
-            expires_at_utc=now + _TTL, result_safe_json={}, created_at_utc=now,
+            expires_at_utc=now + self._ttl, result_safe_json={}, created_at_utc=now,
         )
         session.add(model)
         # SQLAlchemy has no ORM relationship between these two models. Flush

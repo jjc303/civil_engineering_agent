@@ -1,6 +1,8 @@
-import { apiClient, isMockEnabled } from './client'
+import { apiClient, CHAT_ENDPOINT, isMockEnabled } from './client'
 import type { ActionExecutionResponse, ChatRequest, ChatResponse, PendingAction } from '@/types/contract'
 import { mockChatResponse } from '@/mock/fixtures'
+
+export const CHAT_TIMEOUT_MS = Number(import.meta.env.VITE_CHAT_TIMEOUT_MS) || 180000
 
 export async function sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
   if (isMockEnabled) {
@@ -13,7 +15,7 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
     }
   }
   // Chat includes model planning, tool execution and answer generation.
-  const res = await apiClient.post<ChatResponse>('/api/v1/agent/chat', request, { timeout: 180000 })
+  const res = await apiClient.post<ChatResponse>(CHAT_ENDPOINT, request, { timeout: CHAT_TIMEOUT_MS })
   return res.data
 }
 
@@ -28,7 +30,7 @@ export async function proposeTrainingAction(conversationId: string, training: {
 }
 
 export async function confirmPendingAction(confirmationId: string, conversationId: string): Promise<ActionExecutionResponse> {
-  const res = await apiClient.post<ActionExecutionResponse>(`/api/v1/agent/actions/${confirmationId}/confirm`, { conversation_id: conversationId }, { timeout: 180000 })
+  const res = await apiClient.post<ActionExecutionResponse>(`/api/v1/agent/actions/${confirmationId}/confirm`, { conversation_id: conversationId }, { timeout: CHAT_TIMEOUT_MS })
   return res.data
 }
 

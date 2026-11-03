@@ -73,7 +73,19 @@ table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #d8
 
 
 class LearningService:
-    def __init__(self, database: Database, knowledge: KnowledgeService, model: ChatModelPort, report_directory: str, public_base_url: str, display_timezone: str = "Asia/Shanghai", insights_ttl_seconds: int = 600, app_base_path: str = "", notification_service: Any = None) -> None:
+    def __init__(
+        self,
+        database: Database,
+        knowledge: KnowledgeService,
+        model: ChatModelPort,
+        report_directory: str,
+        public_base_url: str,
+        display_timezone: str = "Asia/Shanghai",
+        insights_ttl_seconds: int = 600,
+        app_base_path: str = "",
+        notification_service: Any = None,
+        report_source_label: str | None = None,
+    ) -> None:
         self.database = database
         self.knowledge = knowledge
         self.model = model
@@ -83,6 +95,7 @@ class LearningService:
         self.display_timezone = ZoneInfo(display_timezone)
         self.insights_ttl_seconds = insights_ttl_seconds
         self.notification_service = notification_service
+        self.report_source_label = report_source_label
         self._insights_lock = Lock()
         self._insights_cache: tuple[tuple, float, dict] | None = None
 
@@ -106,7 +119,8 @@ class LearningService:
             fragments, citations = self.knowledge.search_standards("施工安全 " + " ".join(_RISK_LABELS.get(code, code) for code in by_type), min(4, self.knowledge.top_k_max))
         evidence = [{"content": item["content"][:1200], "title": item["title"], "section": item["page_or_section"], "validity_status": item["validity_status"]} for item in fragments]
         instruction = load_prompt("report_generation")
-        generation_context = {"statistics": statistics, "standards": evidence, "data_source": os.getenv("REPORT_SOURCE_LABEL", "现场监控记录")}
+        source_label = self.report_source_label or os.getenv("REPORT_SOURCE_LABEL", "现场监控记录")
+        generation_context = {"statistics": statistics, "standards": evidence, "data_source": source_label}
         for attempt in range(2):
             generated = self.model.generate_structured(instruction, generation_context)
             try:

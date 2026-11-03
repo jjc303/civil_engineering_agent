@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
 
+from perception.config import DEFAULT_AGENT_URL
 from perception.schemas.contract_v1 import (
     AgentEventResponseV1,
     CameraRunConfigContractV1,
@@ -169,7 +170,7 @@ class PerceptionEventPublisher:
 
     def __init__(
         self,
-        agent_base_url: str = "http://127.0.0.1:8000",
+        agent_base_url: str = DEFAULT_AGENT_URL,
         db_path: Union[str, Path] = "runs/outbox.db",
         outbox_store: Optional[OutboxStore] = None,
         bearer_token: Optional[str] = None,

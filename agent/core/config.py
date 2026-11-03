@@ -39,6 +39,8 @@ class Settings:
     learning_report_directory: str = "./runs/learning/reports"
     learning_timezone: str = "Asia/Shanghai"
     learning_insights_ttl_seconds: int = 600
+    report_source_label: str = "现场监控记录"
+    pending_action_ttl_minutes: int = 15
     credential_encryption_key: str = ""
     cv_control_timeout_seconds: float = 10.0
     memory_enabled: bool = True
@@ -91,6 +93,8 @@ class Settings:
             learning_report_directory=os.getenv("LEARNING_REPORT_DIRECTORY", "./runs/learning/reports"),
             learning_timezone=os.getenv("LEARNING_TIMEZONE", "Asia/Shanghai"),
             learning_insights_ttl_seconds=int(os.getenv("LEARNING_INSIGHTS_TTL_SECONDS", "600")),
+            report_source_label=os.getenv("REPORT_SOURCE_LABEL", "现场监控记录"),
+            pending_action_ttl_minutes=int(os.getenv("AGENT_PENDING_ACTION_TTL_MINUTES", "15")),
             credential_encryption_key=os.getenv("AGENT_CREDENTIAL_ENCRYPTION_KEY", ""),
             cv_control_timeout_seconds=float(os.getenv("AGENT_CV_CONTROL_TIMEOUT_SECONDS", "10")),
             memory_enabled=os.getenv("AGENT_MEMORY_ENABLED", "true").lower() == "true",
@@ -151,6 +155,8 @@ class Settings:
             raise RuntimeError("AGENT_CV_CONTROL_TIMEOUT_SECONDS must be positive")
         if self.learning_insights_ttl_seconds < 0:
             raise RuntimeError("LEARNING_INSIGHTS_TTL_SECONDS must be non-negative")
+        if self.pending_action_ttl_minutes <= 0:
+            raise RuntimeError("AGENT_PENDING_ACTION_TTL_MINUTES must be positive")
         if self.memory_ttl_hours <= 0 or self.memory_recent_turns < 0:
             raise RuntimeError("AGENT_MEMORY_TTL_HOURS must be positive and AGENT_MEMORY_RECENT_TURNS non-negative")
         if self.rag_chunk_size <= 0 or not 0 <= self.rag_chunk_overlap < self.rag_chunk_size:
