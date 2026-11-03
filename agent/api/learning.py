@@ -5,16 +5,13 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
+from agent.api.dependencies import get_learning_service as _service
 from agent.contracts.learning import CaseDetail, ReportContent, ReportCreate, ReportResponse, TrainingCreate, TrainingEdit, TrainingResponse, WorkerResult, WorkerSubmit
 from agent.services.learning_service import LearningConflictError
 
 router = APIRouter(prefix="/api/v1/learning", tags=["learning"])
 public_router = APIRouter(prefix="/api/v1/learn", tags=["learning-public"])
 logger = logging.getLogger(__name__)
-
-
-def _service(request: Request):
-    return request.app.state.learning_service
 
 
 def _error(exc: Exception) -> HTTPException:

@@ -4,17 +4,10 @@ import asyncio
 from datetime import datetime
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
+from agent.api.dependencies import get_knowledge_service as _service
 from agent.contracts.knowledge import DocumentType, StandardValidityUpdate, KnowledgeMetadataUpdate, KnowledgeDocumentDetailResponse, KnowledgeDocumentPage, KnowledgeIndexJobPage, KnowledgeIndexJobResponse
-from agent.services.knowledge_service import KnowledgeService
 
 router = APIRouter(prefix="/api/v1/knowledge", tags=["knowledge"])
-
-
-def _service(request: Request) -> KnowledgeService:
-    service = request.app.state.knowledge_service
-    if service is None or service.retriever is None:
-        raise HTTPException(status_code=503, detail="knowledge retrieval is disabled")
-    return service
 
 
 def _error(exc: Exception) -> HTTPException:

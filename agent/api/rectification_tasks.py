@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from agent.api.dependencies import get_rectification_task_service as _service
 from agent.contracts.rectification import (
     RectificationPendingActionResponse,
     RectificationTaskCreateRequest,
@@ -10,13 +11,8 @@ from agent.contracts.rectification import (
     RectificationTaskUpdateRequest,
 )
 from agent.services.agent_write_actions import AgentWriteActionError
-from agent.services.rectification_task_service import RectificationTaskService
 
 router = APIRouter(prefix="/api/v1/rectification-tasks", tags=["rectification-tasks"])
-
-
-def _service(request: Request) -> RectificationTaskService:
-    return request.app.state.rectification_task_service
 
 
 @router.get("", response_model=RectificationTaskPageResponse)

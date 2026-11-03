@@ -3,21 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from agent.api.dependencies import get_chat_service, get_write_action_service
 from agent.contracts.actions import ActionConfirmationRequest, ActionExecutionResponse, PendingActionResponse
 from agent.contracts.chat import ChatRequest, ChatResponse, ToolDecision
 from agent.contracts.learning import TrainingCreate
-from agent.services.chat_service import ChatService
-from agent.services.agent_write_actions import AgentWriteActionError, AgentWriteActionService
+from agent.services.agent_write_actions import AgentWriteActionError
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent-chat"])
-
-
-def get_chat_service(request: Request) -> ChatService:
-    return request.app.state.chat_service
-
-
-def get_write_action_service(request: Request) -> AgentWriteActionService:
-    return request.app.state.agent_write_action_service
 
 
 @router.post("/chat", response_model=ChatResponse)
