@@ -220,6 +220,9 @@ class ViolationRepository:
 
         return sorted(results, key=lambda item: (not item.is_online, item.camera_id))
 
+    def list_managed_cameras(self) -> list[ManagedCameraModel]:
+        return list(self.session.scalars(select(ManagedCameraModel).order_by(ManagedCameraModel.camera_id)))
+
     def get_workforce_summary(self) -> dict[str, object]:
         statuses = self.list_camera_statuses()
         online = [item for item in statuses if item.is_online]

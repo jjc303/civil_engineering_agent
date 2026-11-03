@@ -81,40 +81,104 @@ class ToolDecision(BaseModel):
                 raise ValueError("end_time_utc must not precede start_time_utc")
             if (self.query.end_time_utc - self.query.start_time_utc).days > 31:
                 raise ValueError("chat tool time range may not exceed 31 days")
-        if self.tool_name == "get_camera_status" and not self.camera_id:
-            raise ValueError("camera_id is required for get_camera_status")
-        if self.tool_name == "get_current_weather" and not self.weather_location:
-            raise ValueError("weather_location is required for get_current_weather")
-        if self.tool_name == "search_knowledge" and not self.knowledge_query:
-            raise ValueError("knowledge_query is required for search_knowledge")
-        if self.tool_name == "create_rectification_task":
-            if not all((self.violation_event_uuid, self.task_title, self.task_owner, self.task_due_at_utc)):
-                raise ValueError("violation_event_uuid, task_title, task_owner and task_due_at_utc are required for create_rectification_task")
-        if self.tool_name == "update_rectification_task":
-            if not self.task_id:
-                raise ValueError("task_id is required for update_rectification_task")
-            if not any((self.task_owner, self.task_due_at_utc, self.task_status, self.task_note)):
-                raise ValueError("at least one task update is required")
-        if self.tool_name in {"start_monitoring", "stop_monitoring"} and not self.camera_id:
-            raise ValueError("camera_id is required for monitoring control")
-        if self.tool_name == "list_monitoring_targets" and self.selection_action is None:
-            raise ValueError("selection_action is required for list_monitoring_targets")
-        if self.tool_name == "create_safety_report":
-            if bool(self.report_period_start_utc) != bool(self.report_period_end_utc):
-                raise ValueError("report start and end must be provided together")
-            if self.report_period_start_utc and self.report_period_end_utc and self.report_period_end_utc <= self.report_period_start_utc:
-                raise ValueError("report end must be after start")
-        if self.tool_name in {"get_safety_report", "update_safety_report", "confirm_safety_report", "delete_safety_report"} and not self.report_id:
-            raise ValueError("report_id is required")
-        if self.tool_name == "update_safety_report" and not any((self.report_summary, self.report_risk_analysis, self.report_remediation)):
-            raise ValueError("at least one report content field is required")
-        if self.tool_name in {"get_training_task", "get_training_statistics", "update_training_task", "publish_training_task", "delete_training_task"} and not self.training_id:
-            raise ValueError("training_id is required")
-        if self.tool_name == "create_training_task" and not (self.report_id and self.training_title and self.training_target_count):
-            raise ValueError("report_id, training_title, training_target_count are required")
-        if self.tool_name == "update_training_task" and not any((self.training_title, self.training_target_count, self.training_pass_score is not None, self.training_material, self.training_questions)):
-            raise ValueError("at least one training change is required")
+        validator = _TOOL_RULES.get(self.tool_name)
+        if validator is not None:
+            validator(self)
         return self
+
+
+def _require_camera_id(d: ToolDecision) -> None:
+    if not d.camera_id:
+        raise ValueError("camera_id is required for get_camera_status")
+
+
+def _require_monitoring_camera_id(d: ToolDecision) -> None:
+    if not d.camera_id:
+        raise ValueError("camera_id is required for monitoring control")
+
+
+def _require_weather_location(d: ToolDecision) -> None:
+    if not d.weather_location:
+        raise ValueError("weather_location is required for get_current_weather")
+
+
+def _require_knowledge_query(d: ToolDecision) -> None:
+    if not d.knowledge_query:
+        raise ValueError("knowledge_query is required for search_knowledge")
+
+
+def _validate_create_rectification_task(d: ToolDecision) -> None:
+    if not all((d.violation_event_uuid, d.task_title, d.task_owner, d.task_due_at_utc)):
+        raise ValueError("violation_event_uuid, task_title, task_owner and task_due_at_utc are required for create_rectification_task")
+
+
+def _validate_update_rectification_task(d: ToolDecision) -> None:
+    if not d.task_id:
+        raise ValueError("task_id is required for update_rectification_task")
+    if not any((d.task_owner, d.task_due_at_utc, d.task_status, d.task_note)):
+        raise ValueError("at least one task update is required")
+
+
+def _require_selection_action(d: ToolDecision) -> None:
+    if d.selection_action is None:
+        raise ValueError("selection_action is required for list_monitoring_targets")
+
+
+def _validate_create_safety_report(d: ToolDecision) -> None:
+    if bool(d.report_period_start_utc) != bool(d.report_period_end_utc):
+        raise ValueError("report start and end must be provided together")
+    if d.report_period_start_utc and d.report_period_end_utc and d.report_period_end_utc <= d.report_period_start_utc:
+        raise ValueError("report end must be after start")
+
+
+def _require_report_id(d: ToolDecision) -> None:
+    if not d.report_id:
+        raise ValueError("report_id is required")
+
+
+def _validate_update_safety_report(d: ToolDecision) -> None:
+    _require_report_id(d)
+    if not any((d.report_summary, d.report_risk_analysis, d.report_remediation)):
+        raise ValueError("at least one report content field is required")
+
+
+def _require_training_id(d: ToolDecision) -> None:
+    if not d.training_id:
+        raise ValueError("training_id is required")
+
+
+def _validate_create_training_task(d: ToolDecision) -> None:
+    if not (d.report_id and d.training_title and d.training_target_count):
+        raise ValueError("report_id, training_title, training_target_count are required")
+
+
+def _validate_update_training_task(d: ToolDecision) -> None:
+    _require_training_id(d)
+    if not any((d.training_title, d.training_target_count, d.training_pass_score is not None, d.training_material, d.training_questions)):
+        raise ValueError("at least one training change is required")
+
+
+_TOOL_RULES: dict[ToolName, Any] = {
+    "get_camera_status": _require_camera_id,
+    "get_current_weather": _require_weather_location,
+    "search_knowledge": _require_knowledge_query,
+    "create_rectification_task": _validate_create_rectification_task,
+    "update_rectification_task": _validate_update_rectification_task,
+    "start_monitoring": _require_monitoring_camera_id,
+    "stop_monitoring": _require_monitoring_camera_id,
+    "list_monitoring_targets": _require_selection_action,
+    "create_safety_report": _validate_create_safety_report,
+    "get_safety_report": _require_report_id,
+    "update_safety_report": _validate_update_safety_report,
+    "confirm_safety_report": _require_report_id,
+    "delete_safety_report": _require_report_id,
+    "get_training_task": _require_training_id,
+    "get_training_statistics": _require_training_id,
+    "create_training_task": _validate_create_training_task,
+    "update_training_task": _validate_update_training_task,
+    "publish_training_task": _require_training_id,
+    "delete_training_task": _require_training_id,
+}
 
 
 class ToolTraceItem(BaseModel):

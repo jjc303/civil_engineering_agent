@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
+from agent.contracts.chat import ToolDecision
+from agent.contracts.query import ViolationQuery
 from agent.graph.state import SafetyGraphState
 from agent.repositories.violations import ViolationRepository
-from agent.tools.safety_tools import register_safety_tools
+from agent.tools.base import ToolContext
+from agent.tools.catalog import DEFAULT_TOOL_CATALOG
 
 
 def build_safety_graph(repository: ViolationRepository):
     """Compile the deterministic v0.1 graph without an LLM provider dependency."""
-    tools = register_safety_tools(repository)
+    ctx = ToolContext(repository=repository)
 
     def select_tool(state: SafetyGraphState) -> dict:
         mapping = {
@@ -23,11 +26,16 @@ def build_safety_graph(repository: ViolationRepository):
         return {"tool_name": mapping[operation]}
 
     def execute_tool(state: SafetyGraphState) -> dict:
-        if state["tool_name"] == "get_camera_status":
-            result = tools.invoke(state["tool_name"], camera_id=state.get("camera_id"))
-        else:
-            result = tools.invoke(state["tool_name"], query=state.get("query", {}))
-        return {"result": result}
+        tool_name = state["tool_name"]
+        tool = DEFAULT_TOOL_CATALOG.get(tool_name)
+        decision = ToolDecision.model_construct(
+            tool_name=tool_name,
+            camera_id=state.get("camera_id"),
+            query=ViolationQuery.model_validate(state.get("query", {})),
+            purpose="deterministic safety graph query",
+        )
+        outcome = tool.execute(decision, ctx)
+        return {"result": outcome.data}
 
     def format_response(state: SafetyGraphState) -> dict:
         payload = state["result"]
