@@ -21,6 +21,7 @@ from agent.contracts.knowledge import (
 from agent.db.base import Database
 from agent.db.models import KnowledgeAuditModel, KnowledgeDocumentModel, KnowledgeDocumentVersionModel, KnowledgeIndexJobModel
 from agent.llm.protocol import ChatModelPort
+from agent.prompts import load_prompt
 from agent.rag.chroma_adapter import ChromaKnowledgeRetriever
 from agent.rag.manager import RagManager
 
@@ -240,7 +241,7 @@ class KnowledgeService:
         sample_indices = sorted(set([*range(min(4, count)), *range(max(0, count // 2 - 2), min(count, count // 2 + 2)), *range(max(0, count - 4), count)]))
         excerpts = [{"section": chunks[index].page_or_section, "text": chunks[index].text[:1000]} for index in sample_indices]
         payload = self.summary_model.generate_structured(
-            "生成文档摘要，仅输出 JSON 对象 {\"summary\": \"...\"}。根据提供的原文片段，用 80 至 180 个汉字概括文档主题、主要风险或规范适用内容。不得把推测写成事故事实，不得编造标准名称、编号、条款或日期。规范有效性为 UNKNOWN 时不得称其为现行规范。片段不足时说明原文未提供的内容。",
+            load_prompt("document_summary"),
             {"title": title, "document_type": document_type, "validity_status": validity_status, "excerpts": excerpts},
         )
         summary = str(payload.get("summary") or "").strip()

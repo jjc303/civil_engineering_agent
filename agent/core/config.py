@@ -140,7 +140,8 @@ class Settings:
             raise RuntimeError("INTERNAL_PERCEPTION_TOKEN must be configured")
         if not 1 <= self.tool_max_calls <= 2:
             raise RuntimeError("AGENT_TOOL_MAX_CALLS must be between 1 and 2")
-        if self.llm_provider not in {"fake", "deepseek"}:
+        from agent.llm.factory import supported_providers
+        if self.llm_provider not in supported_providers():
             raise RuntimeError("AGENT_LLM_PROVIDER must be fake or deepseek")
         if self.llm_provider == "deepseek" and not self.llm_api_key:
             raise RuntimeError("AGENT_LLM_API_KEY must be configured for DeepSeek")

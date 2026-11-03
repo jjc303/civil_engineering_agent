@@ -19,10 +19,7 @@ def test_decision_prompt_contains_core_constraints() -> None:
 
 
 def test_decision_prompt_mentions_tool_decision_fields() -> None:
-    # Once P3 auto-generates the field whitelist from ToolDecision, all fields
-    # (including notification_title & notification_content) will be present.
-    core_fields = set(ToolDecision.model_fields) - {"notification_title", "notification_content"}
-    for field_name in core_fields:
+    for field_name in ToolDecision.model_fields:
         assert field_name in _DECISION_PROMPT, f"missing field {field_name} in _DECISION_PROMPT"
 
 

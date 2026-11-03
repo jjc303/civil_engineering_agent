@@ -20,6 +20,7 @@ from agent.contracts.learning import ReportContent, ReportCreate, ReportResponse
 from agent.db.base import Database
 from agent.db.models import KnowledgeDocumentModel, SafetyReportModel, TrainingSubmissionModel, TrainingTaskModel, ViolationEventModel
 from agent.llm.protocol import ChatModelPort
+from agent.prompts import load_prompt
 from agent.services.knowledge_service import KnowledgeService
 
 logger = logging.getLogger(__name__)
@@ -107,7 +108,7 @@ class LearningService:
         if self.knowledge.rag_manager and by_type:
             fragments, citations = self.knowledge.search_standards("施工安全 " + " ".join(_RISK_LABELS.get(code, code) for code in by_type), min(4, self.knowledge.top_k_max))
         evidence = [{"content": item["content"][:1200], "title": item["title"], "section": item["page_or_section"], "validity_status": item["validity_status"]} for item in fragments]
-        instruction = "输出 summary、risk_analysis、remediation 三个非空字符串。用自然中文，不要输出系统枚举代码。所有数量只能来自统计数据，重复出现次数不代表重复违规人数，也不能据此断言管理措施失效。明确说明 data_source；如果是视频回放演示，不得将循环播放产生的告警推断为真实现场风险恶化。引用规范只允许使用给定片段的标题与章节。引用名称和条款编号必须原样摘录，不要改变中文或阿拉伯数字写法；不能确认具体条款时仅引用文档标题和给定页码。有效性为 UNKNOWN 的资料不得称为现行规范；无依据时明确说明。"
+        instruction = load_prompt("report_generation")
         generation_context = {"statistics": statistics, "standards": evidence, "data_source": os.getenv("REPORT_SOURCE_LABEL", "现场监控记录")}
         for attempt in range(2):
             generated = self.model.generate_structured(instruction, generation_context)
@@ -207,7 +208,7 @@ class LearningService:
             try:
                 standards, _ = self.knowledge.search_standards(" ".join(risk["label"] for risk in main_risks), min(3, self.knowledge.top_k_max)) if self.knowledge.rag_manager else ([], [])
                 payload = self.model.generate_structured(
-                    "根据本周风险和给定案例、规范片段，输出 advice 字符串：给管理者两到三条具体、可执行的安全教育建议。优先说明应培训的操作和检查动作；不得写具体事件次数、人数，不得虚构人员重复违规、事故经过或规范条款。若资料不足，应明确指出可核对的范围。",
+                    load_prompt("weekly_advice"),
                     {"period_start": week_start.astimezone(self.display_timezone).date().isoformat(),
                      "risks": [{"code": risk["code"], "label": risk["label"]} for risk in main_risks],
                      "cases": [{"title": row["title"], "summary": row["summary"]} for row in recommendations[:3]],
@@ -321,7 +322,7 @@ class LearningService:
         if not chunks: raise ValueError("document has no indexed content")
         selected = chunks[:30]
         standard_fragments, standard_citations = (self.knowledge.search_standards(" ".join([detail.title, *detail.risk_tags]), min(4, self.knowledge.top_k_max)) if self.knowledge.rag_manager else ([], []))
-        payload = self.model.generate_structured("根据事故报告原文输出 process、causes、risks、prevention 四个字符串。事故经过与原因只能来自事故报告；防范措施可参考给定规范。有效性为 UNKNOWN 的规范不得称为现行规范；不明事实写明原文未说明。", {"title": detail.title, "accident_chunks": [{"text": c.text, "section": c.page_or_section} for c in selected], "standards": standard_fragments})
+        payload = self.model.generate_structured(load_prompt("case_analysis"), {"title": detail.title, "accident_chunks": [{"text": c.text, "section": c.page_or_section} for c in selected], "standards": standard_fragments})
         _guard_standard_references([str(payload.get(key, "")) for key in ("process", "causes", "risks", "prevention")], [text for item in standard_fragments for text in (item["title"], item["content"], item["page_or_section"])], [detail.title])
         return {"document_id": document_id, "title": detail.title, **{key: str(payload.get(key, "原文未说明。")) for key in ("process", "causes", "risks", "prevention")}, "citations": [_citation(c) for c in selected] + [item.model_dump(mode="json") for item in standard_citations]}
 
@@ -354,14 +355,7 @@ class LearningService:
                 selected_ids.add(citation.document_id)
         report_content = report_snapshot["content"]
         generation_context = {"report": report_content, "documents": selected, "question_count": request.question_count}
-        instruction = (
-            "你是面向施工现场作业人员的安全培训出题人。仅输出 JSON 对象，含 material 字符串与 questions 数组。"
-            f"恰好生成 {request.question_count} 道互不重复的四选一单选题，每题含 stem、options（恰好四个非空且不同的选项）、answer（0—3 的正确选项索引）、evidence（从所给报告文字或文档片段摘录的出题依据）。"
-            "学习材料和题目只依据报告的风险分析、整改建议及给定事故案例和规范原文；优先从事故案例和规范原文提取考点。报告统计次数仅用于确定培训重点，禁止考查次数、人数、比例或表格数字。"
-            "每题设置一个具体施工情境，考查风险识别、正确处置、预防措施或事故教训；正确答案应能从 evidence 直接推得，另外三个选项应是现场可能出现但不正确的做法。"
-            "用自然、专业的中文表述，禁止出现 NO_HELMET、CRITICAL 等系统枚举代码，禁止只换数字或选项顺序重复出题。"
-            "不要编造事故事实、规范名称或条款；有效性 UNKNOWN 的规范不能称为现行。若资料不足以支撑指定题数，应说明依据不足，不要凑题。"
-        )
+        instruction = load_prompt("training_generation", question_count=request.question_count)
         generated = self.model.generate_structured(instruction, generation_context)
         material = str(generated.get("material", "")).strip()
         questions = [TrainingQuestion.model_validate(item) for item in generated.get("questions", [])]
