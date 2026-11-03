@@ -1,0 +1,70 @@
+{
+  "model_calls": [
+    {
+      "kind": "decide",
+      "memory_context": "",
+      "previous": []
+    },
+    {
+      "kind": "decide",
+      "memory_context": "",
+      "previous": [
+        {
+          "data": [
+            {
+              "event_count": 3,
+              "pdf_url": "/api/v1/learning/reports/r/pdf",
+              "period_end_utc": "2026-09-27T12:30:00+00:00",
+              "period_start_utc": "2026-09-25T12:30:00+00:00",
+              "report_id": "22222222-2222-4222-8222-222222222222",
+              "status": "CONFIRMED",
+              "summary": "本周违规3起"
+            }
+          ],
+          "success": true,
+          "tool_name": "list_safety_reports"
+        }
+      ]
+    }
+  ],
+  "response": {
+    "answer": "当前查询到 1 份安全报告。可在下方预览摘要、查看详情或打开 PDF。",
+    "degraded": false,
+    "error_code": null,
+    "evidence": [],
+    "guided_selection": null,
+    "knowledge_citations": [],
+    "pending_action": null,
+    "report_count": 1,
+    "report_previews": [
+      {
+        "event_count": 3,
+        "pdf_url": "/api/v1/learning/reports/r/pdf",
+        "period_end_utc": "2026-09-27T12:30:00Z",
+        "period_start_utc": "2026-09-25T12:30:00Z",
+        "report_id": "22222222-2222-4222-8222-222222222222",
+        "status": "CONFIRMED",
+        "summary": "本周违规3起"
+      }
+    ],
+    "tool_trace": [
+      {
+        "purpose": "p",
+        "success": true,
+        "tool_name": "list_safety_reports"
+      }
+    ],
+    "training_count": 0,
+    "training_previews": []
+  },
+  "service_calls": [
+    [
+      "knowledge.search_standards",
+      "问题",
+      4
+    ],
+    [
+      "learning.list_reports"
+    ]
+  ]
+}

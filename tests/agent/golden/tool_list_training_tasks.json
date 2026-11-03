@@ -1,0 +1,72 @@
+{
+  "model_calls": [
+    {
+      "kind": "decide",
+      "memory_context": "",
+      "previous": []
+    },
+    {
+      "kind": "decide",
+      "memory_context": "",
+      "previous": [
+        {
+          "data": [
+            {
+              "material_preview": "学习材料学习材料学习材料学习材料学习材料",
+              "public_url": null,
+              "question_count": 1,
+              "report_id": "22222222-2222-4222-8222-222222222222",
+              "status": "DRAFT",
+              "target_count": 10,
+              "title": "安全帽培训",
+              "training_id": "33333333-3333-4333-8333-333333333333"
+            }
+          ],
+          "success": true,
+          "tool_name": "list_training_tasks"
+        }
+      ]
+    }
+  ],
+  "response": {
+    "answer": "当前查询到 1 项培训任务。可在下方预览内容、查看详情或打开学习页。",
+    "degraded": false,
+    "error_code": null,
+    "evidence": [],
+    "guided_selection": null,
+    "knowledge_citations": [],
+    "pending_action": null,
+    "report_count": 0,
+    "report_previews": [],
+    "tool_trace": [
+      {
+        "purpose": "p",
+        "success": true,
+        "tool_name": "list_training_tasks"
+      }
+    ],
+    "training_count": 1,
+    "training_previews": [
+      {
+        "material_preview": "学习材料学习材料学习材料学习材料学习材料",
+        "public_url": null,
+        "question_count": 1,
+        "report_id": "22222222-2222-4222-8222-222222222222",
+        "status": "DRAFT",
+        "target_count": 10,
+        "title": "安全帽培训",
+        "training_id": "33333333-3333-4333-8333-333333333333"
+      }
+    ]
+  },
+  "service_calls": [
+    [
+      "knowledge.search_standards",
+      "问题",
+      4
+    ],
+    [
+      "learning.list_training"
+    ]
+  ]
+}

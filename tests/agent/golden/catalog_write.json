@@ -1,0 +1,62 @@
+[
+  {
+    "description": "查询已入库的违规事件明细。",
+    "name": "query_violations",
+    "parameters": "query: ViolationQuery"
+  },
+  {
+    "description": "汇总已入库的违规数量、类型和严重级别。",
+    "name": "get_violation_statistics",
+    "parameters": "query: ViolationQuery"
+  },
+  {
+    "description": "查询一个明确 camera_id 的最新状态。",
+    "name": "get_camera_status",
+    "parameters": "camera_id: string"
+  },
+  {
+    "description": "列出所有已知摄像头的最新状态。",
+    "name": "get_all_camera_statuses",
+    "parameters": "none"
+  },
+  {
+    "description": "汇总在线摄像头上报的活跃作业人数，不进行跨摄像头人员去重。",
+    "name": "get_workforce_summary",
+    "parameters": "none"
+  },
+  {
+    "description": "查询一个明确地点的当前天气。",
+    "name": "get_current_weather",
+    "parameters": "location: string"
+  },
+  {
+    "description": "生成待确认的整改任务；必须给出违规事件 ID、标题、负责人和 UTC 截止时间。",
+    "name": "create_rectification_task",
+    "parameters": "violation_event_uuid, task_title, task_description, task_owner, task_due_at_utc"
+  },
+  {
+    "description": "生成待确认的整改任务更新；完成任务会把关联违规标为已解决。",
+    "name": "update_rectification_task",
+    "parameters": "task_id, task_owner, task_due_at_utc, task_status, task_note"
+  },
+  {
+    "description": "生成待确认的摄像头监控启动操作。",
+    "name": "start_monitoring",
+    "parameters": "camera_id"
+  },
+  {
+    "description": "生成待确认的摄像头监控停止操作。",
+    "name": "stop_monitoring",
+    "parameters": "camera_id"
+  },
+  {
+    "description": "只读列出可创建整改任务的活动违规，供页面选择目标。",
+    "name": "list_rectification_targets",
+    "parameters": "无"
+  },
+  {
+    "description": "只读列出可启停监控的已登记摄像头，供页面选择目标。",
+    "name": "list_monitoring_targets",
+    "parameters": "selection_action: start | stop"
+  }
+]

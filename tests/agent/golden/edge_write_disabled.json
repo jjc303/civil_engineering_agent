@@ -1,0 +1,30 @@
+{
+  "model_calls": [
+    {
+      "kind": "decide",
+      "memory_context": "",
+      "previous": []
+    }
+  ],
+  "response": {
+    "answer": "安全数据服务暂时不可用，请稍后重试。",
+    "degraded": true,
+    "error_code": "TOOL_EXECUTION_FAILED",
+    "evidence": [],
+    "guided_selection": null,
+    "knowledge_citations": [],
+    "pending_action": null,
+    "report_count": 0,
+    "report_previews": [],
+    "tool_trace": [
+      {
+        "purpose": "p",
+        "success": false,
+        "tool_name": "start_monitoring"
+      }
+    ],
+    "training_count": 0,
+    "training_previews": []
+  },
+  "service_calls": []
+}
