@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class ChatService:
-    def __init__(self, database: Database, model: ChatModelPort, max_tool_calls: int = 2, memory_enabled: bool = True, memory_ttl_hours: int = 24, memory_recent_turns: int = 6, knowledge_service: KnowledgeService | None = None, write_action_service: AgentWriteActionService | None = None, standards_top_k: int = 4, learning_service: LearningService | None = None):
+    def __init__(self, database: Database, model: ChatModelPort, max_tool_calls: int = 2, memory_enabled: bool = True, memory_ttl_hours: int = 24, memory_recent_turns: int = 6, knowledge_service: KnowledgeService | None = None, write_action_service: AgentWriteActionService | None = None, standards_top_k: int = 4, learning_service: LearningService | None = None, notification_service: Any = None):
         self.database = database
         self.model = model
         self.max_tool_calls = max_tool_calls
@@ -26,6 +26,7 @@ class ChatService:
         self.write_action_service = write_action_service
         self.standards_top_k = standards_top_k
         self.learning_service = learning_service
+        self.notification_service = notification_service
 
     def answer(self, request: ChatRequest) -> ChatResponse:
         request_id = str(uuid4())
@@ -49,7 +50,7 @@ class ChatService:
                     logger.exception("Automatic standards retrieval failed")
                     standards_context = "规范库检索暂时不可用。不得自行补充标准名称、编号或条款。"
                     standards_error = "STANDARDS_RETRIEVAL_FAILED"
-            graph = build_chat_graph(ViolationRepository(session), self.model, self.max_tool_calls, self.knowledge_service, self.write_action_service, self.learning_service)
+            graph = build_chat_graph(ViolationRepository(session), self.model, self.max_tool_calls, self.knowledge_service, self.write_action_service, self.learning_service, self.notification_service)
             output = graph.invoke({
                 "request_id": request_id,
                 "question": request.question,

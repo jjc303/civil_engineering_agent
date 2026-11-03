@@ -48,10 +48,11 @@ class AgentWriteActionService:
     no camera source URI, CV-node token, or other credential material.
     """
 
-    def __init__(self, database: Database, camera_management: CameraManagementService | None, learning_service: LearningService | None = None) -> None:
+    def __init__(self, database: Database, camera_management: CameraManagementService | None, learning_service: LearningService | None = None, notification_service: Any = None) -> None:
         self.database = database
         self.camera_management = camera_management
         self.learning_service = learning_service
+        self.notification_service = notification_service
 
     def propose(self, conversation_id: str | None, decision: ToolDecision) -> PendingActionResponse:
         if not conversation_id:
@@ -293,6 +294,8 @@ class AgentWriteActionService:
 
     def _execute_local(self, session: Any, action: AgentPendingActionModel) -> ActionExecutionResponse:
         payload = dict(action.payload_safe_json or {})
+        notify_kind: str | None = None
+        notify_payload: dict[str, Any] = {}
         if action.action_type == "create_rectification_task":
             now = _utc_now()
             task = RectificationTaskModel(
@@ -305,6 +308,15 @@ class AgentWriteActionService:
             session.flush()
             self._task_audit(session, task.task_id, "CREATED", {"event_uuid": task.event_uuid, "owner": task.owner})
             result = {"task_id": task.task_id, "event_uuid": task.event_uuid, "status": task.status}
+            notify_kind = "created"
+            notify_payload = {
+                "task_id": task.task_id,
+                "event_uuid": task.event_uuid,
+                "title": task.title,
+                "description": task.description,
+                "owner": task.owner,
+                "due_at_utc": task.due_at_utc,
+            }
         elif action.action_type == "update_rectification_task":
             task = session.get(RectificationTaskModel, payload["task_id"])
             if not task:
@@ -320,6 +332,15 @@ class AgentWriteActionService:
                 if violation:
                     violation.status = "RESOLVED"
                     violation.resolved_at_utc = _utc_now()
+                notify_kind = "completed"
+                notify_payload = {
+                    "task_id": task.task_id,
+                    "event_uuid": task.event_uuid,
+                    "title": task.title,
+                    "owner": task.owner,
+                    "note": payload.get("note"),
+                    "completed_at_utc": task.completed_at_utc,
+                }
             self._task_audit(session, task.task_id, "UPDATED", {key: value for key, value in payload.items() if key != "task_id"})
             result = {"task_id": task.task_id, "event_uuid": task.event_uuid, "status": task.status, "violation_resolved": payload.get("status") == "COMPLETED"}
         else:
@@ -328,6 +349,11 @@ class AgentWriteActionService:
         action.executed_at_utc = _utc_now()
         action.result_safe_json = result
         self._audit(session, action.confirmation_id, "EXECUTED", result)
+        if self.notification_service is not None:
+            if notify_kind == "created":
+                self.notification_service.notify_rectification_created(notify_payload)
+            elif notify_kind == "completed":
+                self.notification_service.notify_rectification_completed(notify_payload)
         return self._execution_response(action)
 
     def _load_bound_action(self, session: Any, confirmation_id: str, conversation_id: str) -> AgentPendingActionModel:

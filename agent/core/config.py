@@ -62,6 +62,13 @@ class Settings:
     rag_top_k_max: int = 8
     rag_max_upload_bytes: int = 20 * 1024 * 1024
     rag_allowed_extensions: str = ".pdf,.docx,.md,.txt"
+    feishu_notify_enabled: bool = True
+    feishu_webhook_url: str = ""
+    feishu_webhook_secret: str = ""
+    feishu_web_base_url: str = "http://127.0.0.1:5173"
+    feishu_alert_cooldown_seconds: int = 60
+    feishu_alert_min_severity: str = "WARNING"
+    feishu_timeout_seconds: float = 5.0
     bind_host: str = ""
     port: int = 0
     cors_origins: tuple[str, ...] = ()
@@ -109,6 +116,13 @@ class Settings:
             rag_top_k_max=int(os.getenv("AGENT_RAG_TOP_K_MAX", "8")),
             rag_max_upload_bytes=int(os.getenv("AGENT_RAG_MAX_UPLOAD_BYTES", str(20 * 1024 * 1024))),
             rag_allowed_extensions=os.getenv("AGENT_RAG_ALLOWED_EXTENSIONS", ".pdf,.docx,.md,.txt"),
+            feishu_notify_enabled=os.getenv("FEISHU_NOTIFY_ENABLED", "true").lower() == "true",
+            feishu_webhook_url=os.getenv("FEISHU_WEBHOOK_URL", "").strip(),
+            feishu_webhook_secret=os.getenv("FEISHU_WEBHOOK_SECRET", "").strip(),
+            feishu_web_base_url=os.getenv("FEISHU_WEB_BASE_URL", os.getenv("LEARNING_PUBLIC_BASE_URL", "http://127.0.0.1:5173")).strip().rstrip("/"),
+            feishu_alert_cooldown_seconds=int(os.getenv("FEISHU_ALERT_COOLDOWN_SECONDS", "60")),
+            feishu_alert_min_severity=os.getenv("FEISHU_ALERT_MIN_SEVERITY", "WARNING").upper().strip(),
+            feishu_timeout_seconds=float(os.getenv("FEISHU_TIMEOUT_SECONDS", "5.0")),
             bind_host=_required("AGENT_BIND_HOST"),
             port=int(_required("AGENT_PORT")),
             cors_origins=tuple(origin.strip() for origin in _required("AGENT_CORS_ORIGINS").split(",") if origin.strip()),

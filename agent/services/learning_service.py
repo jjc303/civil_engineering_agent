@@ -75,7 +75,7 @@ table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #d8
 
 
 class LearningService:
-    def __init__(self, database: Database, knowledge: KnowledgeService, model: ChatModelPort, report_directory: str, public_base_url: str, display_timezone: str = "Asia/Shanghai", insights_ttl_seconds: int = 600, app_base_path: str = "") -> None:
+    def __init__(self, database: Database, knowledge: KnowledgeService, model: ChatModelPort, report_directory: str, public_base_url: str, display_timezone: str = "Asia/Shanghai", insights_ttl_seconds: int = 600, app_base_path: str = "", notification_service: Any = None) -> None:
         self.database = database
         self.knowledge = knowledge
         self.model = model
@@ -84,6 +84,7 @@ class LearningService:
         self.app_base_path = app_base_path.rstrip("/")
         self.display_timezone = ZoneInfo(display_timezone)
         self.insights_ttl_seconds = insights_ttl_seconds
+        self.notification_service = notification_service
         self._insights_lock = Lock()
         self._insights_cache: tuple[tuple, float, dict] | None = None
 
@@ -272,7 +273,10 @@ class LearningService:
             row.pdf_path = f"{row.report_id}.pdf"
             row.status, row.confirmed_at_utc = "CONFIRMED", _now()
             session.flush()
-            return self._report(row)
+            report = self._report(row)
+        if self.notification_service is not None:
+            self.notification_service.notify_report_confirmed(report)
+        return report
 
     def pdf_path(self, report_id: str) -> Path:
         with self.database.session() as session:
@@ -406,7 +410,10 @@ class LearningService:
             row.access_token = secrets.token_urlsafe(24)
             row.status, row.published_at_utc = "PUBLISHED", _now()
             session.flush()
-            return self._task(row)
+            training = self._task(row)
+        if self.notification_service is not None:
+            self.notification_service.notify_training_published(training)
+        return training
 
     def _task(self, row: TrainingTaskModel) -> TrainingResponse:
         url = f"{self.public_base_url}/learn/{row.access_token}" if row.access_token and self.public_base_url else None

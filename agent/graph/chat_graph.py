@@ -24,7 +24,7 @@ from agent.services.learning_service import LearningService
 logger = logging.getLogger(__name__)
 
 
-def build_chat_graph(repository: ViolationRepository, model: ChatModelPort, max_tool_calls: int = 2, knowledge_service: KnowledgeService | None = None, write_action_service: AgentWriteActionService | None = None, learning_service: LearningService | None = None):
+def build_chat_graph(repository: ViolationRepository, model: ChatModelPort, max_tool_calls: int = 2, knowledge_service: KnowledgeService | None = None, write_action_service: AgentWriteActionService | None = None, learning_service: LearningService | None = None, notification_service: object | None = None):
     tools = register_safety_tools(repository)
     if learning_service:
         register_learning_tools(tools, learning_service)
@@ -38,6 +38,8 @@ def build_chat_graph(repository: ViolationRepository, model: ChatModelPort, max_
             if knowledge_service:
                 catalog.append({"name": "search_knowledge", "description": "按需检索当前有效的事故报告资料；工程规范会自动检索，无需调用此工具。", "parameters": "knowledge_query: string, top_k: integer"})
                 catalog.append({"name": "list_standard_catalog", "description": "列出规范目录中的文档及其索引状态、经人工标注的有效性；仅当用户询问库内有哪些规范或标准时使用。", "parameters": "无"})
+            if getattr(notification_service, "is_configured", False):
+                catalog.append({"name": "send_feishu_notification", "description": "向施工安全管理飞书群发送安全通报或风险简报卡片；当用户明确要求推送/通知飞书群时调用。", "parameters": "可选 notification_title, notification_content"})
             if write_action_service:
                 catalog.extend([
                     {"name": "create_rectification_task", "description": "生成待确认的整改任务；必须给出违规事件 ID、标题、负责人和 UTC 截止时间。", "parameters": "violation_event_uuid, task_title, task_description, task_owner, task_due_at_utc"},
@@ -150,6 +152,31 @@ def build_chat_graph(repository: ViolationRepository, model: ChatModelPort, max_
                 return {
                     "decision": None,
                     "pending_action": pending,
+                    "knowledge_citations": [],
+                    "tool_results": [*state.get("tool_results", []), result],
+                    "tool_trace": [*state.get("tool_trace", []), trace],
+                }
+            if decision.tool_name == "send_feishu_notification":
+                if not getattr(notification_service, "is_configured", False):
+                    raise RuntimeError("feishu notification service is not configured")
+                stats = repository.get_statistics(ViolationQuery(limit=20))
+                title = (decision.notification_title or "施工现场安全态势通报").strip()
+                custom_body = (decision.notification_content or "").strip()
+                summary_md = (
+                    f"{custom_body}\n\n" if custom_body else ""
+                ) + (
+                    f"**📊 现场实时统计快照**：\n"
+                    f"- 累计记录违规事件：**{stats.total_violations}** 起\n"
+                    f"- 严重告警 (CRITICAL)：**{stats.by_severity.get('CRITICAL', 0)}** 起\n"
+                    f"- 风险预警 (WARNING)：**{stats.by_severity.get('WARNING', 0)}** 起\n"
+                    f"- 平均持续时长：**{stats.average_duration_seconds:.1f}** 秒"
+                )
+                send_res = notification_service.send_custom_briefing(title, summary_md, sync=True)  # type: ignore[attr-defined]
+                result = ToolResult(tool_name=decision.tool_name, data=send_res)
+                trace = ToolTraceItem(tool_name=decision.tool_name, success=bool(send_res and send_res.get("ok")), purpose=decision.purpose, duration_ms=int((perf_counter() - started_at) * 1000))
+                return {
+                    "decision": None,
+                    "answer": f"已将《{title}》互动卡片推送至飞书安全管理群。" if (send_res and send_res.get("ok")) else "飞书群消息推送未完成，请检查 Webhook 配置或网络连接。",
                     "knowledge_citations": [],
                     "tool_results": [*state.get("tool_results", []), result],
                     "tool_trace": [*state.get("tool_trace", []), trace],

@@ -7,6 +7,7 @@ from agent.contracts.event_v1 import CameraStatusReportV1, EventUpsertResponse, 
 from agent.contracts.query import CameraStatusResponse, RiskHeatmapResponse, SafetyQueryRequest, SafetyQueryResponse, ViolationPageResponse, ViolationQuery, ViolationRecord, ViolationStatisticsResponse
 from agent.db.base import Database
 from agent.db.models import CameraStatusModel, ManagedCameraModel
+from agent.notifications import FeishuNotificationService
 from agent.repositories.camera_configs import CameraConfigRepository
 from agent.repositories.violations import ViolationRepository
 
@@ -14,18 +15,22 @@ from agent.repositories.violations import ViolationRepository
 class PerceptionService:
     """Application service: transaction boundary for the Agent perception API."""
 
-    def __init__(self, database: Database):
+    def __init__(self, database: Database, notification_service: FeishuNotificationService | None = None):
         self.database = database
+        self.notification_service = notification_service
 
     def upsert_event(self, event: SafetyViolationEventV1) -> EventUpsertResponse:
         with self.database.session() as session:
             record, operation = ViolationRepository(session).upsert_event(event)
-            return EventUpsertResponse(
+            response = EventUpsertResponse(
                 event_uuid=record.event_uuid,
                 operation=operation,
                 status=record.status,
                 server_received_at_utc=datetime.now(timezone.utc),
             )
+        if self.notification_service is not None and operation == "CREATED" and record.status == "ACTIVE":
+            self.notification_service.notify_violation_event(record)
+        return response
 
     def upsert_camera_status(self, report: CameraStatusReportV1) -> CameraStatusResponse:
         with self.database.session() as session:

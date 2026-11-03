@@ -19,6 +19,7 @@ ToolName = Literal[
     "list_training_tasks", "get_training_task", "get_training_statistics", "prepare_training_task",
     "create_safety_report", "update_safety_report", "confirm_safety_report", "delete_safety_report",
     "create_training_task", "update_training_task", "publish_training_task", "delete_training_task",
+    "send_feishu_notification",
 ]
 
 
@@ -67,6 +68,8 @@ class ToolDecision(BaseModel):
     training_pass_score: int | None = Field(default=None, ge=0, le=100)
     training_material: str | None = Field(default=None, min_length=1, max_length=30000)
     training_questions: list[TrainingQuestion] | None = Field(default=None, min_length=1, max_length=20)
+    notification_title: str | None = Field(default=None, min_length=1, max_length=128)
+    notification_content: str | None = Field(default=None, min_length=1, max_length=4000)
     purpose: str = Field(min_length=1, max_length=256)
 
     @model_validator(mode="after")

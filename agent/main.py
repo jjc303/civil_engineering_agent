@@ -28,6 +28,7 @@ from agent.services.agent_write_actions import AgentWriteActionService
 from agent.services.rectification_task_service import RectificationTaskService
 from agent.api.rectification_tasks import router as rectification_task_router
 from agent.api.learning import router as learning_router, public_router as learning_public_router
+from agent.notifications import FeishuNotificationService
 from agent.services.learning_service import LearningService
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
+            if getattr(app.state, "notification_service", None) is not None:
+                app.state.notification_service.shutdown(wait=False)
 
     app = FastAPI(title="Civil Engineering Safety Agent", version="0.1.0", lifespan=lifespan)
     media_root = Path(settings.media_root)
@@ -76,8 +79,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.mount("/media", StaticFiles(directory=str(media_root)), name="media")
     app.state.settings = settings
     app.state.database = database
+    notification_service = FeishuNotificationService(
+        settings.feishu_webhook_url,
+        webhook_secret=settings.feishu_webhook_secret,
+        enabled=settings.feishu_notify_enabled,
+        web_base_url=settings.feishu_web_base_url or settings.learning_public_base_url or "http://127.0.0.1:5173",
+        timezone_name=settings.learning_timezone,
+        cooldown_seconds=settings.feishu_alert_cooldown_seconds,
+        min_severity=settings.feishu_alert_min_severity,
+        timeout_seconds=settings.feishu_timeout_seconds,
+    )
+    app.state.notification_service = notification_service
     app.include_router(chat_router)
-    app.state.perception_service = PerceptionService(database)
+    app.state.perception_service = PerceptionService(database, notification_service=notification_service)
     app.state.camera_management_service = CameraManagementService(database, settings.credential_encryption_key, settings.cv_control_timeout_seconds)
     app.include_router(internal_router)
     retriever = ChromaKnowledgeRetriever(
@@ -97,10 +111,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     model = create_chat_model(settings)
     app.state.knowledge_service.set_summary_model(model)
-    app.state.learning_service = LearningService(database, app.state.knowledge_service, model, settings.learning_report_directory, settings.learning_public_base_url, settings.learning_timezone, settings.learning_insights_ttl_seconds, app_base_path=settings.app_base_path)
-    app.state.agent_write_action_service = AgentWriteActionService(database, app.state.camera_management_service, app.state.learning_service)
+    app.state.learning_service = LearningService(database, app.state.knowledge_service, model, settings.learning_report_directory, settings.learning_public_base_url, settings.learning_timezone, settings.learning_insights_ttl_seconds, app_base_path=settings.app_base_path, notification_service=notification_service)
+    app.state.agent_write_action_service = AgentWriteActionService(database, app.state.camera_management_service, app.state.learning_service, notification_service=notification_service)
     app.state.rectification_task_service = RectificationTaskService(database, app.state.agent_write_action_service)
-    app.state.chat_service = ChatService(database, model, settings.tool_max_calls, settings.memory_enabled, settings.memory_ttl_hours, settings.memory_recent_turns, app.state.knowledge_service if retriever else None, app.state.agent_write_action_service, settings.rag_top_k, app.state.learning_service)
+    app.state.chat_service = ChatService(database, model, settings.tool_max_calls, settings.memory_enabled, settings.memory_ttl_hours, settings.memory_recent_turns, app.state.knowledge_service if retriever else None, app.state.agent_write_action_service, settings.rag_top_k, app.state.learning_service, notification_service=notification_service)
     app.include_router(camera_config_router)
     app.include_router(public_router)
     app.include_router(camera_management_router)
