@@ -4,13 +4,15 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Sequence
 import cv2
 import numpy as np
 import torch
 
 from perception.detectors.base import BaseDetector, get_optimal_device
 from perception.schemas.detection import BoundingBox, DetectionResult
+
+DEFAULT_LEGACY_CLASS_NAMES: tuple[str, ...] = ("person", "head", "helmet")
 
 
 class LegacyYOLOv5Adapter(BaseDetector):
@@ -19,28 +21,37 @@ class LegacyYOLOv5Adapter(BaseDetector):
     without altering any internal Smart_Construction source code.
     """
 
-    def __init__(self, weights_path: Optional[str] = None, device: Optional[str] = None):
+    def __init__(
+        self,
+        weights_path: Optional[str] = None,
+        device: Optional[str] = None,
+        class_names: Optional[Sequence[str]] = None,
+    ):
         self.device_str = get_optimal_device(device)
         self.device = torch.device("cpu")
         self.model = None
         self.half = False
-        self.names = ["person", "head", "helmet"]
+        self.names = list(class_names or DEFAULT_LEGACY_CLASS_NAMES)
         self.img_size = 640
         self.weights_path = weights_path
-
-        # Add self-contained yolov5_legacy to sys.path for internal imports
         self.legacy_root = Path(__file__).resolve().parent / "yolov5_legacy"
-        if str(self.legacy_root) not in sys.path:
-            sys.path.insert(0, str(self.legacy_root))
 
         if weights_path and Path(weights_path).is_file():
             self.load_model(weights_path, self.device_str)
+
+    def _ensure_legacy_import_path(self) -> None:
+        # Legacy YOLOv5 checkpoints are pickled with top-level `models.yolo` and `utils.*`
+        # module references, so `yolov5_legacy` must be on sys.path before unpickling.
+        legacy_path = str(self.legacy_root)
+        if legacy_path not in sys.path:
+            sys.path.insert(0, legacy_path)
 
     def load_model(self, weights_path: str, device: Optional[str] = None) -> None:
         p = Path(weights_path)
         if not p.is_file():
             raise FileNotFoundError(f"Model weight file not found: {weights_path}")
 
+        self._ensure_legacy_import_path()
         from models.experimental import attempt_load
         from utils.torch_utils import select_device
         from utils.utils import check_img_size

@@ -35,27 +35,13 @@ from perception.storage.event_store import EventStore
 from perception.services.event_publisher import PerceptionEventPublisher
 from perception.reid.feature_extractor import PersonFeatureExtractor
 from perception.reid.cross_camera_matcher import CrossCameraMatcher
+from perception.visualization.annotator import (
+    clamped_box as _clamped_box,
+    draw_label as _draw_label,
+    render_preview_frame,
+)
 
 logger = logging.getLogger("perception.session_runner")
-
-
-def _clamped_box(box: Any, width: int, height: int) -> tuple[int, int, int, int]:
-    """Convert a model box to a drawable rectangle inside a frame."""
-    x1 = max(0, min(width - 1, round(float(box.x1))))
-    y1 = max(0, min(height - 1, round(float(box.y1))))
-    x2 = max(x1 + 1, min(width - 1, round(float(box.x2))))
-    y2 = max(y1 + 1, min(height - 1, round(float(box.y2))))
-    return x1, y1, x2, y2
-
-
-def _draw_label(frame: np.ndarray, text: str, origin: tuple[int, int], color: tuple[int, int, int]) -> None:
-    """Draw a high-contrast ASCII label while keeping it inside the preview frame."""
-    font, scale, thickness = cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1
-    (text_width, text_height), baseline = cv2.getTextSize(text, font, scale, thickness)
-    x = max(0, min(frame.shape[1] - text_width - 4, int(origin[0])))
-    y = max(text_height + baseline + 4, min(frame.shape[0] - 3, int(origin[1])))
-    cv2.rectangle(frame, (x, y - text_height - baseline - 3), (x + text_width + 4, y + 3), color, -1)
-    cv2.putText(frame, text, (x + 2, y), font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
 
 
 class CameraSessionRunner:
@@ -186,77 +172,8 @@ class CameraSessionRunner:
 
     def _render_preview_frame(self, frame: np.ndarray, result: PipelineFrameResult) -> np.ndarray:
         """Draw live safety context without modifying the frame used by the pipeline."""
-        preview = frame.copy()
-        if preview.ndim == 2:
-            preview = cv2.cvtColor(preview, cv2.COLOR_GRAY2BGR)
-
-        people = list(getattr(result, "tracked_persons", []))
-        active_violations = list(getattr(result, "active_violations", []))
         zones = list(getattr(self.pipeline, "danger_zones", self.initial_danger_zones))
-
-        # Draw configured exclusion zones first, so people and labels remain clear.
-        zone_overlay = preview.copy()
-        for index, zone in enumerate(zones, start=1):
-            if len(zone.polygon) < 3:
-                continue
-            points = np.asarray(zone.polygon, dtype=np.int32).reshape((-1, 1, 2))
-            occupied = any(person.is_in_danger_zone and person.danger_zone_name == zone.name for person in people)
-            color = (0, 0, 255) if occupied else (0, 180, 255)
-            cv2.fillPoly(zone_overlay, [points], color)
-            cv2.polylines(preview, [points], True, color, 2, cv2.LINE_AA)
-            _draw_label(preview, f"DANGER ZONE {index}", tuple(points[0, 0]), color)
-        if zones:
-            cv2.addWeighted(zone_overlay, 0.16, preview, 0.84, 0, preview)
-
-        intrusion_count = dwell_alert_count = 0
-        for person in people:
-            x1, y1, x2, y2 = _clamped_box(person.bbox, preview.shape[1], preview.shape[0])
-            is_intrusion = bool(person.is_in_danger_zone)
-            is_dwell_alert = any(
-                violation.track_id == person.track_id
-                and violation.violation_type == ViolationType.DANGER_ZONE_INTRUSION
-                and violation.severity == ViolationSeverity.CRITICAL
-                and violation.status == "ACTIVE"
-                for violation in active_violations
-            )
-            if is_dwell_alert:
-                color = (0, 0, 255)
-                dwell_alert_count += 1
-            elif is_intrusion or not person.has_helmet:
-                color = (0, 165, 255)
-            else:
-                color = (0, 200, 0)
-            cv2.rectangle(preview, (x1, y1), (x2, y2), color, 2, cv2.LINE_AA)
-
-            if person.helmet_box is not None:
-                hx1, hy1, hx2, hy2 = _clamped_box(person.helmet_box, preview.shape[1], preview.shape[0])
-                cv2.rectangle(preview, (hx1, hy1), (hx2, hy2), (255, 220, 0), 2, cv2.LINE_AA)
-            elif person.head_box is not None:
-                hx1, hy1, hx2, hy2 = _clamped_box(person.head_box, preview.shape[1], preview.shape[0])
-                cv2.rectangle(preview, (hx1, hy1), (hx2, hy2), (0, 0, 255), 2, cv2.LINE_AA)
-
-            helmet_text = "HELMET" if person.has_helmet else "NO HELMET"
-            label = f"ID {person.track_id}"
-            if getattr(person, 'global_id', None):
-                label += f" | {person.global_id}"
-            label += f" | {helmet_text}"
-            if is_intrusion:
-                intrusion_count += 1
-                label += " | INTRUSION"
-            if is_dwell_alert:
-                label += f" | DWELL {person.dwell_time_seconds:.1f}s"
-            _draw_label(preview, label, (x1, y1 - 6), color)
-
-        # A compact banner remains visible even when a person's box leaves frame.
-        active_no_helmet = sum(
-            violation.violation_type == ViolationType.NO_HELMET and violation.status == "ACTIVE"
-            for violation in active_violations
-        )
-        if active_no_helmet or intrusion_count or dwell_alert_count:
-            banner = f"ACTIVE ALERTS  NO HELMET:{active_no_helmet}  INTRUSION:{intrusion_count}  CRITICAL:{dwell_alert_count}"
-            cv2.rectangle(preview, (0, 0), (min(preview.shape[1], max(440, len(banner) * 9)), 30), (0, 0, 180), -1)
-            cv2.putText(preview, banner, (8, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-        return preview
+        return render_preview_frame(frame, result, zones)
 
     def _fetch_or_fallback_zones(self) -> List[DangerZone]:
         """
@@ -637,67 +554,7 @@ class CivilSafetyPerceptionService:
         Aggregates SQLite violation events by date for LLM daily safety report generation.
         Accepts formats: 'YYYYMMDD' or 'YYYY-MM-DD'.
         """
-        clean_date = date_str.replace("-", "")
-        formatted_iso_date = f"{clean_date[:4]}-{clean_date[4:6]}-{clean_date[6:8]}" if len(clean_date) == 8 else date_str
-
-        all_events = self.event_store.query_events(limit=5000)
-
-        date_events: List[ViolationEvent] = []
-        for ev in all_events:
-            ev_date = ""
-            if ev.created_at:
-                ev_date = ev.created_at[:10]
-            elif ev.snapshot_path and "snapshots/" in ev.snapshot_path:
-                parts = ev.snapshot_path.split("/")
-                if len(parts) >= 2 and len(parts[1]) == 8:
-                    d = parts[1]
-                    ev_date = f"{d[:4]}-{d[4:6]}-{d[6:8]}"
-
-            if ev_date == formatted_iso_date or (ev.created_at and clean_date in ev.created_at):
-                date_events.append(ev)
-
-        by_type: Dict[str, int] = {}
-        by_severity: Dict[str, int] = {}
-        by_camera: Dict[str, int] = {}
-        resolved_count = 0
-        active_count = 0
-
-        for ev in date_events:
-            v_type = ev.violation_type.value if hasattr(ev.violation_type, "value") else str(ev.violation_type)
-            v_sev = ev.severity.value if hasattr(ev.severity, "value") else str(ev.severity)
-            by_type[v_type] = by_type.get(v_type, 0) + 1
-            by_severity[v_sev] = by_severity.get(v_sev, 0) + 1
-            by_camera[ev.camera_id] = by_camera.get(ev.camera_id, 0) + 1
-
-            if ev.status == "RESOLVED" or ev.end_time is not None:
-                resolved_count += 1
-            else:
-                active_count += 1
-
-        return {
-            "date": formatted_iso_date,
-            "total_violations": len(date_events),
-            "by_type": by_type,
-            "by_severity": by_severity,
-            "by_camera": by_camera,
-            "resolved_count": resolved_count,
-            "active_count": active_count,
-            "events": [
-                {
-                    "event_uuid": ev.event_uuid,
-                    "camera_id": ev.camera_id,
-                    "track_id": ev.track_id,
-                    "violation_type": ev.violation_type.value if hasattr(ev.violation_type, "value") else str(ev.violation_type),
-                    "severity": ev.severity.value if hasattr(ev.severity, "value") else str(ev.severity),
-                    "status": ev.status,
-                    "zone_name": ev.zone_name,
-                    "start_time": ev.start_time,
-                    "duration_seconds": ev.duration_seconds,
-                    "snapshot_uri": ev.snapshot_path,
-                }
-                for ev in date_events
-            ],
-        }
+        return self.event_store.aggregate_by_date(date_str)
 
     def stop_all(self) -> None:
         """Stops all active camera monitoring sessions."""

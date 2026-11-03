@@ -308,35 +308,38 @@ def test_civil_safety_perception_service():
             event_store=event_store,
         )
 
-        # Start monitoring
-        started = service.start_monitoring(
-            camera_id="cam_crane_01",
-            stream_url=str(video_path),
-            zones_config=[
-                {"name": "Crane_Zone", "polygon": [[0, 0], [300, 0], [300, 300], [0, 300]]}
-            ],
-        )
-        assert started is True
+        try:
+            # Start monitoring
+            started = service.start_monitoring(
+                camera_id="cam_crane_01",
+                stream_url=str(video_path),
+                zones_config=[
+                    {"name": "Crane_Zone", "polygon": [[0, 0], [300, 0], [300, 300], [0, 300]]}
+                ],
+            )
+            assert started is True
 
-        time.sleep(0.3)
+            time.sleep(0.3)
 
-        # Query safety status
-        status = service.query_safety_status("cam_crane_01")
-        assert status["camera_id"] == "cam_crane_01"
-        assert status["is_online"] is True
-        assert "timestamp" in status
+            # Query safety status
+            status = service.query_safety_status("cam_crane_01")
+            assert status["camera_id"] == "cam_crane_01"
+            assert status["is_online"] is True
+            assert "timestamp" in status
 
-        # Generate daily report
-        report = service.generate_daily_safety_report("2026-09-25")
-        assert report["date"] == "2026-09-25"
-        assert report["total_violations"] >= 2
-        assert ViolationType.DANGER_ZONE_INTRUSION.value in report["by_type"]
-        assert ViolationSeverity.CRITICAL.value in report["by_severity"]
-        assert report["by_camera"]["cam_crane_01"] >= 2
+            # Generate daily report
+            report = service.generate_daily_safety_report("2026-09-25")
+            assert report["date"] == "2026-09-25"
+            assert report["total_violations"] >= 2
+            assert ViolationType.DANGER_ZONE_INTRUSION.value in report["by_type"]
+            assert ViolationSeverity.CRITICAL.value in report["by_severity"]
+            assert report["by_camera"]["cam_crane_01"] >= 2
 
-        # Stop monitoring
-        stopped = service.stop_monitoring("cam_crane_01")
-        assert stopped is True
+            # Stop monitoring
+            stopped = service.stop_monitoring("cam_crane_01")
+            assert stopped is True
 
-        offline_status = service.query_safety_status("cam_crane_01")
-        assert offline_status["is_online"] is False
+            offline_status = service.query_safety_status("cam_crane_01")
+            assert offline_status["is_online"] is False
+        finally:
+            service.stop_all()

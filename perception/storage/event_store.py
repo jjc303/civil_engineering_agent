@@ -14,6 +14,7 @@ from perception.schemas.detection import (
     ViolationSeverity,
     ViolationType,
 )
+from perception.visualization.annotator import SnapshotAnnotator
 
 
 class EventStore:
@@ -21,7 +22,12 @@ class EventStore:
     Manages SQLite persistence for safety violation events and snapshot image archiving.
     """
 
-    def __init__(self, db_path: Union[str, Path], snapshot_dir: Optional[Union[str, Path]] = None):
+    def __init__(
+        self,
+        db_path: Union[str, Path],
+        snapshot_dir: Optional[Union[str, Path]] = None,
+        annotator: Optional[SnapshotAnnotator] = None,
+    ):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -30,6 +36,7 @@ class EventStore:
         else:
             self.snapshot_dir = Path(snapshot_dir)
         self.snapshot_dir.mkdir(parents=True, exist_ok=True)
+        self.annotator = annotator or SnapshotAnnotator()
 
         self._init_db()
 
@@ -85,7 +92,8 @@ class EventStore:
             )
             event.snapshot_path = snapshot_rel_path
 
-        now_iso = datetime.datetime.utcnow().isoformat()
+        created_at_iso = event.created_at or datetime.datetime.now(datetime.timezone.utc).isoformat()
+        event.created_at = created_at_iso
         extra_json = json.dumps(extra_details or {}, ensure_ascii=False)
 
         with self._get_connection() as conn:
@@ -108,7 +116,7 @@ class EventStore:
                 float(event.duration_seconds),
                 snapshot_rel_path,
                 extra_json,
-                now_iso,
+                created_at_iso,
             ))
             conn.commit()
 
@@ -126,45 +134,12 @@ class EventStore:
         then saves JPEG to snapshot directory.
         :return: relative snapshot path
         """
-        annotated = frame.copy()
-        h, w = annotated.shape[:2]
-
-        # Draw danger zone polygon in red if available
-        if zone_polygon and len(zone_polygon) >= 3:
-            pts = np.array(zone_polygon, dtype=np.int32).reshape((-1, 1, 2))
-            overlay = annotated.copy()
-            cv2.fillPoly(overlay, [pts], (0, 0, 255))
-            cv2.addWeighted(overlay, 0.3, annotated, 0.7, 0, annotated)
-            cv2.polylines(annotated, [pts], isClosed=True, color=(0, 0, 255), thickness=2)
-
-        # Draw person bounding box in red/yellow
-        if person_bbox is not None:
-            bx1, by1 = int(person_bbox.x1), int(person_bbox.y1)
-            bx2, by2 = int(person_bbox.x2), int(person_bbox.y2)
-            cv2.rectangle(annotated, (bx1, by1), (bx2, by2), (0, 0, 255), 2)
-            label = f"ID:{event.track_id} {event.violation_type}"
-            cv2.putText(
-                annotated,
-                label,
-                (bx1, max(15, by1 - 5)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (0, 0, 255),
-                2,
-            )
-
-        # Draw top banner
-        banner_h = 36
-        banner = np.zeros((banner_h, w, 3), dtype=np.uint8)
-        banner_color = (0, 0, 180) if event.severity == ViolationSeverity.CRITICAL else (0, 140, 255)
-        banner[:] = banner_color
-        banner_text = (
-            f"[{event.severity}] {event.violation_type} | Cam: {event.camera_id} | "
-            f"Track: {event.track_id} | Zone: {event.zone_name or 'N/A'}"
+        final_img = self.annotator.annotate(
+            frame=frame,
+            event=event,
+            person_bbox=person_bbox,
+            zone_polygon=zone_polygon,
         )
-        cv2.putText(banner, banner_text, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
-
-        final_img = np.vstack([banner, annotated])
 
         # Subdirectory by date: YYYYMMDD
         date_str = datetime.date.today().strftime("%Y%m%d")
@@ -329,6 +304,78 @@ class EventStore:
                 "by_type": by_type,
                 "by_severity": by_severity,
             }
+
+    def aggregate_by_date(self, date_str: str) -> Dict[str, Any]:
+        """
+        Aggregates SQLite violation events by date using SQL filtering and grouping.
+        Accepts formats: 'YYYYMMDD' or 'YYYY-MM-DD'.
+        """
+        clean_date = date_str.replace("-", "")
+        formatted_iso_date = (
+            f"{clean_date[:4]}-{clean_date[4:6]}-{clean_date[6:8]}"
+            if len(clean_date) == 8
+            else date_str
+        )
+        where_sql = (
+            "(substr(created_at, 1, 10) = ? "
+            "OR instr(created_at, ?) > 0 "
+            "OR instr(COALESCE(snapshot_path, ''), ?) > 0)"
+        )
+        params = (formatted_iso_date, clean_date, f"snapshots/{clean_date}/")
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"SELECT violation_type, COUNT(*) FROM violation_events WHERE {where_sql} GROUP BY violation_type",
+                params,
+            )
+            by_type = dict(cursor.fetchall())
+
+            cursor.execute(
+                f"SELECT severity, COUNT(*) FROM violation_events WHERE {where_sql} GROUP BY severity",
+                params,
+            )
+            by_severity = dict(cursor.fetchall())
+
+            cursor.execute(
+                f"SELECT camera_id, COUNT(*) FROM violation_events WHERE {where_sql} GROUP BY camera_id",
+                params,
+            )
+            by_camera = dict(cursor.fetchall())
+
+            cursor.execute(
+                f"SELECT * FROM violation_events WHERE {where_sql} ORDER BY start_time DESC",
+                params,
+            )
+            date_events = [self._row_to_event(r) for r in cursor.fetchall()]
+
+        resolved_count = sum(1 for ev in date_events if ev.status == "RESOLVED" or ev.end_time is not None)
+        active_count = len(date_events) - resolved_count
+
+        return {
+            "date": formatted_iso_date,
+            "total_violations": len(date_events),
+            "by_type": by_type,
+            "by_severity": by_severity,
+            "by_camera": by_camera,
+            "resolved_count": resolved_count,
+            "active_count": active_count,
+            "events": [
+                {
+                    "event_uuid": ev.event_uuid,
+                    "camera_id": ev.camera_id,
+                    "track_id": ev.track_id,
+                    "violation_type": ev.violation_type.value if hasattr(ev.violation_type, "value") else str(ev.violation_type),
+                    "severity": ev.severity.value if hasattr(ev.severity, "value") else str(ev.severity),
+                    "status": ev.status,
+                    "zone_name": ev.zone_name,
+                    "start_time": ev.start_time,
+                    "duration_seconds": ev.duration_seconds,
+                    "snapshot_uri": ev.snapshot_path,
+                }
+                for ev in date_events
+            ],
+        }
 
     @staticmethod
     def _row_to_event(row: sqlite3.Row) -> ViolationEvent:

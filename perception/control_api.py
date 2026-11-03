@@ -10,6 +10,7 @@ import os
 import threading
 import time
 from collections.abc import Iterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -79,7 +80,14 @@ def create_control_app(settings: CvControlSettings | None = None, service: Civil
     settings = settings or CvControlSettings.from_env()
     if not settings.node_id or not settings.node_token:
         raise RuntimeError("CV_NODE_ID and CV_NODE_TOKEN must be configured")
-    app = FastAPI(title="Civil Safety CV Control", version="1.0")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        thread = threading.Thread(target=_heartbeat_loop, args=(app,), daemon=True, name="cv-node-heartbeat")
+        thread.start()
+        yield
+
+    app = FastAPI(title="Civil Safety CV Control", version="1.0", lifespan=lifespan)
     app.state.settings = settings
     app.state.service = service or _build_service(settings)
     bearer = HTTPBearer(auto_error=False)
@@ -139,11 +147,6 @@ def create_control_app(settings: CvControlSettings | None = None, service: Civil
         if frame is None:
             raise HTTPException(status_code=503, detail="preview frame is not ready")
         return Response(content=frame, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
-
-    @app.on_event("startup")
-    def start_heartbeat() -> None:
-        thread = threading.Thread(target=_heartbeat_loop, args=(app,), daemon=True, name="cv-node-heartbeat")
-        thread.start()
 
     return app
 
