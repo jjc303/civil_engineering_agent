@@ -60,7 +60,11 @@ import { fetchViolations } from '@/api/violations'
 import { resolveMediaUrl } from '@/api/client'
 import WorkspaceIntro from '@/components/WorkspaceIntro.vue'
 import WorkspaceSummary from '@/components/WorkspaceSummary.vue'
+import { useDictionariesStore } from '@/stores/dictionaries'
 import type { PendingAction, RectificationTaskDetail, RectificationTaskRecord, RectificationTaskStatus, ViolationRecord, ViolationType } from '@/types/contract'
+
+const dictionaries = useDictionariesStore()
+dictionaries.ensureLoaded()
 
 const tasks = ref<RectificationTaskRecord[]>([]); const total = ref(0); const page = ref(1); const pageSize = ref(20); const loading = ref(false); const proposing = ref(false); const confirming = ref(false)
 const route = useRoute()
@@ -109,7 +113,7 @@ function canEdit(task: RectificationTaskRecord) { return !['COMPLETED', 'CANCELL
 function isOverdue(task: RectificationTaskRecord) { return ['PENDING', 'IN_PROGRESS'].includes(task.status) && new Date(task.due_at_utc).getTime() < Date.now() }
 function statusLabel(status: RectificationTaskStatus) { return ({ PENDING: '待处理', IN_PROGRESS: '处理中', COMPLETED: '已完成', CANCELLED: '已取消' })[status] }
 function statusTag(status: RectificationTaskStatus): 'warning' | 'primary' | 'success' | 'info' { return ({ PENDING: 'warning', IN_PROGRESS: 'primary', COMPLETED: 'success', CANCELLED: 'info' } as const)[status] }
-function violationLabel(type: ViolationType) { return ({ NO_HELMET: '未佩戴安全帽', DANGER_ZONE_INTRUSION: '危险区域入侵', DWELL_TIMEOUT: '危险区停留超时' })[type] || type }
+function violationLabel(type: ViolationType) { return dictionaries.violationLabel(type) }
 onMounted(load)
 </script>
 

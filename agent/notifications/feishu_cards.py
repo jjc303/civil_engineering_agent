@@ -6,12 +6,9 @@ from zoneinfo import ZoneInfo
 
 from agent.contracts.learning import ReportResponse, TrainingResponse
 from agent.contracts.query import ViolationRecord
+from agent.domain.violation_catalog import VIOLATION_LABELS
 
-VIOLATION_TYPE_LABELS: dict[str, str] = {
-    "NO_HELMET": "未佩戴安全帽",
-    "DANGER_ZONE_INTRUSION": "危险区域闯入",
-    "DWELL_TIMEOUT": "危险区域停留超时",
-}
+VIOLATION_TYPE_LABELS: dict[str, str] = VIOLATION_LABELS
 
 SEVERITY_LABELS: dict[str, str] = {
     "CRITICAL": "严重告警 (CRITICAL)",

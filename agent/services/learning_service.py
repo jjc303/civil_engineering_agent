@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from agent.contracts.learning import ReportContent, ReportCreate, ReportResponse, TrainingCreate, TrainingEdit, TrainingQuestion, TrainingResponse, WorkerResult, WorkerSubmit
 from agent.db.base import Database
 from agent.db.models import KnowledgeDocumentModel, SafetyReportModel, TrainingSubmissionModel, TrainingTaskModel, ViolationEventModel
+from agent.domain.violation_catalog import VIOLATION_RETRIEVAL_TERMS
 from agent.llm.protocol import ChatModelPort
 from agent.prompts import load_prompt
 from agent.services.knowledge_service import KnowledgeService
@@ -43,11 +44,7 @@ def _citation(chunk) -> dict:
 
 
 _STANDARD_REFERENCE = re.compile(r"《[^》]{2,100}》|(?:GB/T|GB|JGJ|CJJ|JG/T|DB\d{2}(?:/T)?)\s*\d{2,6}(?:[-.]\d{1,6})?|第[一二三四五六七八九十百千\d]+条|\d+(?:\.\d+)+条", re.IGNORECASE)
-_RISK_LABELS = {
-    "NO_HELMET": "安全帽未规范佩戴",
-    "DANGER_ZONE_INTRUSION": "危险区域进入",
-    "DWELL_TIMEOUT": "危险区域停留超时",
-}
+_RISK_LABELS = VIOLATION_RETRIEVAL_TERMS
 
 
 def _guard_standard_references(texts: list[str], standards: list[str], other_titles: list[str] | None = None) -> None:

@@ -53,7 +53,11 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import type { ViolationRecord, ViolationSeverity, ViolationType } from '@/types/contract'
 import { resolveMediaUrl } from '@/api/client'
+import { useDictionariesStore } from '@/stores/dictionaries'
 import { PictureFilled } from '@element-plus/icons-vue'
+
+const dictionaries = useDictionariesStore()
+dictionaries.ensureLoaded()
 
 const props = defineProps<{
   modelValue: boolean
@@ -171,12 +175,7 @@ function severityTagType(s: ViolationSeverity): 'danger' | 'warning' | 'info' {
 }
 
 function formatViolationType(t: ViolationType): string {
-  const map: Record<ViolationType, string> = {
-    NO_HELMET: '未佩戴安全帽',
-    DANGER_ZONE_INTRUSION: '危险区域入侵',
-    DWELL_TIMEOUT: '危险区域停留超时',
-  }
-  return map[t] || t
+  return dictionaries.violationLabel(t)
 }
 
 function formatUtc(utcStr: string): string {

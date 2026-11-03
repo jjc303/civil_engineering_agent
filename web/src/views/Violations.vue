@@ -24,9 +24,12 @@
 
         <el-form-item label="违规类型">
           <el-select v-model="filters.violation_type" placeholder="全部类型" clearable style="width: 170px">
-            <el-option label="未佩戴安全帽" value="NO_HELMET" />
-            <el-option label="危险区域入侵" value="DANGER_ZONE_INTRUSION" />
-            <el-option label="超时停留" value="DWELL_TIMEOUT" />
+            <el-option
+              v-for="opt in dictionaries.violationOptions"
+              :key="opt.code"
+              :label="opt.label"
+              :value="opt.code"
+            />
           </el-select>
         </el-form-item>
 
@@ -150,8 +153,11 @@ import EvidenceModal from '@/components/EvidenceModal.vue'
 import WorkspaceIntro from '@/components/WorkspaceIntro.vue'
 import WorkspaceSummary from '@/components/WorkspaceSummary.vue'
 import { resolveMediaUrl } from '@/api/client'
+import { useDictionariesStore } from '@/stores/dictionaries'
 
 const route = useRoute()
+const dictionaries = useDictionariesStore()
+dictionaries.ensureLoaded()
 
 const loading = ref(false)
 const dataLoaded = ref(false), loadError = ref(false)
@@ -233,16 +239,11 @@ function severityTag(s: ViolationSeverity): 'danger' | 'warning' | 'info' {
   return 'info'
 }
 
-function severityLabel(value: ViolationSeverity) { return ({ CRITICAL: '严重', WARNING: '告警', INFO: '提示' })[value] || value }
-function statusLabel(value: EventStatus) { return ({ ACTIVE: '待关注', RESOLVED: '已解除', FALSE_ALARM: '误报' })[value] || value }
+function severityLabel(value: ViolationSeverity) { return dictionaries.severityLabel(value) }
+function statusLabel(value: EventStatus) { return dictionaries.statusLabel(value) }
 
 function formatType(t: ViolationType): string {
-  const map: Record<ViolationType, string> = {
-    NO_HELMET: '未佩戴安全帽',
-    DANGER_ZONE_INTRUSION: '危险区入侵',
-    DWELL_TIMEOUT: '超时停留',
-  }
-  return map[t] || t
+  return dictionaries.violationLabel(t)
 }
 
 function formatTime(utcStr: string): string {

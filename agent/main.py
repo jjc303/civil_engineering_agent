@@ -28,6 +28,7 @@ from agent.services.agent_write_actions import AgentWriteActionService
 from agent.services.rectification_task_service import RectificationTaskService
 from agent.api.rectification_tasks import router as rectification_task_router
 from agent.api.learning import router as learning_router, public_router as learning_public_router
+from agent.api.meta import router as meta_router
 from agent.notifications import FeishuNotificationService
 from agent.services.learning_service import LearningService
 
@@ -125,5 +126,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(rectification_task_router)
     app.include_router(learning_router)
     app.include_router(learning_public_router)
+    app.include_router(meta_router)
 
     return app

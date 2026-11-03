@@ -6,12 +6,10 @@ from pathlib import Path
 from threading import Lock
 from xml.sax.saxutils import escape
 
+from agent.domain.violation_catalog import VIOLATION_LABELS
+
 _font_lock = Lock()
-_RISK_LABELS = {
-    "NO_HELMET": "未规范佩戴安全帽",
-    "DANGER_ZONE_INTRUSION": "危险区域进入",
-    "DWELL_TIMEOUT": "危险区域停留超时",
-}
+_RISK_LABELS = VIOLATION_LABELS
 
 
 def write_windows_report(path: Path, *, start: str, end: str, stats: dict, content: dict, citations: list) -> None:

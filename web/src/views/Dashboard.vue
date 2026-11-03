@@ -88,6 +88,7 @@ import { isMockEnabled } from '@/api/client'
 import type { CameraStatusResponse, ViolationRecord, ViolationStatistics, ViolationType, ViolationSeverity } from '@/types/contract'
 import MonitorCamera from '@/components/MonitorCamera.vue'
 import EvidenceModal from '@/components/EvidenceModal.vue'
+import { useDictionariesStore } from '@/stores/dictionaries'
 import { todayWindow, cameraPage, cameraSelection, utcDate, filterCameras } from '@/utils/monitoring'
 const cameras = ref<CameraStatusResponse[]>([])
 const cameraQuery = ref(''), cameraStatus = ref<'all' | 'online' | 'offline'>('all'), focusMode = ref(false)
@@ -116,9 +117,11 @@ watch([cameraQuery, cameraStatus], () => { cameraPageNumber.value = 1 })
 watch(filteredCameras, value => { selectedCameraId.value = cameraSelection(value, selectedCameraId.value); cameraPageNumber.value = Math.min(cameraPageNumber.value, pageCount.value) })
 const severityKeys: ViolationSeverity[] = ['INFO', 'WARNING', 'CRITICAL']
 const chartAnimation = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-const typeNames: Record<ViolationType, string> = { NO_HELMET: '未佩戴安全帽', DANGER_ZONE_INTRUSION: '危险区域入侵', DWELL_TIMEOUT: '区域停留超时' }
-function violationLabel(type: ViolationType) { return typeNames[type] || type }
-function severityLabel(severity: ViolationSeverity) { return { CRITICAL: '严重', WARNING: '警告', INFO: '提示' }[severity] }
+const dictionaries = useDictionariesStore()
+dictionaries.ensureLoaded()
+const typeNames = computed<Record<ViolationType, string>>(() => dictionaries.violationLabels)
+function violationLabel(type: ViolationType) { return dictionaries.violationLabel(type) }
+function severityLabel(severity: ViolationSeverity) { return dictionaries.severityLabel(severity) }
 function formatTime(value: string | Date, date = false) { return utcDate(value).toLocaleString('zh-CN', { ...(date ? { month: '2-digit', day: '2-digit' } as const : {}), hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) }
 function sourceTime(key: keyof typeof errors) { return updatedAt[key] ? `${errors[key] ? '上次成功' : '更新于'} ${formatTime(updatedAt[key]!)}` : '尚未取得数据' }
 function setLayout(count: number) { layout.value = count; cameraPageNumber.value = 1 }
@@ -156,8 +159,8 @@ const typePieOption = computed(() => ({
   color: ['#9181ea', '#e4a58c', '#85b5b2'],
   title: { text: String(stats.value?.total_violations ?? 0), subtext: '今日事件', left: '28%', top: '36%', textAlign: 'center', textStyle: { color: '#625775', fontSize: 30, fontWeight: 500 }, subtextStyle: { color: '#8d869b', fontSize: 11 } },
   tooltip: { trigger: 'item', valueFormatter: (value: unknown) => `${value} 起` },
-  legend: { data: Object.values(typeNames), orient: 'vertical', right: '1%', top: 'middle', icon: 'circle', itemWidth: 8, itemHeight: 8, selectedMode: false, textStyle: { color: '#72798b', fontSize: 11 } },
-  series: [{ type: 'pie', radius: ['55%', '73%'], center: ['28%', '50%'], label: { show: false }, stillShowZeroSum: false, showEmptyCircle: true, emptyCircleStyle: { color: '#eeebf6' }, itemStyle: { borderWidth: 3, borderColor: '#f9f9fd', borderRadius: 5 }, data: stats.value?.total_violations ? Object.entries(typeNames).map(([key, name]) => ({ name, value: stats.value?.by_type[key as ViolationType] ?? 0 })) : [] }],
+  legend: { data: Object.values(dictionaries.violationLabels), orient: 'vertical', right: '1%', top: 'middle', icon: 'circle', itemWidth: 8, itemHeight: 8, selectedMode: false, textStyle: { color: '#72798b', fontSize: 11 } },
+  series: [{ type: 'pie', radius: ['55%', '73%'], center: ['28%', '50%'], label: { show: false }, stillShowZeroSum: false, showEmptyCircle: true, emptyCircleStyle: { color: '#eeebf6' }, itemStyle: { borderWidth: 3, borderColor: '#f9f9fd', borderRadius: 5 }, data: stats.value?.total_violations ? Object.entries(dictionaries.violationLabels).map(([key, name]) => ({ name, value: stats.value?.by_type[key as ViolationType] ?? 0 })) : [] }],
 }))
 const severityBarOption = computed(() => ({
   animation: chartAnimation, animationDuration: 400,
