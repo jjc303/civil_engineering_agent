@@ -1,4 +1,5 @@
 import { apiClient, isMockEnabled } from './client'
+import { apiBaseUrl } from '@/utils/deployment'
 import type { CvNodeResponse, ManagedCameraResponse } from '@/types/contract'
 
 export interface CvNodeMediaEntry { name: string; path: string }
@@ -47,11 +48,9 @@ export async function setMonitoring(cameraId: string, action: 'start' | 'stop'):
 }
 
 export function previewUrl(cameraId: string): string {
-  const base = import.meta.env.VITE_API_BASE_URL || ''
-  return `${base}/api/v1/cameras/${encodeURIComponent(cameraId)}/preview`
+  return `${apiBaseUrl}/api/v1/cameras/${encodeURIComponent(cameraId)}/preview`
 }
 
 export function previewFrameUrl(cameraId: string): string {
-  const base = import.meta.env.VITE_API_BASE_URL || ''
-  return `${base}/api/v1/cameras/${encodeURIComponent(cameraId)}/preview.jpg`
+  return `${apiBaseUrl}/api/v1/cameras/${encodeURIComponent(cameraId)}/preview.jpg`
 }

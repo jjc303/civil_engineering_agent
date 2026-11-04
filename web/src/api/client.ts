@@ -1,12 +1,13 @@
 import axios, { AxiosError } from 'axios'
 import { ElMessage } from 'element-plus'
+import { apiBaseUrl } from '@/utils/deployment'
 
 export const isMockEnabled = import.meta.env.VITE_USE_MOCK === 'true'
 export const CHAT_ENDPOINT = '/api/v1/agent/chat'
 export const API_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS) || 20000
 
 export const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '',
+  baseURL: apiBaseUrl,
   timeout: API_TIMEOUT_MS,
   headers: {
     'Content-Type': 'application/json',
@@ -46,6 +47,5 @@ apiClient.interceptors.response.use(
 export function resolveMediaUrl(snapshotUri: string | null): string {
   if (!snapshotUri) return ''
   const cleanUri = snapshotUri.startsWith('/') ? snapshotUri.substring(1) : snapshotUri
-  const base = import.meta.env.VITE_API_BASE_URL || ''
-  return `${base}/media/${cleanUri}`
+  return `${apiBaseUrl}/media/${cleanUri}`
 }

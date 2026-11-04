@@ -4,7 +4,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 export const navigationFailure = shallowRef<{ path: string; title: string } | null>(null)
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/demo',

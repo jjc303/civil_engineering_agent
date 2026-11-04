@@ -167,9 +167,10 @@
 import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document } from '@element-plus/icons-vue'
-import { cancelPendingAction, confirmPendingAction, proposeTrainingAction, sendChatMessage } from '@/api/chat'
+import { cancelPendingAction, confirmPendingAction, getAgentConversationId, proposeTrainingAction, sendChatMessage } from '@/api/chat'
 import * as learningApi from '@/api/learning'
 import { fetchAssistantUiConfig } from '@/api/uiConfig'
+import { learningPath } from '@/utils/deployment'
 import type { AssistantUiConfig, ChatEvidence, GuidedSelection, GuidedSelectionOption, PendingAction, ReportPreview, TrainingPreview, ToolTraceItem, ViolationRecord } from '@/types/contract'
 import ChatMessage from '@/components/ChatMessage.vue'
 import WelcomePanel from '@/components/WelcomePanel.vue'
@@ -422,12 +423,7 @@ function actionResultText(result: import('@/types/contract').ActionExecutionResp
 }
 
 function getConversationId(): string {
-  const key = 'agent_conversation_id'
-  const existing = sessionStorage.getItem(key)
-  if (existing) return existing
-  const created = crypto.randomUUID()
-  sessionStorage.setItem(key, created)
-  return created
+  return getAgentConversationId()
 }
 
 function saveMessages() {
@@ -511,15 +507,6 @@ async function downloadReportPdf(id: string) {
     window.setTimeout(() => URL.revokeObjectURL(url), 60000)
   } catch {
     ElMessage.error('PDF 下载失败')
-  }
-}
-
-function learningPath(publicUrl: string): string | undefined {
-  try {
-    const path = new URL(publicUrl).pathname
-    return /^\/learn\/[A-Za-z0-9_-]+\/?$/.test(path) ? path : undefined
-  } catch {
-    return undefined
   }
 }
 

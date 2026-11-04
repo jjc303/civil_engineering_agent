@@ -14,10 +14,11 @@ mkdir -p "$log_dir"
 agent_pid=""
 web_pid=""
 cv_pid=""
+frpc_pid=""
 
 cleanup() {
     trap - EXIT INT TERM
-    for pid in "$cv_pid" "$web_pid" "$agent_pid"; do
+    for pid in "$frpc_pid" "$cv_pid" "$web_pid" "$agent_pid"; do
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             kill "$pid" 2>/dev/null || true
         fi
@@ -174,8 +175,56 @@ if [[ "$start_status" != "202" ]]; then
     exit 1
 fi
 
-echo "Stack started. Web: $WEB_BIND_HOST:$WEB_PORT; CV node: $cv_node_id"
-echo "Logs: $log_dir"
-echo "Press Ctrl+C to stop Agent, Web, and CV Control."
+frpc_config_raw="${FRPC_CONFIG:-deploy/frp/frpc.toml}"
+if [[ "$frpc_config_raw" = /* ]]; then
+    frpc_config="$frpc_config_raw"
+else
+    frpc_config="$project_root/$frpc_config_raw"
+fi
+frp_enabled="${FRP_ENABLED:-}"
+if [[ -z "$frp_enabled" ]]; then
+    if [[ -f "$frpc_config" ]]; then
+        frp_enabled="true"
+    else
+        frp_enabled="false"
+    fi
+fi
 
-wait "$cv_pid"
+if [[ "$frp_enabled" == "true" ]]; then
+    frpc_bin="${FRPC_BIN:-$(command -v frpc 2>/dev/null || echo "$HOME/.local/bin/frpc")}"
+    if [[ ! -x "$frpc_bin" ]]; then
+        echo "frpc binary not found or not executable at $frpc_bin; set FRPC_BIN or FRP_ENABLED=false in .env" >&2
+        exit 1
+    fi
+    if [[ ! -f "$frpc_config" ]]; then
+        echo "frpc config not found at $frpc_config; set FRPC_CONFIG or FRP_ENABLED=false in .env" >&2
+        exit 1
+    fi
+    echo "Starting frpc tunnel with $frpc_config"
+    "$frpc_bin" -c "$frpc_config" >"$log_dir/frpc.log" 2>&1 &
+    frpc_pid=$!
+
+    frpc_ready=false
+    for _ in {1..15}; do
+        if ! kill -0 "$frpc_pid" 2>/dev/null; then
+            echo "frpc failed to start; see $log_dir/frpc.log" >&2
+            exit 1
+        fi
+        if grep -q "start proxy success" "$log_dir/frpc.log" 2>/dev/null; then
+            frpc_ready=true
+            break
+        fi
+        sleep 1
+    done
+
+    if [[ "$frpc_ready" != true ]]; then
+        echo "frpc did not establish tunnel within 15 seconds; see $log_dir/frpc.log" >&2
+        exit 1
+    fi
+fi
+
+echo "Stack started. Web: $WEB_BIND_HOST:$WEB_PORT; CV node: $cv_node_id${frpc_pid:+; frpc: active}"
+echo "Logs: $log_dir"
+echo "Press Ctrl+C to stop Agent, Web, CV Control${frpc_pid:+, and frpc}."
+
+wait -n "$agent_pid" "$web_pid" "$cv_pid" ${frpc_pid:+"$frpc_pid"}

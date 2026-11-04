@@ -54,7 +54,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
-import { cancelPendingAction, confirmPendingAction } from '@/api/chat'
+import { cancelPendingAction, confirmPendingAction, getAgentConversationId } from '@/api/chat'
 import { fetchRectificationTask, fetchRectificationTasks, proposeRectificationTaskCreate, proposeRectificationTaskUpdate } from '@/api/rectificationTasks'
 import { fetchViolations } from '@/api/violations'
 import { resolveMediaUrl } from '@/api/client'
@@ -80,7 +80,7 @@ const createForm = reactive({ eventUuid: '', title: '', description: '', owner: 
 const editForm = reactive({ owner: '', dueAt: null as Date | null, status: 'PENDING' as RectificationTaskStatus, note: '' })
 const statusOptions: Array<{ value: RectificationTaskStatus; label: string }> = [{ value: 'PENDING', label: '待处理' }, { value: 'IN_PROGRESS', label: '处理中' }, { value: 'COMPLETED', label: '已完成' }, { value: 'CANCELLED', label: '已取消' }]
 
-function conversationId() { const key = 'agent_conversation_id'; const value = sessionStorage.getItem(key); if (value) return value; const created = crypto.randomUUID(); sessionStorage.setItem(key, created); return created }
+const conversationId = getAgentConversationId
 async function load() { loading.value = true; try { const data = await fetchRectificationTasks({ status: filters.status, owner: filters.owner || undefined, overdue: filters.overdue || undefined, limit: pageSize.value, offset: (page.value - 1) * pageSize.value }); tasks.value = data.items; total.value = data.total; dataLoaded.value = true; loadError.value = false } catch { loadError.value = true } finally { loading.value = false } }
 function search() { page.value = 1; load() }
 function reset() { filters.status = undefined; filters.owner = ''; filters.overdue = false; page.value = 1; load() }

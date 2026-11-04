@@ -163,6 +163,7 @@
 import { UserFilled, Service, Picture, Document, Operation } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import { resolveMediaUrl } from '@/api/client'
+import { learningPath as learningPathValue } from '@/utils/deployment'
 import type { ChatEvidence, GuidedSelection, GuidedSelectionOption, PendingAction, PendingActionStatus, ReportPreview, TrainingPreview, ToolTraceItem } from '@/types/contract'
 
 interface ChatMessage {
@@ -248,15 +249,6 @@ function actionStatusText(status: PendingActionStatus): string {
 
 function actionTagType(status: PendingActionStatus): 'primary' | 'success' | 'warning' | 'info' | 'danger' {
   return ({ PENDING: 'warning', EXECUTING: 'primary', EXECUTED: 'success', CANCELLED: 'info', EXPIRED: 'info', FAILED: 'danger' } as Record<PendingActionStatus, 'primary' | 'success' | 'warning' | 'info' | 'danger'>)[status]
-}
-
-function learningPathValue(publicUrl: string): string | undefined {
-  try {
-    const path = new URL(publicUrl).pathname
-    return /^\/learn\/[A-Za-z0-9_-]+\/?$/.test(path) ? path : undefined
-  } catch {
-    return undefined
-  }
 }
 
 function trainingLinkPath(publicUrl: string): string | undefined {

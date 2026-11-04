@@ -22,6 +22,7 @@ def main() -> None:
     parser.add_argument("--init", action="store_true", help="Create .env once, then exit")
     parser.add_argument("--build", action="store_true", help="Install/build Vue before starting")
     parser.add_argument("--with-cv", action="store_true", help="Start and enroll a local CV node")
+    parser.add_argument("--with-frp", action="store_true", help="Start frpc tunnel alongside the console")
     args = parser.parse_args()
     os.chdir(ROOT)
     if args.init:
@@ -100,6 +101,17 @@ def main() -> None:
             env = dict(os.environ, AGENT_URL=agent_url)
             children.append(subprocess.Popen([sys.executable, "-m", "uvicorn", "perception.control_api:create_control_app", "--factory", "--host", "127.0.0.1", "--port", str(cv_port)], env=env))
             wait_ready(control_url + "/control/v1/health", children[-1], {"Authorization": "Bearer " + os.environ["CV_NODE_TOKEN"]})
+        frp_enabled = args.with_frp or os.getenv("FRP_ENABLED", "").lower() == "true"
+        if frp_enabled:
+            frpc_bin = os.getenv("FRPC_BIN") or shutil.which("frpc") or str(Path.home() / ".local/bin/frpc")
+            frpc_config = Path(os.getenv("FRPC_CONFIG", "deploy/frp/frpc.toml"))
+            if not frpc_config.is_absolute():
+                frpc_config = ROOT / frpc_config
+            if not Path(frpc_bin).is_file():
+                raise RuntimeError(f"frpc binary not found at {frpc_bin}")
+            if not frpc_config.is_file():
+                raise RuntimeError(f"frpc config not found at {frpc_config}")
+            children.append(subprocess.Popen([frpc_bin, "-c", str(frpc_config)]))
         print(f"Open {agent_url}/dashboard ; Ctrl+C stops only servers started by this command.")
         while all(child.poll() is None for child in children):
             time.sleep(1)

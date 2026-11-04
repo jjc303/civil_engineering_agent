@@ -20,7 +20,7 @@
         <div class="breadcrumb"><button class="mobile-menu" aria-label="打开导航" :aria-expanded="mobileOpen" @click="mobileOpen = !mobileOpen"><el-icon><Menu /></el-icon></button><span class="workspace-name">安全工作台</span><span class="separator">/</span><strong>{{ route.meta.title }}</strong></div>
         <button class="search-trigger" @click="searchOpen = true"><el-icon><Search /></el-icon><span>你想做什么？</span><kbd>Ctrl K</kbd></button><div class="topbar-meta"><span v-if="isMockEnabled || localVideoDemo" class="demo-badge">{{ isMockEnabled ? '演示数据 · 非现场' : '本地视频演示' }}</span><time :datetime="now.toISOString()">{{ dateLabel }}</time><span class="time-label">{{ timeLabel }}</span></div>
       </header>
-      <div v-if="navigationFailure" class="navigation-error" role="alert"><span>“{{ navigationFailure.title }}”加载失败，请重新打开。</span><a :href="navigationFailure.path">重新打开页面 ↗</a><button aria-label="关闭加载提示" @click="navigationFailure = null">×</button></div>
+      <div v-if="navigationFailure" class="navigation-error" role="alert"><span>“{{ navigationFailure.title }}”加载失败，请重新打开。</span><a :href="appPath(navigationFailure.path)">重新打开页面 ↗</a><button aria-label="关闭加载提示" @click="navigationFailure = null">×</button></div>
       <main id="main-content" tabindex="-1" :class="isMonitor ? 'monitor-content' : 'business-content'"><router-view v-slot="{ Component }"><Transition name="page" mode="out-in"><component :is="Component" /></Transition></router-view></main>
     </div>
     <el-dialog v-model="searchOpen" title="快速前往" width="520px" @opened="searchInput?.focus()" @closed="searchText = ''">

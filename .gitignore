@@ -61,8 +61,7 @@ data/
 web/public/materials/
 knowledge/*
 !knowledge/README.md
-deploy/cloud_bundle/
-deploy/cloud_app/
+deploy/
 *.pem
 *.key
 *.pfx
