@@ -11,7 +11,7 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import requests
@@ -25,6 +25,17 @@ from perception.services.event_publisher import OutboxStore, PerceptionEventPubl
 from perception.services.session_runner import CivilSafetyPerceptionService
 from perception.storage.event_store import EventStore
 
+DEFAULT_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v"})
+
+
+def _parse_extensions(raw: str) -> frozenset[str]:
+    items = {
+        (ext.strip().lower() if ext.strip().startswith(".") else f".{ext.strip().lower()}")
+        for ext in raw.split(",")
+        if ext.strip()
+    }
+    return frozenset(items) if items else DEFAULT_VIDEO_EXTENSIONS
+
 
 @dataclass(frozen=True)
 class CvControlSettings:
@@ -35,6 +46,10 @@ class CvControlSettings:
     allowed_media_roots: tuple[Path, ...]
     capacity: int = 8
     heartbeat_interval_seconds: float = 5.0
+    heartbeat_timeout_seconds: float = 3.0
+    preview_interval_seconds: float = 0.2
+    data_dir: Path = Path("data")
+    allowed_video_extensions: frozenset[str] = field(default_factory=lambda: DEFAULT_VIDEO_EXTENSIONS)
     # This must be the same shared/mounted directory as
     # AGENT_MEDIA_ROOT/snapshots on the Agent host.
     snapshot_dir: Path | None = None
@@ -43,11 +58,17 @@ class CvControlSettings:
     def from_env(cls) -> "CvControlSettings":
         roots = tuple(Path(item).resolve() for item in os.getenv("CV_ALLOWED_MEDIA_ROOTS", ".").split(os.pathsep) if item)
         return cls(
-            node_id=os.getenv("CV_NODE_ID", ""), node_token=os.getenv("CV_NODE_TOKEN", ""),
+            node_id=os.getenv("CV_NODE_ID", ""),
+            node_token=os.getenv("CV_NODE_TOKEN", ""),
             agent_url=os.getenv("AGENT_URL", DEFAULT_AGENT_URL).rstrip("/"),
-            internal_perception_token=os.getenv("INTERNAL_PERCEPTION_TOKEN", ""), allowed_media_roots=roots,
+            internal_perception_token=os.getenv("INTERNAL_PERCEPTION_TOKEN", ""),
+            allowed_media_roots=roots,
             capacity=int(os.getenv("CV_NODE_CAPACITY", "8")),
             heartbeat_interval_seconds=float(os.getenv("CV_NODE_HEARTBEAT_INTERVAL_SECONDS", "5")),
+            heartbeat_timeout_seconds=float(os.getenv("CV_HEARTBEAT_TIMEOUT_SECONDS", "3")),
+            preview_interval_seconds=float(os.getenv("CV_PREVIEW_INTERVAL_SECONDS", "0.2")),
+            data_dir=Path(os.getenv("CV_DATA_DIR", "data")),
+            allowed_video_extensions=_parse_extensions(os.getenv("CV_ALLOWED_VIDEO_EXTENSIONS", ".mp4,.avi,.mov,.mkv,.webm,.m4v")),
             snapshot_dir=Path(os.getenv("CV_SNAPSHOT_DIR", str(Path(os.getenv("AGENT_MEDIA_ROOT", "runs/media")) / "snapshots"))).resolve(),
         )
 
@@ -121,7 +142,7 @@ def create_control_app(settings: CvControlSettings | None = None, service: Civil
 
     @app.get("/control/v1/media-files", response_model=MediaDirectoryResponse, dependencies=[Depends(require_node_token)])
     def list_media_files(directory: str | None = None) -> MediaDirectoryResponse:
-        return _list_media_files(directory, settings.allowed_media_roots)
+        return _list_media_files(directory, settings.allowed_media_roots, settings.allowed_video_extensions)
 
     @app.get("/control/v1/sessions/{camera_id}/preview.mjpeg", dependencies=[Depends(require_node_token)])
     def preview(camera_id: str) -> StreamingResponse:
@@ -134,7 +155,7 @@ def create_control_app(settings: CvControlSettings | None = None, service: Civil
                 frame = runner.latest_preview_jpeg()
                 if frame:
                     yield b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + str(len(frame)).encode() + b"\r\n\r\n" + frame + b"\r\n"
-                time.sleep(0.2)
+                time.sleep(settings.preview_interval_seconds)
 
         return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame", headers={"Cache-Control": "no-store"})
 
@@ -153,14 +174,16 @@ def create_control_app(settings: CvControlSettings | None = None, service: Civil
 
 
 def _build_service(settings: CvControlSettings) -> CivilSafetyPerceptionService:
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
     publisher = PerceptionEventPublisher(
-        outbox_store=OutboxStore(db_path=f"data/outbox-{settings.node_id}.db"), agent_base_url=settings.agent_url,
+        outbox_store=OutboxStore(db_path=str(settings.data_dir / f"outbox-{settings.node_id}.db")),
+        agent_base_url=settings.agent_url,
         bearer_token=settings.internal_perception_token,
     )
     snapshot_dir = settings.snapshot_dir or Path(os.getenv("CV_SNAPSHOT_DIR", str(Path(os.getenv("AGENT_MEDIA_ROOT", "runs/media")) / "snapshots"))).resolve()
     return CivilSafetyPerceptionService(
         event_publisher=publisher,
-        event_store=EventStore(db_path=f"data/events-{settings.node_id}.db", snapshot_dir=snapshot_dir),
+        event_store=EventStore(db_path=str(settings.data_dir / f"events-{settings.node_id}.db"), snapshot_dir=snapshot_dir),
     )
 
 
@@ -175,7 +198,11 @@ def _validate_source(source_type: str, source_uri: str, roots: tuple[Path, ...])
     return str(candidate)
 
 
-def _list_media_files(directory: str | None, roots: tuple[Path, ...]) -> MediaDirectoryResponse:
+def _list_media_files(
+    directory: str | None,
+    roots: tuple[Path, ...],
+    allowed_extensions: frozenset[str] = DEFAULT_VIDEO_EXTENSIONS,
+) -> MediaDirectoryResponse:
     if not roots:
         raise HTTPException(status_code=503, detail="CV_ALLOWED_MEDIA_ROOTS is empty")
     current = Path(directory).resolve() if directory else roots[0]
@@ -187,7 +214,7 @@ def _list_media_files(directory: str | None, roots: tuple[Path, ...]) -> MediaDi
         raise HTTPException(status_code=422, detail=f"cannot browse directory: {exc}") from exc
     allowed = [item.resolve() for item in children if any(item.resolve().is_relative_to(root) for root in roots)]
     directories = [MediaEntry(name=item.name, path=str(item)) for item in allowed if item.is_dir()]
-    files = [MediaEntry(name=item.name, path=str(item)) for item in allowed if item.is_file() and item.suffix.lower() in {".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v"}]
+    files = [MediaEntry(name=item.name, path=str(item)) for item in allowed if item.is_file() and item.suffix.lower() in allowed_extensions]
     parent = current.parent if any(current != root for root in roots) and any(current.parent.is_relative_to(root) for root in roots) else None
     return MediaDirectoryResponse(current_path=str(current), parent_path=str(parent) if parent else None, directories=directories, files=files)
 
@@ -203,7 +230,8 @@ def _heartbeat_loop(app: FastAPI) -> None:
                 session.put(
                     f"{settings.agent_url}/internal/v1/cv-nodes/{settings.node_id}/heartbeat",
                     json={"active_sessions": len(app.state.service.runners), "capacity": settings.capacity},
-                    headers={"Authorization": f"Bearer {settings.node_token}"}, timeout=3,
+                    headers={"Authorization": f"Bearer {settings.node_token}"},
+                    timeout=settings.heartbeat_timeout_seconds,
                 )
             except requests.RequestException:
                 pass

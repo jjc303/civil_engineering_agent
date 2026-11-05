@@ -6,16 +6,21 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from agent.contracts.camera_management import (
-    CvNodeCreateRequest, CvNodeEnrollmentResponse, CvNodeHeartbeatRequest, CvNodeResponse,
-    CvNodeMediaDirectoryResponse, ManagedCameraCreateRequest, ManagedCameraResponse,
-    ManagedCameraSourceUpdate, MonitoringSessionResponse,
+    CvNodeCreateRequest,
+    CvNodeEnrollmentResponse,
+    CvNodeHeartbeatRequest,
+    CvNodeMediaDirectoryResponse,
+    CvNodeResponse,
+    ManagedCameraCreateRequest,
+    ManagedCameraResponse,
+    ManagedCameraSourceUpdate,
+    MonitoringSessionResponse,
 )
 from agent.db.base import Database
-from agent.db.models import CameraStatusModel, CvNodeModel, ManagedCameraModel
+from agent.db.models import CvNodeModel, ManagedCameraModel
+from agent.repositories.camera_management import CameraManagementRepository
 
 
 class CameraManagementError(RuntimeError):
@@ -23,10 +28,17 @@ class CameraManagementError(RuntimeError):
 
 
 class CameraManagementService:
-    def __init__(self, database: Database, encryption_key: str, control_timeout_seconds: float = 10.0):
+    def __init__(
+        self,
+        database: Database,
+        encryption_key: str,
+        control_timeout_seconds: float = 10.0,
+        node_offline_threshold_seconds: float = 30.0,
+    ):
         self.database = database
         self.encryption_key = encryption_key
         self.control_timeout_seconds = control_timeout_seconds
+        self.node_offline_threshold_seconds = max(1.0, float(node_offline_threshold_seconds))
 
     def _fernet(self) -> Fernet:
         if not self.encryption_key:
@@ -39,23 +51,26 @@ class CameraManagementService:
     def create_node(self, request: CvNodeCreateRequest) -> CvNodeEnrollmentResponse:
         token = request.control_token or secrets.token_urlsafe(32)
         with self.database.session() as session:
-            if session.get(CvNodeModel, request.node_id):
+            repo = CameraManagementRepository(session)
+            if repo.get_node(request.node_id):
                 raise CameraManagementError("cv node already exists")
             model = CvNodeModel(
-                node_id=request.node_id, display_name=request.display_name, control_url=str(request.control_url).rstrip("/"),
-                control_token_encrypted=self._fernet().encrypt(token.encode()).decode(), capacity=request.capacity,
+                node_id=request.node_id,
+                display_name=request.display_name,
+                control_url=str(request.control_url).rstrip("/"),
+                control_token_encrypted=self._fernet().encrypt(token.encode()).decode(),
+                capacity=request.capacity,
             )
-            session.add(model)
-            session.flush()
+            repo.add_node(model)
             return self._node_response(model, token)
 
     def list_nodes(self) -> list[CvNodeResponse]:
         with self.database.session() as session:
-            return [self._node_response(item) for item in session.scalars(select(CvNodeModel).order_by(CvNodeModel.node_id)).all()]
+            return [self._node_response(item) for item in CameraManagementRepository(session).list_nodes()]
 
     def heartbeat_node(self, node_id: str, token: str, request: CvNodeHeartbeatRequest) -> CvNodeResponse:
         with self.database.session() as session:
-            node = session.get(CvNodeModel, node_id)
+            node = CameraManagementRepository(session).get_node(node_id)
             if not node or not secrets.compare_digest(self._decrypt(node.control_token_encrypted), token):
                 raise PermissionError("invalid CV node token")
             node.is_online = True
@@ -67,41 +82,46 @@ class CameraManagementService:
     def node_requires_recovery(self, node_id: str) -> bool:
         """Return true only after a node has actually recovered/offlined."""
         with self.database.session() as session:
-            node = session.get(CvNodeModel, node_id)
+            node = CameraManagementRepository(session).get_node(node_id)
             if node is None or not node.is_online or node.last_heartbeat_at_utc is None:
                 return True
             last = node.last_heartbeat_at_utc
             if last.tzinfo is None:
                 last = last.replace(tzinfo=timezone.utc)
-            return (datetime.now(timezone.utc) - last).total_seconds() > 30
+            return (datetime.now(timezone.utc) - last).total_seconds() > self.node_offline_threshold_seconds
 
     def create_camera(self, request: ManagedCameraCreateRequest) -> ManagedCameraResponse:
         with self.database.session() as session:
-            if not session.get(CvNodeModel, request.node_id):
+            repo = CameraManagementRepository(session)
+            if not repo.get_node(request.node_id):
                 raise CameraManagementError("selected CV node does not exist")
-            if session.get(ManagedCameraModel, request.camera_id):
+            if repo.get_camera(request.camera_id):
                 raise CameraManagementError("camera already exists")
             model = ManagedCameraModel(
-                camera_id=request.camera_id, display_name=request.display_name, node_id=request.node_id,
-                source_type=request.source_type, source_uri_encrypted=self._fernet().encrypt(request.source_uri.encode()).decode(),
-                source_uri_masked=self._mask(request.source_uri), desired_state="STOPPED",
+                camera_id=request.camera_id,
+                display_name=request.display_name,
+                node_id=request.node_id,
+                source_type=request.source_type,
+                source_uri_encrypted=self._fernet().encrypt(request.source_uri.encode()).decode(),
+                source_uri_masked=self._mask(request.source_uri),
+                desired_state="STOPPED",
             )
-            session.add(model)
-            session.flush()
+            repo.add_camera(model)
             return self._camera_response(model)
 
     def list_cameras(self) -> list[ManagedCameraResponse]:
         with self.database.session() as session:
-            return [self._camera_response(item) for item in session.scalars(select(ManagedCameraModel).order_by(ManagedCameraModel.camera_id)).all()]
+            return [self._camera_response(item) for item in CameraManagementRepository(session).list_cameras()]
 
     def update_source(self, camera_id: str, request: ManagedCameraSourceUpdate) -> ManagedCameraResponse:
         with self.database.session() as session:
-            model = session.get(ManagedCameraModel, camera_id)
+            repo = CameraManagementRepository(session)
+            model = repo.get_camera(camera_id)
             if not model:
                 raise KeyError(camera_id)
             if model.desired_state == "RUNNING":
                 raise CameraManagementError("stop camera monitoring before editing its configuration")
-            if not session.get(CvNodeModel, request.node_id):
+            if not repo.get_node(request.node_id):
                 raise CameraManagementError("selected CV node does not exist")
             if request.display_name is not None:
                 model.display_name = request.display_name
@@ -122,7 +142,7 @@ class CameraManagementService:
         machine file path as a node-local video source.
         """
         with self.database.session() as session:
-            node = session.get(CvNodeModel, node_id)
+            node = CameraManagementRepository(session).get_node(node_id)
             if not node:
                 raise KeyError(node_id)
             if not node.is_online:
@@ -149,13 +169,15 @@ class CameraManagementService:
 
     def get_camera_and_node(self, camera_id: str) -> tuple[ManagedCameraModel, CvNodeModel]:
         with self.database.session() as session:
-            camera = session.get(ManagedCameraModel, camera_id)
+            repo = CameraManagementRepository(session)
+            camera = repo.get_camera(camera_id)
             if not camera:
                 raise KeyError(camera_id)
-            node = session.get(CvNodeModel, camera.node_id)
+            node = repo.get_node(camera.node_id)
             if not node:
                 raise CameraManagementError("assigned CV node does not exist")
-            session.expunge(camera); session.expunge(node)
+            session.expunge(camera)
+            session.expunge(node)
             return camera, node
 
     def reconcile_node(self, node_id: str) -> None:
@@ -165,12 +187,7 @@ class CameraManagementService:
         assigned RUNNING sessions back without exposing source credentials to Web.
         """
         with self.database.session() as session:
-            camera_ids = list(session.scalars(
-                select(ManagedCameraModel.camera_id).where(
-                    ManagedCameraModel.node_id == node_id,
-                    ManagedCameraModel.desired_state == "RUNNING",
-                )
-            ))
+            camera_ids = CameraManagementRepository(session).list_running_camera_ids_for_node(node_id)
         for camera_id in camera_ids:
             try:
                 self._control(camera_id, "start")
@@ -181,43 +198,53 @@ class CameraManagementService:
 
     def _control(self, camera_id: str, action: str) -> MonitoringSessionResponse:
         with self.database.session() as session:
-            camera = session.get(ManagedCameraModel, camera_id)
+            repo = CameraManagementRepository(session)
+            camera = repo.get_camera(camera_id)
             if not camera:
                 raise KeyError(camera_id)
-            node = session.get(CvNodeModel, camera.node_id)
+            node = repo.get_node(camera.node_id)
             if not node:
                 raise CameraManagementError("assigned CV node does not exist")
             if not node.is_online:
                 raise CameraManagementError("assigned CV node is offline")
             token = self._decrypt(node.control_token_encrypted)
             if action == "start":
-                payload = {"camera_id": camera.camera_id, "source_type": camera.source_type, "source_uri": self._decrypt(camera.source_uri_encrypted)}
-                method, url = httpx.post, f"{node.control_url}/control/v1/sessions"
+                payload = {
+                    "camera_id": camera.camera_id,
+                    "source_type": camera.source_type,
+                    "source_uri": self._decrypt(camera.source_uri_encrypted),
+                }
+                url = f"{node.control_url}/control/v1/sessions"
             else:
                 payload = None
-                method, url = httpx.delete, f"{node.control_url}/control/v1/sessions/{camera.camera_id}"
+                url = f"{node.control_url}/control/v1/sessions/{camera.camera_id}"
         try:
             # CV Control is an internal/private endpoint.  Never inherit a
             # workstation HTTP proxy for loopback or site-network requests.
             with httpx.Client(timeout=self.control_timeout_seconds, trust_env=False) as client:
-                response = client.request("POST" if action == "start" else "DELETE", url, json=payload, headers={"Authorization": f"Bearer {token}"})
+                response = client.request(
+                    "POST" if action == "start" else "DELETE",
+                    url,
+                    json=payload,
+                    headers={"Authorization": f"Bearer {token}"},
+                )
                 response.raise_for_status()
                 body = response.json()
         except httpx.HTTPError as exc:
             raise CameraManagementError(f"CV control request failed: {exc}") from exc
         with self.database.session() as session:
-            camera = session.get(ManagedCameraModel, camera_id)
-            assert camera is not None
-            camera.desired_state = "RUNNING" if action == "start" else "STOPPED"
-            camera.monitor_session_id = body.get("monitor_session_id") if action == "start" else None
-            if action == "stop":
-                status = session.get(CameraStatusModel, camera_id)
-                if status is not None:
-                    status.is_online = False
-                    status.fps = 0.0
-                    status.active_workers_count = 0
-                    status.reported_at_utc = datetime.now(timezone.utc)
-            return MonitoringSessionResponse(camera_id=camera_id, node_id=camera.node_id, monitor_session_id=camera.monitor_session_id, desired_state=camera.desired_state, accepted=True)
+            camera = CameraManagementRepository(session).update_camera_session_state(
+                camera_id,
+                action=action,
+                monitor_session_id=body.get("monitor_session_id"),
+            )
+            return MonitoringSessionResponse(
+                camera_id=camera_id,
+                node_id=camera.node_id,
+                monitor_session_id=camera.monitor_session_id,
+                desired_state=camera.desired_state,
+                accepted=True,
+            )
 
     def _decrypt(self, value: str) -> str:
         try:
@@ -236,9 +263,25 @@ class CameraManagementService:
 
     @staticmethod
     def _node_response(model: CvNodeModel, token: str | None = None) -> CvNodeResponse:
-        data = dict(node_id=model.node_id, display_name=model.display_name, control_url=model.control_url, is_online=model.is_online, active_sessions=model.active_sessions, capacity=model.capacity, last_heartbeat_at_utc=model.last_heartbeat_at_utc)
+        data = dict(
+            node_id=model.node_id,
+            display_name=model.display_name,
+            control_url=model.control_url,
+            is_online=model.is_online,
+            active_sessions=model.active_sessions,
+            capacity=model.capacity,
+            last_heartbeat_at_utc=model.last_heartbeat_at_utc,
+        )
         return CvNodeEnrollmentResponse(**data, control_token=token) if token else CvNodeResponse(**data)
 
     @staticmethod
     def _camera_response(model: ManagedCameraModel) -> ManagedCameraResponse:
-        return ManagedCameraResponse(camera_id=model.camera_id, display_name=model.display_name, node_id=model.node_id, source_type=model.source_type, source_uri_masked=CameraManagementService._mask(model.source_uri_masked), desired_state=model.desired_state, monitor_session_id=model.monitor_session_id)
+        return ManagedCameraResponse(
+            camera_id=model.camera_id,
+            display_name=model.display_name,
+            node_id=model.node_id,
+            source_type=model.source_type,
+            source_uri_masked=CameraManagementService._mask(model.source_uri_masked),
+            desired_state=model.desired_state,
+            monitor_session_id=model.monitor_session_id,
+        )

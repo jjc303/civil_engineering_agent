@@ -18,7 +18,7 @@ from agent.api.ui_config import admin_router as ui_config_admin_router, public_r
 from agent.core.config import Settings
 from agent.db.base import Database
 from agent.llm.factory import create_chat_model
-from agent.notifications import FeishuNotificationService
+from agent.notifications import NotificationPort, create_notification_service
 from agent.rag.chroma_adapter import ChromaKnowledgeRetriever
 from agent.services.agent_write_actions import AgentWriteActionService
 from agent.services.camera_management import CameraManagementService
@@ -47,7 +47,7 @@ ROUTERS: tuple[APIRouter, ...] = (
 
 @dataclass
 class ServiceContainer:
-    notification_service: FeishuNotificationService
+    notification_service: NotificationPort
     perception_service: PerceptionService
     camera_management_service: CameraManagementService
     knowledge_service: KnowledgeService
@@ -69,19 +69,13 @@ class ServiceContainer:
 
 
 def build_service_container(settings: Settings, database: Database) -> ServiceContainer:
-    notification_service = FeishuNotificationService(
-        settings.feishu_webhook_url,
-        webhook_secret=settings.feishu_webhook_secret,
-        enabled=settings.feishu_notify_enabled,
-        web_base_url=settings.feishu_web_base_url or settings.learning_public_base_url or "http://127.0.0.1:5173",
-        timezone_name=settings.learning_timezone,
-        cooldown_seconds=settings.feishu_alert_cooldown_seconds,
-        min_severity=settings.feishu_alert_min_severity,
-        timeout_seconds=settings.feishu_timeout_seconds,
-    )
+    notification_service = create_notification_service(settings)
     perception_service = PerceptionService(database, notification_service=notification_service)
     camera_management_service = CameraManagementService(
-        database, settings.credential_encryption_key, settings.cv_control_timeout_seconds
+        database,
+        settings.credential_encryption_key,
+        settings.cv_control_timeout_seconds,
+        settings.cv_node_offline_threshold_seconds,
     )
     retriever = (
         ChromaKnowledgeRetriever(
@@ -91,6 +85,7 @@ def build_service_container(settings: Settings, database: Database) -> ServiceCo
             settings.rag_embedding_api_key,
             settings.rag_embedding_base_url,
             settings.rag_embedding_dimensions,
+            collection_name=settings.rag_collection_name,
         )
         if settings.rag_enabled
         else None

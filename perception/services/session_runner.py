@@ -17,10 +17,7 @@ from typing import Dict, Any, List, Optional, Union, Tuple
 import cv2
 import numpy as np
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
+from perception.config import DEFAULT_DANGER_ZONES_PATH, DEFAULT_WEIGHTS_PATH, PROJECT_ROOT
 from perception.schemas.contract_v1 import (
     CameraStatusContractV1,
     CameraRunConfigContractV1,
@@ -211,7 +208,7 @@ class CameraSessionRunner:
             return self.initial_danger_zones
 
         # Fallback to local default_danger_zones.json
-        default_cfg_path = PROJECT_ROOT / "perception" / "configs" / "default_danger_zones.json"
+        default_cfg_path = DEFAULT_DANGER_ZONES_PATH
         if default_cfg_path.is_file():
             loaded = load_danger_zones_from_json(default_cfg_path)
             logger.info(f"[SessionRunner] Agent config unavailable; gracefully fell back to {default_cfg_path} ({len(loaded)} zones)")
@@ -452,7 +449,7 @@ class CivilSafetyPerceptionService:
     @property
     def detector(self) -> BaseDetector:
         if self._detector is None:
-            w_path = self.weights_path or str(PROJECT_ROOT / "perception" / "weights" / "helmet_head_person_s.pt")
+            w_path = self.weights_path or str(DEFAULT_WEIGHTS_PATH)
             det = LegacyYOLOv5Adapter(device=self.device)
             if Path(w_path).is_file():
                 det.load_model(w_path, device=self.device)

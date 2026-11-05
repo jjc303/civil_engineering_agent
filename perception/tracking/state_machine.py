@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 import uuid
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Protocol, Sequence, Tuple, runtime_checkable
 
 from perception.geometry.danger_zone import person_in_danger_zone
 from perception.schemas.detection import (
@@ -13,6 +13,25 @@ from perception.schemas.detection import (
     ViolationSeverity,
     ViolationType,
 )
+
+
+@runtime_checkable
+class SafetyRulePlugin(Protocol):
+    """Pluggable rule evaluator interface for extending worker safety monitoring (OCP)."""
+
+    def evaluate_person(
+        self,
+        person: TrackedPerson,
+        danger_zones: List[DangerZone],
+        current_time: float,
+        camera_id: str,
+    ) -> Tuple[List[ViolationEvent], List[ViolationEvent]]: ...
+
+    def cleanup_stale_tracks(
+        self,
+        active_track_ids: set[int],
+        current_time: float,
+    ) -> List[ViolationEvent]: ...
 
 
 class ZoneIntrusionState(str, Enum):
@@ -242,7 +261,8 @@ class HelmetComplianceTracker:
 
 class WorkerSafetyMonitor:
     """
-    Coordinates danger zone intrusion debounce, dwell timing, and helmet compliance for all active tracks.
+    Coordinates danger zone intrusion debounce, dwell timing, helmet compliance,
+    and any registered custom SafetyRulePlugin evaluators for all active tracks.
     """
 
     def __init__(
@@ -252,6 +272,7 @@ class WorkerSafetyMonitor:
         exit_debounce_frames: int = 5,
         helmet_debounce_frames: int = 5,
         helmet_resolve_debounce_frames: int = 5,
+        custom_rules: Optional[Sequence[SafetyRulePlugin]] = None,
     ):
         self.camera_id = camera_id
         self.enter_debounce_frames = enter_debounce_frames
@@ -263,6 +284,12 @@ class WorkerSafetyMonitor:
         self.zone_trackers: Dict[Tuple[int, str], PersonZoneTracker] = {}
         # Map track_id -> HelmetComplianceTracker
         self.helmet_trackers: Dict[int, HelmetComplianceTracker] = {}
+        # Pluggable custom rules
+        self.custom_rules: List[SafetyRulePlugin] = list(custom_rules or [])
+
+    def register_rule(self, rule: SafetyRulePlugin) -> None:
+        """Register an additional safety rule plugin at runtime."""
+        self.custom_rules.append(rule)
 
     def update_config(
         self,
@@ -288,7 +315,8 @@ class WorkerSafetyMonitor:
         current_time: Optional[float] = None,
     ) -> Tuple[List[ViolationEvent], List[ViolationEvent]]:
         """
-        Processes current frame's tracked persons against configured danger zones and helmet rules.
+        Processes current frame's tracked persons against configured danger zones, helmet rules,
+        and any registered custom rule plugins.
         :param tracked_persons: List of TrackedPerson objects (will be updated in-place with zone info)
         :param danger_zones: List of DangerZone definitions
         :param current_time: Monotonic or frame timestamp in seconds (defaults to time.monotonic())
@@ -316,6 +344,9 @@ class WorkerSafetyMonitor:
                 ht.active_violation.end_time = now
                 ht.active_violation.status = "RESOLVED"
                 closed_events.append(ht.active_violation)
+
+        for rule in self.custom_rules:
+            closed_events.extend(rule.cleanup_stale_tracks(active_track_ids, now))
 
         # Process each active person
         for person in tracked_persons:
@@ -385,5 +416,18 @@ class WorkerSafetyMonitor:
             person.is_in_danger_zone = is_in_any_zone
             person.danger_zone_name = matched_zone_name
             person.dwell_time_seconds = max_dwell
+
+            # 3. Custom pluggable rules evaluation
+            for rule in self.custom_rules:
+                r_new, r_closed = rule.evaluate_person(
+                    person=person,
+                    danger_zones=danger_zones,
+                    current_time=now,
+                    camera_id=self.camera_id,
+                )
+                if r_new:
+                    new_events.extend(r_new)
+                if r_closed:
+                    closed_events.extend(r_closed)
 
         return new_events, closed_events

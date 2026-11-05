@@ -71,6 +71,16 @@ def _get_training_statistics(decision: ToolDecision, ctx: ToolContext) -> ToolOu
     return ToolOutcome(data=data)
 
 
+def _summarize_safety_reports(data: object) -> str:
+    count = len(data) if isinstance(data, list) else 0
+    return f"当前查询到 {count} 份安全报告。可在下方预览摘要、查看详情或打开 PDF。" if count else "当前没有安全报告。"
+
+
+def _summarize_training_tasks(data: object) -> str:
+    count = len(data) if isinstance(data, list) else 0
+    return f"当前查询到 {count} 项培训任务。可在下方预览内容、查看详情或打开学习页。" if count else "当前没有培训任务。"
+
+
 _REQ_LEARNING = frozenset({Capability.LEARNING})
 
 LEARNING_READ_TOOLS: tuple[AgentTool, ...] = (
@@ -94,6 +104,7 @@ LEARNING_READ_TOOLS: tuple[AgentTool, ...] = (
         parameters="无",
         handler=_list_safety_reports,
         requires=_REQ_LEARNING,
+        terminal_summary=_summarize_safety_reports,
     ),
     AgentTool(
         name="get_safety_report",
@@ -108,6 +119,7 @@ LEARNING_READ_TOOLS: tuple[AgentTool, ...] = (
         parameters="无",
         handler=_list_training_tasks,
         requires=_REQ_LEARNING,
+        terminal_summary=_summarize_training_tasks,
     ),
     AgentTool(
         name="get_training_task",

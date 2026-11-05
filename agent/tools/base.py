@@ -122,6 +122,7 @@ class AgentTool:
     parameters: str
     handler: ToolHandler
     requires: frozenset[Capability] = frozenset()
+    terminal_summary: Callable[[Any], str] | None = None
 
     def execute(self, decision: ToolDecision, ctx: ToolContext) -> ToolOutcome:
         return self.handler(decision, ctx)

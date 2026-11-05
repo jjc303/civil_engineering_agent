@@ -36,6 +36,14 @@ if [[ -f "$project_root/.env" ]]; then
     set +a
 fi
 
+# Prevent dead local proxy variables (e.g., 127.0.0.1:7890 when Clash is off)
+# from breaking frpc tunnel or outbound LLM/Embedding requests.
+if [[ "${http_proxy:-}${HTTP_PROXY:-}${https_proxy:-}${HTTPS_PROXY:-}" == *"127.0.0.1:7890"* ]]; then
+    if ! (echo >/dev/tcp/127.0.0.1/7890) >/dev/null 2>&1; then
+        unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+    fi
+fi
+
 : "${CV_NODE_TOKEN:?CV_NODE_TOKEN must be configured in .env}"
 : "${AGENT_BIND_HOST:?AGENT_BIND_HOST must be configured in .env}"
 : "${AGENT_PORT:?AGENT_PORT must be configured in .env}"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
@@ -7,8 +8,11 @@ import httpx
 from pydantic import BaseModel, Field
 
 
-GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
-FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+DEFAULT_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
+DEFAULT_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+GEOCODING_URL = os.getenv("AGENT_WEATHER_GEOCODING_URL", DEFAULT_GEOCODING_URL).strip() or DEFAULT_GEOCODING_URL
+FORECAST_URL = os.getenv("AGENT_WEATHER_FORECAST_URL", DEFAULT_FORECAST_URL).strip() or DEFAULT_FORECAST_URL
+DEFAULT_WEATHER_TIMEOUT_SECONDS = float(os.getenv("AGENT_WEATHER_TIMEOUT_SECONDS", "8.0"))
 CURRENT_FIELDS = (
     "temperature_2m,apparent_temperature,relative_humidity_2m,"
     "precipitation,weather_code,wind_speed_10m,wind_gusts_10m"
@@ -81,21 +85,32 @@ def extract_weather_location(question: str) -> str | None:
     return None
 
 
-def get_current_weather(location: str, *, client: httpx.Client | None = None) -> CurrentWeather:
+def get_current_weather(
+    location: str,
+    *,
+    client: httpx.Client | None = None,
+    geocoding_url: str | None = None,
+    forecast_url: str | None = None,
+    timeout_seconds: float | None = None,
+) -> CurrentWeather:
     """Resolve a human-readable location and fetch current conditions from Open-Meteo.
 
-    The provider URLs and request parameters are fixed in code; LLM output only
-    supplies a bounded location string and cannot choose an arbitrary URL.
+    The provider URLs and request parameters are configured via environment/settings;
+    LLM output only supplies a bounded location string and cannot choose an arbitrary URL.
     """
     normalized_location = location.strip()
     if not 2 <= len(normalized_location) <= 128:
         raise WeatherLookupError("weather location must contain 2 to 128 characters")
 
+    resolved_geocoding_url = geocoding_url or os.getenv("AGENT_WEATHER_GEOCODING_URL", GEOCODING_URL)
+    resolved_forecast_url = forecast_url or os.getenv("AGENT_WEATHER_FORECAST_URL", FORECAST_URL)
+    resolved_timeout = timeout_seconds if timeout_seconds is not None else DEFAULT_WEATHER_TIMEOUT_SECONDS
+
     owns_client = client is None
-    http_client = client or httpx.Client(timeout=8.0, follow_redirects=False)
+    http_client = client or httpx.Client(timeout=resolved_timeout, follow_redirects=False)
     try:
         geocode = http_client.get(
-            GEOCODING_URL,
+            resolved_geocoding_url,
             params={"name": normalized_location, "count": 1, "language": "zh", "format": "json"},
         )
         geocode.raise_for_status()
@@ -105,7 +120,7 @@ def get_current_weather(location: str, *, client: httpx.Client | None = None) ->
 
         place: dict[str, Any] = results[0]
         forecast = http_client.get(
-            FORECAST_URL,
+            resolved_forecast_url,
             params={
                 "latitude": place["latitude"],
                 "longitude": place["longitude"],

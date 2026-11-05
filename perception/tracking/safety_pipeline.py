@@ -19,7 +19,7 @@ from perception.schemas.detection import (
 )
 from perception.storage.event_store import EventStore
 from perception.tracking.byte_tracker import BYTETracker
-from perception.tracking.state_machine import WorkerSafetyMonitor
+from perception.tracking.state_machine import SafetyRulePlugin, WorkerSafetyMonitor
 
 if TYPE_CHECKING:
     from perception.services.event_publisher import PerceptionEventPublisher
@@ -66,6 +66,7 @@ class SafetyPerceptionPipeline:
         model_version: str = "legacy-yolov5",
         feature_extractor: Optional["PersonFeatureExtractor"] = None,
         cross_camera_matcher: Optional["CrossCameraMatcher"] = None,
+        custom_rules: Optional[List[SafetyRulePlugin]] = None,
     ):
         self.detector = detector
         self.danger_zones = danger_zones or []
@@ -80,6 +81,7 @@ class SafetyPerceptionPipeline:
         self.head_classes = head_classes
         self.model_name = model_name
         self.model_version = model_version
+        self._custom_rules: List[SafetyRulePlugin] = list(custom_rules or [])
 
         self.tracker = BYTETracker(track_thresh=track_thresh)
         self.safety_monitor = WorkerSafetyMonitor(
@@ -87,6 +89,7 @@ class SafetyPerceptionPipeline:
             enter_debounce_frames=enter_debounce_frames,
             exit_debounce_frames=exit_debounce_frames,
             helmet_debounce_frames=helmet_debounce_frames,
+            custom_rules=self._custom_rules,
         )
 
         self.frame_counter: int = 0
@@ -119,6 +122,11 @@ class SafetyPerceptionPipeline:
         if danger_zones is not None:
             self.danger_zones = danger_zones
 
+    def register_safety_rule(self, rule: SafetyRulePlugin) -> None:
+        """Register a custom safety violation rule plugin on the pipeline."""
+        self._custom_rules.append(rule)
+        self.safety_monitor.register_rule(rule)
+
     def reset(self):
         self.tracker.reset()
         self.safety_monitor = WorkerSafetyMonitor(
@@ -126,6 +134,7 @@ class SafetyPerceptionPipeline:
             enter_debounce_frames=self.safety_monitor.enter_debounce_frames,
             exit_debounce_frames=self.safety_monitor.exit_debounce_frames,
             helmet_debounce_frames=self.safety_monitor.helmet_debounce_frames,
+            custom_rules=self._custom_rules,
         )
         self.frame_counter = 0
         self.active_violations.clear()
