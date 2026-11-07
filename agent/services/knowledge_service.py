@@ -6,24 +6,32 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from agent.contracts.chat import KnowledgeCitation
+from agent.contracts.knowledge import (
+    DocumentType,
+    KnowledgeDocumentDetailResponse,
+    KnowledgeDocumentPage,
+    KnowledgeDocumentResponse,
+    KnowledgeIndexJobPage,
+    KnowledgeIndexJobResponse,
+    KnowledgeMetadataUpdate,
+    KnowledgeVersionResponse,
+    StandardValidity,
+)
 from agent.core.config import (
     DEFAULT_RAG_ACCIDENT_REPORTS_SUBDIRECTORY,
     DEFAULT_RAG_STANDARDS_SUBDIRECTORY,
     validate_rag_inbox_subdirectories,
 )
-from agent.contracts.knowledge import (
-    DocumentType, StandardValidity, KnowledgeMetadataUpdate, KnowledgeDocumentDetailResponse, KnowledgeDocumentPage, KnowledgeDocumentResponse,
-    KnowledgeIndexJobPage, KnowledgeIndexJobResponse, KnowledgeVersionResponse,
-)
 from agent.db.base import Database
-from agent.db.models import KnowledgeAuditModel, KnowledgeDocumentModel, KnowledgeDocumentVersionModel, KnowledgeIndexJobModel
+from agent.db.models import KnowledgeDocumentModel, KnowledgeDocumentVersionModel, KnowledgeIndexJobModel
 from agent.llm.protocol import ChatModelPort
 from agent.prompts import load_prompt
 from agent.rag.chroma_adapter import ChromaKnowledgeRetriever
 from agent.rag.manager import RagManager
+from agent.repositories.knowledge import KnowledgeRepository
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +41,21 @@ def _now() -> datetime:
 
 
 class KnowledgeService:
-    def __init__(self, database: Database, retriever: ChromaKnowledgeRetriever | None, document_directory: str, inbox_directory: str, max_upload_bytes: int, allowed_extensions: str, chunk_size: int, chunk_overlap: int, top_k_max: int, *, standards_subdirectory: str = DEFAULT_RAG_STANDARDS_SUBDIRECTORY, accident_reports_subdirectory: str = DEFAULT_RAG_ACCIDENT_REPORTS_SUBDIRECTORY) -> None:
+    def __init__(
+        self,
+        database: Database,
+        retriever: ChromaKnowledgeRetriever | None,
+        document_directory: str,
+        inbox_directory: str,
+        max_upload_bytes: int,
+        allowed_extensions: str,
+        chunk_size: int,
+        chunk_overlap: int,
+        top_k_max: int,
+        *,
+        standards_subdirectory: str = DEFAULT_RAG_STANDARDS_SUBDIRECTORY,
+        accident_reports_subdirectory: str = DEFAULT_RAG_ACCIDENT_REPORTS_SUBDIRECTORY,
+    ) -> None:
         validate_rag_inbox_subdirectories(standards_subdirectory, accident_reports_subdirectory)
         self.database, self.retriever = database, retriever
         self.rag_manager = RagManager(retriever, chunk_size, chunk_overlap) if retriever else None
@@ -49,8 +71,6 @@ class KnowledgeService:
         self.max_upload_bytes = max_upload_bytes
         self.allowed = {value.strip().lower() for value in allowed_extensions.split(",")}
         self.chunk_size, self.chunk_overlap, self.top_k_max = chunk_size, chunk_overlap, top_k_max
-        # A failed external embedding request should be retried after a process
-        # restart, but never hammered once per inbox polling interval.
         self._failed_retry_attempted: set[str] = set()
         self.summary_model: ChatModelPort | None = None
         self._summary_failed_attempted: set[str] = set()
@@ -65,17 +85,18 @@ class KnowledgeService:
         self.inbox.mkdir(parents=True, exist_ok=True)
         imported = recovered = retried = skipped = failed = 0
 
-        # Chroma is a rebuildable cache. A cleared persistence directory must not
-        # leave MySQL ACTIVE versions appearing searchable when no vectors exist.
         assert self.rag_manager is not None
         standards_count = self.rag_manager.count("STANDARD")
         report_count = self.rag_manager.count("ACCIDENT_REPORT")
         if report_count == 0 or standards_count == 0:
             with self.database.session() as session:
-                missing_types = []
-                if report_count == 0: missing_types.append("ACCIDENT_REPORT")
-                if standards_count == 0: missing_types.append("STANDARD")
-                active_version_ids = list(session.scalars(select(KnowledgeDocumentVersionModel.document_version_id).join(KnowledgeDocumentModel).where(KnowledgeDocumentVersionModel.status == "ACTIVE", KnowledgeDocumentModel.document_type.in_(missing_types))))
+                repo = KnowledgeRepository(session)
+                missing_types: list[str] = []
+                if report_count == 0:
+                    missing_types.append("ACCIDENT_REPORT")
+                if standards_count == 0:
+                    missing_types.append("STANDARD")
+                active_version_ids = repo.list_active_version_ids_by_types(missing_types)
             for version_id in active_version_ids:
                 try:
                     job = self.reindex(version_id, "recovery")
@@ -103,32 +124,34 @@ class KnowledgeService:
                 source_label = f"inbox/{relative.as_posix()}"[:512]
                 document_type = self._document_type_by_subdirectory[relative.parts[0]]
                 with self.database.session() as session:
-                    existing_version = session.scalar(select(KnowledgeDocumentVersionModel).where(KnowledgeDocumentVersionModel.checksum_sha256 == checksum))
-                    existing = session.scalar(select(KnowledgeDocumentModel).where(KnowledgeDocumentModel.source_label == source_label))
+                    repo = KnowledgeRepository(session)
+                    existing_version = repo.find_version_by_checksum(checksum)
+                    existing = repo.find_document_by_source_label(source_label)
                     document_id = existing.document_id if existing else None
                     current_version = existing.current_version if existing else None
                 if existing_version:
                     with self.database.session() as session:
-                        existing_doc = session.get(KnowledgeDocumentModel, existing_version.document_id)
-                        if existing_doc.document_type != document_type:
+                        repo = KnowledgeRepository(session)
+                        existing_doc = repo.get_document(existing_version.document_id)
+                        if existing_doc and existing_doc.document_type != document_type:
                             skipped += 1
                             continue
-                        prior_source = existing_doc.source_label
+                        prior_source = existing_doc.source_label if existing_doc else ""
                     if existing_version.status == "ACTIVE":
                         if prior_source != source_label and prior_source.startswith("inbox/") and not (inbox_root / prior_source.removeprefix("inbox/")).exists():
                             self.rag_manager.update_version_source(document_type, existing_version.document_version_id, source_label)
                             with self.database.session() as session:
-                                moved_doc = session.get(KnowledgeDocumentModel, existing_version.document_id)
-                                if moved_doc.source_display == prior_source: moved_doc.source_display = source_label
-                                moved_doc.source_label = source_label
+                                repo = KnowledgeRepository(session)
+                                moved_doc = repo.get_document(existing_version.document_id)
+                                if moved_doc:
+                                    if moved_doc.source_display == prior_source:
+                                        moved_doc.source_display = source_label
+                                    moved_doc.source_label = source_label
                         skipped += 1
                         continue
                     if existing_version.document_version_id in self._failed_retry_attempted:
                         skipped += 1
                         continue
-                    # The managed original is intentionally separate from the
-                    # inbox. If it was removed along with a Chroma reset, restore
-                    # it only after the inbox content matched the stored checksum.
                     managed_path = self.root / existing_version.storage_key
                     if not managed_path.is_file():
                         managed_path.parent.mkdir(parents=True, exist_ok=True)
@@ -157,7 +180,21 @@ class KnowledgeService:
         summaries = self.backfill_missing_summaries(limit=5)
         return {"imported": imported, "recovered": recovered, "retried": retried, "skipped": skipped, "failed": failed, "summaries_generated": summaries["generated"]}
 
-    def upload(self, *, filename: str, content: bytes, title: str, source_label: str, actor: str, document_id: str | None = None, expected_current_version: int | None = None, document_type: DocumentType | None = None, document_date: datetime | None = None, risk_tags: list[str] | None = None, summary: str | None = None) -> tuple[KnowledgeDocumentDetailResponse, KnowledgeIndexJobResponse, bool]:
+    def upload(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        title: str,
+        source_label: str,
+        actor: str,
+        document_id: str | None = None,
+        expected_current_version: int | None = None,
+        document_type: DocumentType | None = None,
+        document_date: datetime | None = None,
+        risk_tags: list[str] | None = None,
+        summary: str | None = None,
+    ) -> tuple[KnowledgeDocumentDetailResponse, KnowledgeIndexJobResponse, bool]:
         suffix = Path(filename).suffix.lower()
         title = title.strip()
         source_label = source_label.strip()
@@ -172,15 +209,20 @@ class KnowledgeService:
             raise ValueError("unsupported or oversized knowledge document")
         checksum = hashlib.sha256(content).hexdigest()
         with self.database.session() as session:
-            existing = session.scalar(select(KnowledgeDocumentVersionModel).where(KnowledgeDocumentVersionModel.checksum_sha256 == checksum))
+            repo = KnowledgeRepository(session)
+            existing = repo.find_version_by_checksum(checksum)
             if existing:
-                existing_document = session.get(KnowledgeDocumentModel, existing.document_id)
-                if document_type and existing_document.document_type != document_type:
+                existing_document = repo.get_document(existing.document_id)
+                if document_type and existing_document and existing_document.document_type != document_type:
                     raise ValueError("identical content exists under a different document type")
-                return self._detail(session, existing.document_id), self._job_for_version(session, existing.document_version_id), True
+                detail = repo.get_document_detail(existing.document_id)
+                job_resp = repo.get_job_for_version(existing.document_version_id)
+                if not detail or not job_resp:
+                    raise KeyError("knowledge document or job not found")
+                return detail, job_resp, True
             now = _now()
             if document_id:
-                document = session.get(KnowledgeDocumentModel, document_id)
+                document = repo.get_document(document_id)
                 if not document:
                     raise KeyError("knowledge document not found")
                 if document_type is not None and document.document_type != document_type:
@@ -192,27 +234,71 @@ class KnowledgeService:
             else:
                 document_type = document_type or "ACCIDENT_REPORT"
                 document_id, version_no = str(uuid4()), 1
-                document = KnowledgeDocumentModel(document_id=document_id, title=title, source_label=source_label, source_display=source_label, document_type=document_type, checksum_sha256=checksum, current_version=version_no, status="UPLOADED", created_at_utc=now, created_by=actor, document_date=document_date, risk_tags=risk_tags or [], summary=summary)
+                document = KnowledgeDocumentModel(
+                    document_id=document_id,
+                    title=title,
+                    source_label=source_label,
+                    source_display=source_label,
+                    document_type=document_type,
+                    checksum_sha256=checksum,
+                    current_version=version_no,
+                    status="UPLOADED",
+                    created_at_utc=now,
+                    created_by=actor,
+                    document_date=document_date,
+                    risk_tags=risk_tags or [],
+                    summary=summary,
+                )
                 session.add(document)
             if version_no > 1:
                 document.title = title
-                if actor != "inbox" and source_label: document.source_display = source_label
-                if document_date is not None: document.document_date = document_date
-                if risk_tags is not None: document.risk_tags = risk_tags
-                if summary is not None: document.summary = summary
+                if actor != "inbox" and source_label:
+                    document.source_display = source_label
+                if document_date is not None:
+                    document.document_date = document_date
+                if risk_tags is not None:
+                    document.risk_tags = risk_tags
+                if summary is not None:
+                    document.summary = summary
             version_id = str(uuid4())
             storage_key = f"{document_id}/{version_id}{suffix}"
             path = self.root / storage_key
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(content)
-            version = KnowledgeDocumentVersionModel(document_version_id=version_id, document_id=document_id, version_no=version_no, storage_key=storage_key, checksum_sha256=checksum, status="UPLOADED", created_at_utc=now, created_by=actor)
-            job = KnowledgeIndexJobModel(job_id=str(uuid4()), document_version_id=version_id, operation="INDEX", status="QUEUED", attempt_count=0, requested_by=actor, created_at_utc=now)
+            version = KnowledgeDocumentVersionModel(
+                document_version_id=version_id,
+                document_id=document_id,
+                version_no=version_no,
+                storage_key=storage_key,
+                checksum_sha256=checksum,
+                status="UPLOADED",
+                created_at_utc=now,
+                created_by=actor,
+            )
+            job = KnowledgeIndexJobModel(
+                job_id=str(uuid4()),
+                document_version_id=version_id,
+                operation="INDEX",
+                status="QUEUED",
+                attempt_count=0,
+                requested_by=actor,
+                created_at_utc=now,
+            )
             session.add_all([version, job])
             document.current_version = version_no
-            self._audit(session, actor, "UPLOAD" if version_no == 1 else "NEW_VERSION", document_id, version_id, job.job_id, {"filename": Path(filename).name, "bytes": len(content)})
+            repo.record_audit(
+                actor=actor,
+                action="UPLOAD" if version_no == 1 else "NEW_VERSION",
+                document_id=document_id,
+                document_version_id=version_id,
+                job_id=job.job_id,
+                detail={"filename": Path(filename).name, "bytes": len(content)},
+            )
         self.run_job(job.job_id)
         with self.database.session() as session:
-            indexed = session.get(KnowledgeIndexJobModel, job.job_id).status == "SUCCEEDED"
+            repo = KnowledgeRepository(session)
+            indexed_job = repo.get_job(job.job_id)
+            indexed = indexed_job is not None and indexed_job.status == "SUCCEEDED"
         if indexed and self.summary_model is not None:
             try:
                 self.summarize_document(document_id)
@@ -220,18 +306,26 @@ class KnowledgeService:
                 logger.exception("Failed to generate summary for knowledge document: %s", document_id)
                 self._summary_failed_attempted.add(document_id)
         with self.database.session() as session:
-            return self._detail(session, document_id), self._job(session.get(KnowledgeIndexJobModel, job.job_id)), False
+            repo = KnowledgeRepository(session)
+            detail = repo.get_document_detail(document_id)
+            job_obj = repo.get_job(job.job_id)
+            if not detail or not job_obj:
+                raise KeyError("knowledge document or job not found")
+            return detail, repo.to_job_response(job_obj), False
 
     def summarize_document(self, document_id: str, *, force: bool = False) -> KnowledgeDocumentDetailResponse:
         """Summarize indexed source text; retain a curator's existing summary unless forced."""
         if self.summary_model is None:
             raise RuntimeError("summary model is unavailable")
         with self.database.session() as session:
-            doc = session.get(KnowledgeDocumentModel, document_id)
+            repo = KnowledgeRepository(session)
+            doc = repo.get_document(document_id)
             if not doc or doc.status != "ACTIVE":
                 raise KeyError("active knowledge document not found")
             if doc.summary and not force:
-                return self._detail(session, document_id)
+                detail = repo.get_document_detail(document_id)
+                assert detail is not None
+                return detail
             title, document_type, validity_status = doc.title, doc.document_type, doc.validity_status
             current_version = doc.current_version
         chunks = self.document_chunks(document_id)
@@ -250,23 +344,28 @@ class KnowledgeService:
         if len(summary) > 400:
             raise ValueError("summary model returned oversized content")
         with self.database.session() as session:
-            doc = session.get(KnowledgeDocumentModel, document_id)
+            repo = KnowledgeRepository(session)
+            doc = repo.get_document(document_id)
             if not doc or doc.status != "ACTIVE" or doc.current_version != current_version:
                 raise RuntimeError("document changed during summary generation")
             if not doc.summary or force:
                 doc.summary = summary
-                self._audit(session, "agent", "SUMMARY_GENERATED", document_id, None, None, {"chars": len(summary)})
+                repo.record_audit(
+                    actor="agent",
+                    action="SUMMARY_GENERATED",
+                    document_id=document_id,
+                    detail={"chars": len(summary)},
+                )
             session.flush()
-            return self._detail(session, document_id)
+            detail = repo.get_document_detail(document_id)
+            assert detail is not None
+            return detail
 
     def backfill_missing_summaries(self, limit: int = 5) -> dict[str, int]:
         if self.summary_model is None or not self.rag_manager:
             return {"generated": 0, "failed": 0}
         with self.database.session() as session:
-            ids = list(session.scalars(select(KnowledgeDocumentModel.document_id).where(
-                KnowledgeDocumentModel.status == "ACTIVE",
-                (KnowledgeDocumentModel.summary.is_(None)) | (KnowledgeDocumentModel.summary == ""),
-            ).order_by(KnowledgeDocumentModel.created_at_utc)))
+            ids = KnowledgeRepository(session).list_unsummarized_active_document_ids()
         generated = failed = 0
         for document_id in ids:
             if document_id in self._summary_failed_attempted:
@@ -287,10 +386,16 @@ class KnowledgeService:
             raise RuntimeError("RAG is disabled")
         assert self.rag_manager is not None
         with self.database.session() as session:
-            job = session.get(KnowledgeIndexJobModel, job_id)
-            if not job: raise KeyError("index job not found")
-            version = session.get(KnowledgeDocumentVersionModel, job.document_version_id)
-            document = session.get(KnowledgeDocumentModel, version.document_id)
+            repo = KnowledgeRepository(session)
+            job = repo.get_job(job_id)
+            if not job:
+                raise KeyError("index job not found")
+            version = repo.get_version(job.document_version_id)
+            if not version:
+                raise KeyError("knowledge version not found")
+            document = repo.get_document(version.document_id)
+            if not document:
+                raise KeyError("knowledge document not found")
             job.status, job.attempt_count, job.started_at_utc = "RUNNING", job.attempt_count + 1, _now()
             version.status = "PARSING"
             try:
@@ -304,13 +409,24 @@ class KnowledgeService:
                 })
                 version.status = "INDEXING"
                 self.rag_manager.replace_version(document.document_type, version.document_version_id, prepared.records)
-                # Only one version is searchable per document.
-                for old in session.scalars(select(KnowledgeDocumentVersionModel).where(KnowledgeDocumentVersionModel.document_id == document.document_id, KnowledgeDocumentVersionModel.document_version_id != version.document_version_id, KnowledgeDocumentVersionModel.status == "ACTIVE")):
-                    old.status, old.retired_at_utc = "RETIRED", _now(); self._delete_vectors(old.document_version_id, document.document_type)
+                for old in session.scalars(select(KnowledgeDocumentVersionModel).where(
+                    KnowledgeDocumentVersionModel.document_id == document.document_id,
+                    KnowledgeDocumentVersionModel.document_version_id != version.document_version_id,
+                    KnowledgeDocumentVersionModel.status == "ACTIVE",
+                )):
+                    old.status, old.retired_at_utc = "RETIRED", _now()
+                    self._delete_vectors(old.document_version_id, document.document_type)
                 version.status, version.parser_name, version.page_count, version.indexed_at_utc = "ACTIVE", prepared.parser_name, prepared.page_count, _now()
                 document.status = "ACTIVE"
                 job.status, job.finished_at_utc = "SUCCEEDED", _now()
-                self._audit(session, job.requested_by, "INDEX_SUCCEEDED", document.document_id, version.document_version_id, job.job_id, {"chunk_count": len(prepared.records)})
+                repo.record_audit(
+                    actor=job.requested_by,
+                    action="INDEX_SUCCEEDED",
+                    document_id=document.document_id,
+                    document_version_id=version.document_version_id,
+                    job_id=job.job_id,
+                    detail={"chunk_count": len(prepared.records)},
+                )
             except Exception as exc:
                 logger.exception("Knowledge indexing failed for version: %s", version.document_version_id)
                 try:
@@ -332,22 +448,7 @@ class KnowledgeService:
         if not folder.exists():
             return []
         with self.database.session() as session:
-            rows = session.execute(
-                select(KnowledgeDocumentModel.source_label, KnowledgeDocumentModel.validity_status, KnowledgeDocumentVersionModel.status, KnowledgeDocumentVersionModel.failure_detail_safe)
-                .join(KnowledgeDocumentVersionModel)
-                .where(
-                    KnowledgeDocumentModel.document_type == "STANDARD",
-                    KnowledgeDocumentVersionModel.version_no == KnowledgeDocumentModel.current_version,
-                )
-            )
-            states = {
-                row.source_label: ((
-                    "已索引" if row.status == "ACTIVE" else
-                    "需 OCR" if row.status == "FAILED" and "no indexable text" in (row.failure_detail_safe or "") else
-                    "索引失败" if row.status == "FAILED" else "待索引"
-                ), row.validity_status)
-                for row in rows
-            }
+            states = KnowledgeRepository(session).get_standard_catalog_states()
         return sorted(
             (
                 path.stem,
@@ -361,20 +462,31 @@ class KnowledgeService:
         )
 
     def _search_type(self, document_type: DocumentType, query: str, top_k: int) -> tuple[list[dict[str, str]], list[KnowledgeCitation]]:
-        if not self.rag_manager: raise RuntimeError("RAG is disabled")
-        if not query.strip() or not 1 <= top_k <= self.top_k_max: raise ValueError("invalid knowledge query")
+        if not self.rag_manager:
+            raise RuntimeError("RAG is disabled")
+        if not query.strip() or not 1 <= top_k <= self.top_k_max:
+            raise ValueError("invalid knowledge query")
         with self.database.session() as session:
-            query_active = select(KnowledgeDocumentVersionModel.document_id, KnowledgeDocumentVersionModel.document_version_id, KnowledgeDocumentModel.validity_status).join(KnowledgeDocumentModel).where(KnowledgeDocumentVersionModel.status == "ACTIVE", KnowledgeDocumentModel.document_type == document_type)
-            if document_type == "STANDARD":
-                query_active = query_active.where(KnowledgeDocumentModel.validity_status != "SUPERSEDED")
-            active = {(row.document_id, row.document_version_id): row.validity_status for row in session.execute(query_active)}
+            active = KnowledgeRepository(session).get_active_versions_validity(document_type)
         chunks = self.rag_manager.search(document_type, query.strip(), top_k, [version_id for _, version_id in active])
         chunks = [chunk for chunk in chunks if (chunk.document_id, chunk.document_version_id) in active]
-        return ([{"content": c.text, "title": c.title, "page_or_section": c.page_or_section, "source_label": c.source_label, "validity_status": active[(c.document_id, c.document_version_id)]} for c in chunks], [self._citation(c) for c in chunks])
+        return (
+            [{"content": c.text, "title": c.title, "page_or_section": c.page_or_section, "source_label": c.source_label, "validity_status": active[(c.document_id, c.document_version_id)]} for c in chunks],
+            [self._citation(c) for c in chunks],
+        )
 
     @staticmethod
     def _citation(chunk) -> KnowledgeCitation:
-        return KnowledgeCitation(document_id=chunk.document_id, version_no=chunk.version_no, title=chunk.title, page_or_section=chunk.page_or_section, chunk_id=chunk.chunk_id, relevance_score=chunk.relevance_score, source_label=chunk.source_label, document_type=chunk.document_type)
+        return KnowledgeCitation(
+            document_id=chunk.document_id,
+            version_no=chunk.version_no,
+            title=chunk.title,
+            page_or_section=chunk.page_or_section,
+            chunk_id=chunk.chunk_id,
+            relevance_score=chunk.relevance_score,
+            source_label=chunk.source_label,
+            document_type=chunk.document_type,
+        )
 
     def _delete_vectors(self, version_id: str, document_type: DocumentType) -> None:
         if self.rag_manager:
@@ -382,64 +494,103 @@ class KnowledgeService:
 
     def list_documents(self, limit: int, offset: int, status: str | None, document_type: DocumentType | None = None) -> KnowledgeDocumentPage:
         with self.database.session() as session:
-            q = select(KnowledgeDocumentModel)
-            if status: q = q.where(KnowledgeDocumentModel.status == status)
-            if document_type: q = q.where(KnowledgeDocumentModel.document_type == document_type)
-            total = int(session.scalar(select(func.count()).select_from(q.subquery())) or 0)
-            items = list(session.scalars(q.order_by(KnowledgeDocumentModel.created_at_utc.desc()).offset(offset).limit(limit)))
-            return KnowledgeDocumentPage(items=[self._document(x) for x in items], total=total, limit=limit, offset=offset)
+            items, total = KnowledgeRepository(session).list_documents(limit, offset, status, document_type)
+            return KnowledgeDocumentPage(items=items, total=total, limit=limit, offset=offset)
 
     def detail(self, document_id: str) -> KnowledgeDocumentDetailResponse:
-        with self.database.session() as session: return self._detail(session, document_id)
+        with self.database.session() as session:
+            detail = KnowledgeRepository(session).get_document_detail(document_id)
+            if not detail:
+                raise KeyError("knowledge document not found")
+            return detail
 
     def update_metadata(self, document_id: str, payload: KnowledgeMetadataUpdate, actor: str) -> KnowledgeDocumentDetailResponse:
         with self.database.session() as session:
-            doc = session.get(KnowledgeDocumentModel, document_id)
-            if not doc: raise KeyError("knowledge document not found")
+            repo = KnowledgeRepository(session)
+            doc = repo.get_document(document_id)
+            if not doc:
+                raise KeyError("knowledge document not found")
             doc.document_date = payload.document_date
             doc.risk_tags = [tag.strip()[:64] for tag in payload.risk_tags if tag.strip()][:20]
             doc.summary = payload.summary.strip()[:2000] if payload.summary else None
             doc.source_display = payload.source_display.strip()[:512] if payload.source_display else None
-            self._audit(session, actor, "METADATA_UPDATED", document_id, None, None, {})
-            return self._detail(session, document_id)
+            repo.record_audit(actor=actor, action="METADATA_UPDATED", document_id=document_id)
+            session.flush()
+            detail = repo.get_document_detail(document_id)
+            assert detail is not None
+            return detail
 
     def document_chunks(self, document_id: str) -> list:
-        if not self.rag_manager: raise RuntimeError("RAG is disabled")
+        if not self.rag_manager:
+            raise RuntimeError("RAG is disabled")
         with self.database.session() as session:
-            doc = session.get(KnowledgeDocumentModel, document_id)
-            if not doc or doc.status != "ACTIVE": raise KeyError("active knowledge document not found")
-            if doc.document_type == "STANDARD" and doc.validity_status == "SUPERSEDED": raise ValueError("standard is superseded")
-            version = session.scalar(select(KnowledgeDocumentVersionModel).where(KnowledgeDocumentVersionModel.document_id == document_id, KnowledgeDocumentVersionModel.status == "ACTIVE"))
-            if not version: raise KeyError("active document version not found")
+            repo = KnowledgeRepository(session)
+            doc = repo.get_document(document_id)
+            if not doc or doc.status != "ACTIVE":
+                raise KeyError("active knowledge document not found")
+            if doc.document_type == "STANDARD" and doc.validity_status == "SUPERSEDED":
+                raise ValueError("standard is superseded")
+            version = session.scalar(select(KnowledgeDocumentVersionModel).where(
+                KnowledgeDocumentVersionModel.document_id == document_id,
+                KnowledgeDocumentVersionModel.status == "ACTIVE",
+            ))
+            if not version:
+                raise KeyError("active document version not found")
             document_type = doc.document_type
             version_id = version.document_version_id
         return self.rag_manager.get_version(document_type, version_id)
 
     def set_standard_validity(self, document_id: str, validity_status: StandardValidity, actor: str) -> KnowledgeDocumentDetailResponse:
         with self.database.session() as session:
-            doc = session.get(KnowledgeDocumentModel, document_id)
-            if not doc: raise KeyError("knowledge document not found")
-            if doc.document_type != "STANDARD": raise ValueError("validity status applies only to standards")
+            repo = KnowledgeRepository(session)
+            doc = repo.get_document(document_id)
+            if not doc:
+                raise KeyError("knowledge document not found")
+            if doc.document_type != "STANDARD":
+                raise ValueError("validity status applies only to standards")
             previous = doc.validity_status
             doc.validity_status = validity_status
-            self._audit(session, actor, "STANDARD_VALIDITY_UPDATED", document_id, None, None, {"from": previous, "to": validity_status})
-            return self._detail(session, document_id)
+            repo.record_audit(
+                actor=actor,
+                action="STANDARD_VALIDITY_UPDATED",
+                document_id=document_id,
+                detail={"from": previous, "to": validity_status},
+            )
+            session.flush()
+            detail = repo.get_document_detail(document_id)
+            assert detail is not None
+            return detail
 
     def classify(self, document_id: str, document_type: DocumentType, actor: str) -> KnowledgeDocumentDetailResponse:
         """Move an existing document between collections and rebuild its active version."""
         with self.database.session() as session:
-            doc = session.get(KnowledgeDocumentModel, document_id)
-            if not doc: raise KeyError("knowledge document not found")
-            if doc.document_type == document_type: return self._detail(session, document_id)
+            repo = KnowledgeRepository(session)
+            doc = repo.get_document(document_id)
+            if not doc:
+                raise KeyError("knowledge document not found")
+            if doc.document_type == document_type:
+                detail = repo.get_document_detail(document_id)
+                assert detail is not None
+                return detail
             old_type = doc.document_type
-            versions = list(session.scalars(select(KnowledgeDocumentVersionModel).where(KnowledgeDocumentVersionModel.document_id == document_id, KnowledgeDocumentVersionModel.status == "ACTIVE")))
+            versions = list(session.scalars(select(KnowledgeDocumentVersionModel).where(
+                KnowledgeDocumentVersionModel.document_id == document_id,
+                KnowledgeDocumentVersionModel.status == "ACTIVE",
+            )))
             for version in versions:
                 self._delete_vectors(version.document_version_id, old_type)
                 version.status = "UPLOADED"
             doc.document_type, doc.status = document_type, "UPLOADED"
             doc.validity_status = "UNKNOWN"
-            self._audit(session, actor, "CLASSIFY", document_id, None, None, {"from": old_type, "to": document_type})
-            target = session.scalar(select(KnowledgeDocumentVersionModel).where(KnowledgeDocumentVersionModel.document_id == document_id).order_by(KnowledgeDocumentVersionModel.version_no.desc()).limit(1))
+            repo.record_audit(
+                actor=actor,
+                action="CLASSIFY",
+                document_id=document_id,
+                detail={"from": old_type, "to": document_type},
+            )
+            target = session.scalar(select(KnowledgeDocumentVersionModel).where(
+                KnowledgeDocumentVersionModel.document_id == document_id,
+            ).order_by(KnowledgeDocumentVersionModel.version_no.desc()).limit(1))
             active_version_id = target.document_version_id if target else None
         if active_version_id:
             self.reindex(active_version_id, actor)
@@ -447,55 +598,86 @@ class KnowledgeService:
 
     def retire(self, document_id: str, actor: str) -> None:
         with self.database.session() as session:
-            doc = session.get(KnowledgeDocumentModel, document_id)
-            if not doc: raise KeyError("knowledge document not found")
-            for version in session.scalars(select(KnowledgeDocumentVersionModel).where(KnowledgeDocumentVersionModel.document_id == document_id, KnowledgeDocumentVersionModel.status == "ACTIVE")):
+            repo = KnowledgeRepository(session)
+            doc = repo.get_document(document_id)
+            if not doc:
+                raise KeyError("knowledge document not found")
+            for version in session.scalars(select(KnowledgeDocumentVersionModel).where(
+                KnowledgeDocumentVersionModel.document_id == document_id,
+                KnowledgeDocumentVersionModel.status == "ACTIVE",
+            )):
                 version.status, version.retired_at_utc = "RETIRED", _now()
                 self._delete_vectors(version.document_version_id, doc.document_type)
-            doc.status, doc.retired_at_utc = "RETIRED", _now(); self._audit(session, actor, "RETIRED", document_id, None, None, {})
+            doc.status, doc.retired_at_utc = "RETIRED", _now()
+            repo.record_audit(actor=actor, action="RETIRED", document_id=document_id)
 
     def activate(self, document_id: str, version_id: str, actor: str) -> KnowledgeIndexJobResponse:
         """Activate by rebuilding the selected retained version into the fixed collection."""
         with self.database.session() as session:
-            doc = session.get(KnowledgeDocumentModel, document_id)
-            version = session.get(KnowledgeDocumentVersionModel, version_id)
+            repo = KnowledgeRepository(session)
+            doc = repo.get_document(document_id)
+            version = repo.get_version(version_id)
             if not doc or not version or version.document_id != document_id:
                 raise KeyError("knowledge document version not found")
             version.status, version.failure_code, version.failure_detail_safe = "UPLOADED", None, None
             doc.status, doc.retired_at_utc = "UPLOADED", None
-            self._audit(session, actor, "ACTIVATE_REQUESTED", document_id, version_id, None, {})
+            repo.record_audit(actor=actor, action="ACTIVATE_REQUESTED", document_id=document_id, document_version_id=version_id)
         return self.reindex(version_id, actor)
 
     def reindex(self, version_id: str, actor: str) -> KnowledgeIndexJobResponse:
         with self.database.session() as session:
-            version = session.get(KnowledgeDocumentVersionModel, version_id)
-            if not version: raise KeyError("knowledge version not found")
-            job = KnowledgeIndexJobModel(job_id=str(uuid4()), document_version_id=version_id, operation="REINDEX", status="QUEUED", attempt_count=0, requested_by=actor, created_at_utc=_now()); session.add(job); self._audit(session, actor, "REINDEX_REQUESTED", version.document_id, version_id, job.job_id, {})
+            repo = KnowledgeRepository(session)
+            version = repo.get_version(version_id)
+            if not version:
+                raise KeyError("knowledge version not found")
+            job = KnowledgeIndexJobModel(
+                job_id=str(uuid4()),
+                document_version_id=version_id,
+                operation="REINDEX",
+                status="QUEUED",
+                attempt_count=0,
+                requested_by=actor,
+                created_at_utc=_now(),
+            )
+            session.add(job)
+            repo.record_audit(
+                actor=actor,
+                action="REINDEX_REQUESTED",
+                document_id=version.document_id,
+                document_version_id=version_id,
+                job_id=job.job_id,
+            )
         self.run_job(job.job_id)
-        with self.database.session() as session: return self._job(session.get(KnowledgeIndexJobModel, job.job_id))
+        with self.database.session() as session:
+            job_obj = KnowledgeRepository(session).get_job(job.job_id)
+            if not job_obj:
+                raise KeyError("index job not found")
+            return KnowledgeRepository.to_job_response(job_obj)
 
     def jobs(self, limit: int, offset: int, status: str | None) -> KnowledgeIndexJobPage:
         with self.database.session() as session:
-            q = select(KnowledgeIndexJobModel)
-            if status: q = q.where(KnowledgeIndexJobModel.status == status)
-            total = int(session.scalar(select(func.count()).select_from(q.subquery())) or 0); rows = list(session.scalars(q.order_by(KnowledgeIndexJobModel.created_at_utc.desc()).offset(offset).limit(limit)))
-            return KnowledgeIndexJobPage(items=[self._job(x) for x in rows], total=total, limit=limit, offset=offset)
+            items, total = KnowledgeRepository(session).list_jobs(limit, offset, status)
+            return KnowledgeIndexJobPage(items=items, total=total, limit=limit, offset=offset)
 
     def job(self, job_id: str) -> KnowledgeIndexJobResponse:
         with self.database.session() as session:
-            row = session.get(KnowledgeIndexJobModel, job_id)
-            if not row: raise KeyError("index job not found")
-            return self._job(row)
+            job_obj = KnowledgeRepository(session).get_job(job_id)
+            if not job_obj:
+                raise KeyError("index job not found")
+            return KnowledgeRepository.to_job_response(job_obj)
 
-    @staticmethod
-    def _document(row: KnowledgeDocumentModel) -> KnowledgeDocumentResponse: return KnowledgeDocumentResponse(document_id=row.document_id, title=row.title, source_label=row.source_label, source_display=row.source_display or row.source_label, document_type=row.document_type, validity_status=row.validity_status, current_version=row.current_version, status=row.status, created_at_utc=row.created_at_utc, document_date=row.document_date, risk_tags=row.risk_tags or [], summary=row.summary)
+    # Compatibility helpers
+    _document = staticmethod(KnowledgeRepository.to_document_response)
+    _job = staticmethod(KnowledgeRepository.to_job_response)
+
     def _detail(self, session, document_id: str) -> KnowledgeDocumentDetailResponse:
-        doc = session.get(KnowledgeDocumentModel, document_id)
-        if not doc: raise KeyError("knowledge document not found")
-        return KnowledgeDocumentDetailResponse(**self._document(doc).model_dump(), versions=[KnowledgeVersionResponse(document_version_id=x.document_version_id, version_no=x.version_no, status=x.status, parser_name=x.parser_name, page_count=x.page_count, indexed_at_utc=x.indexed_at_utc, failure_code=x.failure_code) for x in session.scalars(select(KnowledgeDocumentVersionModel).where(KnowledgeDocumentVersionModel.document_id == document_id).order_by(KnowledgeDocumentVersionModel.version_no.desc()))])
-    @staticmethod
-    def _job(row: KnowledgeIndexJobModel) -> KnowledgeIndexJobResponse: return KnowledgeIndexJobResponse(job_id=row.job_id, document_version_id=row.document_version_id, operation=row.operation, status=row.status, attempt_count=row.attempt_count, started_at_utc=row.started_at_utc, finished_at_utc=row.finished_at_utc, error_code=row.error_code)
+        detail = KnowledgeRepository(session).get_document_detail(document_id)
+        if not detail:
+            raise KeyError("knowledge document not found")
+        return detail
+
     def _job_for_version(self, session, version_id: str) -> KnowledgeIndexJobResponse:
-        return self._job(session.scalar(select(KnowledgeIndexJobModel).where(KnowledgeIndexJobModel.document_version_id == version_id).order_by(KnowledgeIndexJobModel.created_at_utc.desc())))
-    @staticmethod
-    def _audit(session, actor, action, document_id, version_id, job_id, detail): session.add(KnowledgeAuditModel(audit_id=str(uuid4()), actor=actor, action=action, document_id=document_id, document_version_id=version_id, job_id=job_id, detail_safe_json=detail, created_at_utc=_now()))
+        resp = KnowledgeRepository(session).get_job_for_version(version_id)
+        if not resp:
+            raise KeyError("job for version not found")
+        return resp

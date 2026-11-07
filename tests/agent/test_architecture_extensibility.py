@@ -5,10 +5,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, List, Tuple
 from uuid import uuid4
 
+from agent.contracts.chat import ToolDecision
 from agent.contracts.query import ViolationRecord
 from agent.core.config import Settings
 from agent.db.base import Database
-from agent.db.models import CvNodeModel
+from agent.db.models import CvNodeModel, ViolationEventModel
 from agent.domain.standards_guard import (
     contains_unsupported_standard_reference,
     guard_standard_references,
@@ -24,9 +25,21 @@ from agent.rag.chroma_adapter import (
     validate_embedding_settings,
 )
 from agent.repositories.camera_management import CameraManagementRepository
+from agent.repositories.knowledge import KnowledgeRepository
 from agent.repositories.learning import LearningRepository
+from agent.repositories.rectification_tasks import RectificationTaskRepository
+from agent.repositories.violations import ViolationRepository
+from agent.services.agent_write_actions import (
+    AgentWriteActionService,
+    WriteActionHandlerSpec,
+)
 from agent.services.camera_management import CameraManagementService
 from agent.services.report_pdf import render_report_html
+from agent.services.ui_config_service import (
+    DEFAULT_ASSISTANT_UI_CONFIG,
+    UiConfigService,
+)
+from agent.tools.base import ToolContext
 from perception.schemas.detection import (
     BoundingBox,
     DangerZone,
@@ -244,3 +257,112 @@ def test_worker_safety_monitor_custom_rule_plugin() -> None:
     assert len(new_events_2) == 0
     assert len(closed_events_2) == 1
     assert closed_events_2[0].status == "RESOLVED"
+
+
+def test_rectification_task_repository_cohesion_and_decoupling() -> None:
+    db = Database("sqlite+pysqlite:///:memory:")
+    db.create_schema()
+    now = datetime.now(timezone.utc)
+    event_uuid = str(uuid4())
+
+    with db.session() as session:
+        session.add(
+            ViolationEventModel(
+                schema_version="1.0",
+                event_uuid=event_uuid,
+                camera_id="cam_01",
+                monitor_session_id="sess_01",
+                track_id=1,
+                violation_type="NO_HELMET",
+                severity="WARNING",
+                status="ACTIVE",
+                occurred_at_utc=now,
+            )
+        )
+        session.flush()
+
+        repo = RectificationTaskRepository(session)
+        assert repo.event_exists(event_uuid) is True
+        assert repo.event_exists(str(uuid4())) is False
+
+        task = repo.create_task(
+            event_uuid=event_uuid,
+            title="整改安全帽违规",
+            description="班组自查",
+            owner="张安全员",
+            due_at_utc=now + timedelta(days=2),
+        )
+        task_id = task.task_id
+        session.flush()
+
+        items, total = repo.list_tasks(owner="张", limit=10, offset=0)
+        assert total == 1
+        assert items[0].task_id == task_id
+        assert items[0].violation_type == "NO_HELMET"
+
+        detail = repo.get_task_detail(task_id)
+        assert detail is not None
+        assert detail.task.task_id == task_id
+        assert detail.violation.event_uuid == event_uuid
+        assert len(detail.audits) >= 1
+
+        updated, resolved = repo.update_task(
+            task_id=task_id,
+            status="COMPLETED",
+            note="已复核完成整改",
+        )
+        assert updated.status == "COMPLETED"
+        assert resolved is True
+
+        ev_after = session.get(ViolationEventModel, event_uuid)
+        assert ev_after is not None
+        assert ev_after.status == "RESOLVED"
+
+
+def test_write_action_service_handler_registry_extensibility() -> None:
+    db = Database("sqlite+pysqlite:///:memory:")
+    db.create_schema()
+    service = AgentWriteActionService(db, camera_management=None)
+
+    def _propose_custom(svc: AgentWriteActionService, conv_id: str, dec: ToolDecision) -> tuple[str, dict[str, Any]]:
+        return f"自定义操作：{dec.purpose}", {"custom_param": 42}
+
+    def _exec_custom(svc: AgentWriteActionService, session: Any, payload: dict[str, Any]) -> tuple[dict[str, Any], None]:
+        return {"executed_custom_param": payload["custom_param"] * 2}, None
+
+    service.register_action_handler(
+        WriteActionHandlerSpec(
+            action_type="custom_extension_action",
+            execution_mode="transactional",
+            propose_fn=_propose_custom,
+            execute_fn=_exec_custom,
+        )
+    )
+
+    conv_id = "test-conv-custom"
+    pending = service.propose(
+        conv_id,
+        ToolDecision(tool_name="custom_extension_action", purpose="测试架构可拓展性"),
+    )
+    assert pending.action_type == "custom_extension_action"
+    assert "自定义操作" in pending.summary
+
+    confirmed = service.confirm(pending.confirmation_id, conv_id)
+    assert confirmed.status == "EXECUTED"
+    assert confirmed.result["executed_custom_param"] == 84
+
+
+def test_ui_config_default_fallback_and_tool_context_extensions() -> None:
+    db = Database("sqlite+pysqlite:///:memory:")
+    db.create_schema()
+
+    with db.session() as session:
+        ui_service = UiConfigService(session)
+        default_cfg = ui_service.get_or_default()
+        assert default_cfg.assistant_name == DEFAULT_ASSISTANT_UI_CONFIG.assistant_name
+        assert len(default_cfg.quick_questions) > 0
+
+    dummy_repo = ViolationRepository(None)  # type: ignore[arg-type]
+    ctx = ToolContext(repository=dummy_repo, extensions={"custom_plugin": "v1"})
+    assert ctx.extensions["custom_plugin"] == "v1"
+

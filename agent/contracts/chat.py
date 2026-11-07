@@ -38,7 +38,7 @@ class ChatRequest(BaseModel):
 class ToolDecision(BaseModel):
     """The only model output allowed to reach tool execution."""
 
-    tool_name: ToolName
+    tool_name: ToolName | str
     query: ViolationQuery = Field(default_factory=lambda: ViolationQuery(limit=20))
     camera_id: str | None = Field(default=None, max_length=128)
     weather_location: str | None = Field(default=None, min_length=2, max_length=128)
@@ -182,7 +182,7 @@ _TOOL_RULES: dict[ToolName, Any] = {
 
 
 class ToolTraceItem(BaseModel):
-    tool_name: ToolName
+    tool_name: ToolName | str
     success: bool
     purpose: str
     duration_ms: int = Field(ge=0)
@@ -243,6 +243,6 @@ class ChatResponse(BaseModel):
 
 
 class ToolResult(BaseModel):
-    tool_name: ToolName
+    tool_name: ToolName | str
     data: Any
     success: bool = True

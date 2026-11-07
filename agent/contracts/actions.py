@@ -21,7 +21,7 @@ class PendingActionResponse(BaseModel):
     """A server-stored operation that still needs an explicit UI confirmation."""
 
     confirmation_id: str
-    action_type: PendingActionType
+    action_type: PendingActionType | str
     summary: str
     expires_at_utc: datetime
     status: PendingActionStatus = "PENDING"
@@ -33,7 +33,7 @@ class ActionConfirmationRequest(BaseModel):
 
 class ActionExecutionResponse(BaseModel):
     confirmation_id: str
-    action_type: PendingActionType
+    action_type: PendingActionType | str
     status: PendingActionStatus
     summary: str
     result: dict[str, Any] = Field(default_factory=dict)

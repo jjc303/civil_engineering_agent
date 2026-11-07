@@ -33,6 +33,7 @@ class ToolContext:
     notification_service: Any = None
     conversation_id: str | None = None
     model: Any = None
+    extensions: dict[str, Any] = field(default_factory=dict)
 
     def capabilities(self) -> frozenset[Capability]:
         active: set[Capability] = set()

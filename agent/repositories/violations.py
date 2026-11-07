@@ -220,6 +220,12 @@ class ViolationRepository:
 
         return sorted(results, key=lambda item: (not item.is_online, item.camera_id))
 
+    def camera_exists(self, camera_id: str) -> bool:
+        return bool(
+            self.session.get(CameraStatusModel, camera_id)
+            or self.session.get(ManagedCameraModel, camera_id)
+        )
+
     def list_managed_cameras(self) -> list[ManagedCameraModel]:
         return list(self.session.scalars(select(ManagedCameraModel).order_by(ManagedCameraModel.camera_id)))
 
@@ -233,7 +239,7 @@ class ViolationRepository:
         }
 
     @staticmethod
-    def _to_record(model: ViolationEventModel) -> ViolationRecord:
+    def to_record(model: ViolationEventModel) -> ViolationRecord:
         return ViolationRecord(
             event_uuid=model.event_uuid, camera_id=model.camera_id, monitor_session_id=model.monitor_session_id,
             track_id=model.track_id, violation_type=model.violation_type, severity=model.severity, status=model.status,
@@ -242,6 +248,8 @@ class ViolationRepository:
             snapshot_uri=model.snapshot_uri, model_name=model.model_name, model_version=model.model_version,
             extra_details=model.extra_details or {},
         )
+
+    _to_record = to_record
 
     @staticmethod
     def _to_camera_status(model: CameraStatusModel) -> CameraStatusResponse:

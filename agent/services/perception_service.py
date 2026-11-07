@@ -6,8 +6,7 @@ from agent.contracts.camera_config import CameraConfigUpdateRequest, CameraRunCo
 from agent.contracts.event_v1 import CameraStatusReportV1, EventUpsertResponse, SafetyViolationEventV1
 from agent.contracts.query import CameraStatusResponse, RiskHeatmapResponse, SafetyQueryRequest, SafetyQueryResponse, ViolationPageResponse, ViolationQuery, ViolationRecord, ViolationStatisticsResponse
 from agent.db.base import Database
-from agent.db.models import CameraStatusModel, ManagedCameraModel
-from agent.notifications import FeishuNotificationService
+from agent.notifications.protocol import NotificationPort
 from agent.repositories.camera_configs import CameraConfigRepository
 from agent.repositories.violations import ViolationRepository
 
@@ -15,7 +14,7 @@ from agent.repositories.violations import ViolationRepository
 class PerceptionService:
     """Application service: transaction boundary for the Agent perception API."""
 
-    def __init__(self, database: Database, notification_service: FeishuNotificationService | None = None):
+    def __init__(self, database: Database, notification_service: NotificationPort | None = None):
         self.database = database
         self.notification_service = notification_service
 
@@ -52,7 +51,7 @@ class PerceptionService:
 
     def camera_exists(self, camera_id: str) -> bool:
         with self.database.session() as session:
-            return session.get(CameraStatusModel, camera_id) is not None or session.get(ManagedCameraModel, camera_id) is not None
+            return ViolationRepository(session).camera_exists(camera_id)
 
     def update_camera_config(self, camera_id: str, request: CameraConfigUpdateRequest) -> CameraRunConfigV1:
         with self.database.session() as session:
