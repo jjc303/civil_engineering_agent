@@ -6,9 +6,11 @@ from agent.contracts.camera_config import CameraConfigUpdateRequest, CameraRunCo
 from agent.contracts.event_v1 import CameraStatusReportV1, EventUpsertResponse, SafetyViolationEventV1
 from agent.contracts.query import CameraStatusResponse, RiskHeatmapResponse, SafetyQueryRequest, SafetyQueryResponse, ViolationPageResponse, ViolationQuery, ViolationRecord, ViolationStatisticsResponse
 from agent.db.base import Database
+from agent.graph.safety_graph import COMPILED_SAFETY_GRAPH
 from agent.notifications.protocol import NotificationPort
 from agent.repositories.camera_configs import CameraConfigRepository
 from agent.repositories.violations import ViolationRepository
+from agent.tools.base import ToolContext
 
 
 class PerceptionService:
@@ -17,6 +19,7 @@ class PerceptionService:
     def __init__(self, database: Database, notification_service: NotificationPort | None = None):
         self.database = database
         self.notification_service = notification_service
+        self._safety_graph = COMPILED_SAFETY_GRAPH
 
     def upsert_event(self, event: SafetyViolationEventV1) -> EventUpsertResponse:
         with self.database.session() as session:
@@ -70,11 +73,12 @@ class PerceptionService:
             return ViolationRepository(session).list_camera_statuses()
 
     def run_safety_query(self, request: SafetyQueryRequest) -> SafetyQueryResponse:
-        from agent.graph.safety_graph import build_safety_graph
-
         with self.database.session() as session:
-            graph = build_safety_graph(ViolationRepository(session))
-            output = graph.invoke({"operation": request.operation, "query": request.query.model_dump(mode="json"), "camera_id": request.camera_id})
+            ctx = ToolContext(repository=ViolationRepository(session))
+            output = self._safety_graph.invoke(
+                {"operation": request.operation, "query": request.query.model_dump(mode="json"), "camera_id": request.camera_id},
+                config={"configurable": {"tool_context": ctx}},
+            )
         return SafetyQueryResponse(operation=output["operation"], result=output["result"], summary=output["summary"])
 
     def get_risk_heatmap(self, lookback_days: int = 7, timezone_offset_hours: int = 8) -> RiskHeatmapResponse:

@@ -29,7 +29,8 @@ from agent.db.base import Database
 from agent.db.models import KnowledgeDocumentModel, KnowledgeDocumentVersionModel, KnowledgeIndexJobModel
 from agent.llm.protocol import ChatModelPort
 from agent.prompts import load_prompt
-from agent.rag.chroma_adapter import ChromaKnowledgeRetriever
+from agent.rag.chroma_adapter import KnowledgeRetrieverPort
+from agent.rag.inbox_scanner import scan_inbox_candidates
 from agent.rag.manager import RagManager
 from agent.repositories.knowledge import KnowledgeRepository
 
@@ -44,7 +45,7 @@ class KnowledgeService:
     def __init__(
         self,
         database: Database,
-        retriever: ChromaKnowledgeRetriever | None,
+        retriever: KnowledgeRetrieverPort | None,
         document_directory: str,
         inbox_directory: str,
         max_upload_bytes: int,
@@ -109,20 +110,19 @@ class KnowledgeService:
                     logger.exception("Failed to restore missing Chroma index for version: %s", version_id)
 
         inbox_root = self.inbox.resolve()
-        for path in sorted(self.inbox.rglob("*")):
-            if not path.is_file() or path.is_symlink() or path.suffix.lower() not in self.allowed or path.name.lower() == "readme.md":
-                continue
+        candidates = scan_inbox_candidates(
+            self.inbox,
+            self.allowed,
+            self.max_upload_bytes,
+            self._document_type_by_subdirectory,
+        )
+        for candidate in candidates:
             try:
-                resolved = path.resolve()
-                relative = resolved.relative_to(inbox_root)
-                if len(relative.parts) < 2 or relative.parts[0] not in self._document_type_by_subdirectory:
-                    continue
-                content = path.read_bytes()
-                if not content or len(content) > self.max_upload_bytes:
-                    raise ValueError("unsupported or oversized knowledge document")
-                checksum = hashlib.sha256(content).hexdigest()
-                source_label = f"inbox/{relative.as_posix()}"[:512]
-                document_type = self._document_type_by_subdirectory[relative.parts[0]]
+                path = candidate.path
+                content = candidate.content
+                checksum = candidate.checksum
+                source_label = candidate.source_label
+                document_type = candidate.document_type
                 with self.database.session() as session:
                     repo = KnowledgeRepository(session)
                     existing_version = repo.find_version_by_checksum(checksum)

@@ -168,6 +168,36 @@ def test_rectification_task_center_lists_details_and_manual_confirmed_updates() 
             "conversation_id": conversation_id, "owner": "王五",
         })
         assert rejected.status_code == 409
+
+
+def test_rectification_tasks_direct_api_endpoints() -> None:
+    settings = Settings(database_url="sqlite+pysqlite:///:memory:", internal_perception_token="direct-token", llm_provider="fake", auto_create_schema=True)
+    with TestClient(create_app(settings)) as client:
+        event_uuid = str(uuid4())
+        assert client.post("/internal/v1/perception/events", json=_event(event_uuid), headers={"Authorization": "Bearer direct-token"}).status_code == 200
+
+        # Direct POST
+        resp = client.post("/api/v1/rectification-tasks", json={
+            "conversation_id": "direct-ui", "event_uuid": event_uuid, "title": "直接创建整改",
+            "description": "立即整改", "owner": "赵工", "due_at_utc": "2026-10-05T12:00:00Z",
+        })
+        assert resp.status_code == 200
+        task_data = resp.json()
+        task_id = task_data["task_id"]
+        assert task_data["title"] == "直接创建整改"
+        assert task_data["owner"] == "赵工"
+
+        # Direct PATCH
+        patch_resp = client.patch(f"/api/v1/rectification-tasks/{task_id}", json={
+            "conversation_id": "direct-ui", "status": "COMPLETED", "note": "直接完成整改",
+        })
+        assert patch_resp.status_code == 200
+        assert patch_resp.json()["status"] == "COMPLETED"
+
+        rejected = client.patch(f"/api/v1/rectification-tasks/{task_id}", json={
+            "conversation_id": "direct-ui", "owner": "钱六",
+        })
+        assert rejected.status_code == 409
         assert "不可再编辑" in rejected.json()["detail"]
         with client.app.state.database.session() as session:
             assert session.get(ViolationEventModel, event_uuid).status == "RESOLVED"

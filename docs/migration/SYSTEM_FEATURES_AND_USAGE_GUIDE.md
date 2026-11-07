@@ -153,7 +153,7 @@ Agent 层代码位于 `agent/` 目录下，负责事件接收校验、关系数�
 - 配置带有单调自增的 `config_version`，CV 会话轮询到新版本即可实现**线上热更新**。
 
 ### 3.3 LangGraph 对话图与事实驱动原则
-- **结构化图状态**：在 `agent/graph/chat_graph.py` 中编排模型决策、受限工具调用和回复生成；工具调用次数受 `AGENT_TOOL_MAX_CALLS`（1–2）限制；
+- **结构化图状态**：在 `agent/graph/chat_graph.py` 中编排模型决策、受限工具调用和回复生成；工具调用次数受 `AGENT_TOOL_MAX_CALLS`（1–5，默认 4）限制；
 - **证据接地**：对话响应可附带查询到的 `event_uuid`、发生时间和 `snapshot_uri`。媒体文件的实际托管与前端渲染由调用方部署负责。
 - **当前天气查询**：当问题包含地点与天气、气温、降雨或风速时，Agent 可调用 `get_current_weather`。该工具先通过 Open-Meteo 地理编码解析地点，再获取当前实况；失败时按聊天接口既有降级语义返回，不会编造结果。
 

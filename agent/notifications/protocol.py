@@ -14,8 +14,8 @@ if TYPE_CHECKING:
 
 
 @runtime_checkable
-class NotificationPort(Protocol):
-    """Port interface for safety event, rectification, report, and training notifications."""
+class ViolationNotificationPort(Protocol):
+    """Fine-grained port for violation event notifications (ISP)."""
 
     @property
     def is_configured(self) -> bool: ...
@@ -27,6 +27,14 @@ class NotificationPort(Protocol):
         bypass_throttle: bool = False,
         sync: bool = False,
     ) -> dict[str, Any] | Future[dict[str, Any]] | None: ...
+
+
+@runtime_checkable
+class RectificationNotificationPort(Protocol):
+    """Fine-grained port for rectification task lifecycle notifications (ISP)."""
+
+    @property
+    def is_configured(self) -> bool: ...
 
     def notify_rectification_created(
         self,
@@ -42,6 +50,14 @@ class NotificationPort(Protocol):
         sync: bool = False,
     ) -> dict[str, Any] | Future[dict[str, Any]] | None: ...
 
+
+@runtime_checkable
+class LearningNotificationPort(Protocol):
+    """Fine-grained port for report and training notifications (ISP)."""
+
+    @property
+    def is_configured(self) -> bool: ...
+
     def notify_report_confirmed(
         self,
         report: ReportResponse,
@@ -56,6 +72,14 @@ class NotificationPort(Protocol):
         sync: bool = False,
     ) -> dict[str, Any] | Future[dict[str, Any]] | None: ...
 
+
+@runtime_checkable
+class BriefingNotificationPort(Protocol):
+    """Fine-grained port for custom markdown briefings (ISP)."""
+
+    @property
+    def is_configured(self) -> bool: ...
+
     def send_custom_briefing(
         self,
         title: str,
@@ -64,7 +88,79 @@ class NotificationPort(Protocol):
         sync: bool = False,
     ) -> dict[str, Any] | Future[dict[str, Any]] | None: ...
 
+
+@runtime_checkable
+class NotificationPort(
+    ViolationNotificationPort,
+    RectificationNotificationPort,
+    LearningNotificationPort,
+    BriefingNotificationPort,
+    Protocol,
+):
+    """Composite port interface for safety event, rectification, report, and training notifications."""
+
     def shutdown(self, wait: bool = False) -> None: ...
+
+
+class BaseNotificationChannel:
+    """Default base implementation allowing channels to selectively implement only needed methods (ISP)."""
+
+    @property
+    def is_configured(self) -> bool:
+        return True
+
+    def notify_violation_event(
+        self,
+        record: ViolationRecord,
+        *,
+        bypass_throttle: bool = False,
+        sync: bool = False,
+    ) -> dict[str, Any] | Future[dict[str, Any]] | None:
+        return None
+
+    def notify_rectification_created(
+        self,
+        task_payload: dict[str, Any],
+        *,
+        sync: bool = False,
+    ) -> dict[str, Any] | Future[dict[str, Any]] | None:
+        return None
+
+    def notify_rectification_completed(
+        self,
+        task_payload: dict[str, Any],
+        *,
+        sync: bool = False,
+    ) -> dict[str, Any] | Future[dict[str, Any]] | None:
+        return None
+
+    def notify_report_confirmed(
+        self,
+        report: ReportResponse,
+        *,
+        sync: bool = False,
+    ) -> dict[str, Any] | Future[dict[str, Any]] | None:
+        return None
+
+    def notify_training_published(
+        self,
+        training: TrainingResponse,
+        *,
+        sync: bool = False,
+    ) -> dict[str, Any] | Future[dict[str, Any]] | None:
+        return None
+
+    def send_custom_briefing(
+        self,
+        title: str,
+        summary_markdown: str,
+        *,
+        sync: bool = False,
+    ) -> dict[str, Any] | Future[dict[str, Any]] | None:
+        return None
+
+    def shutdown(self, wait: bool = False) -> None:
+        pass
 
 
 class CompositeNotificationService:

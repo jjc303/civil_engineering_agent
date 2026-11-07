@@ -17,7 +17,7 @@ export AGENT_LLM_MODEL='deepseek-flash'
 export AGENT_LLM_BASE_URL='https://api.deepseek.com'
 export AGENT_LLM_API_KEY='你的 DeepSeek API Key'
 export AGENT_LLM_TIMEOUT_SECONDS='20'
-export AGENT_TOOL_MAX_CALLS='2'
+export AGENT_TOOL_MAX_CALLS='4'
 ```
 
 然后启动：

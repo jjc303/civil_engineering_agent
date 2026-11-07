@@ -55,7 +55,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { cancelPendingAction, confirmPendingAction, getAgentConversationId } from '@/api/chat'
-import { fetchRectificationTask, fetchRectificationTasks, proposeRectificationTaskCreate, proposeRectificationTaskUpdate } from '@/api/rectificationTasks'
+import { createRectificationTask, fetchRectificationTask, fetchRectificationTasks, updateRectificationTask } from '@/api/rectificationTasks'
 import { fetchViolations } from '@/api/violations'
 import { resolveMediaUrl } from '@/api/client'
 import WorkspaceIntro from '@/components/WorkspaceIntro.vue'
@@ -101,10 +101,49 @@ async function openCreate() {
     createVisible.value = true
   } catch { ElMessage.error('违规事件暂时无法加载，请稍后重试') }
 }
-async function proposeCreate() { if (!createForm.eventUuid || !createForm.title.trim() || !createForm.owner.trim() || !createForm.dueAt) return ElMessage.warning('请填写关联违规、整改要求、负责人和截止时间'); proposing.value = true; try { pendingAction.value = await proposeRectificationTaskCreate({ conversation_id: conversationId(), event_uuid: createForm.eventUuid, title: createForm.title.trim(), description: createForm.description.trim() || undefined, owner: createForm.owner.trim(), due_at_utc: createForm.dueAt.toISOString() }); createVisible.value = false } finally { proposing.value = false } }
+async function proposeCreate() {
+  if (!createForm.eventUuid || !createForm.title.trim() || !createForm.owner.trim() || !createForm.dueAt) return ElMessage.warning('请填写关联违规、整改要求、负责人和截止时间')
+  proposing.value = true
+  try {
+    await createRectificationTask({
+      conversation_id: conversationId(),
+      event_uuid: createForm.eventUuid,
+      title: createForm.title.trim(),
+      description: createForm.description.trim() || undefined,
+      owner: createForm.owner.trim(),
+      due_at_utc: createForm.dueAt.toISOString(),
+    })
+    createVisible.value = false
+    ElMessage.success('整改任务已创建')
+    await load()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail || '创建整改任务失败')
+  } finally {
+    proposing.value = false
+  }
+}
 function openEdit(task: RectificationTaskRecord) { editingTaskId.value = task.task_id; editForm.owner = task.owner; editForm.dueAt = new Date(task.due_at_utc); editForm.status = task.status; editForm.note = ''; editVisible.value = true }
 function openStatus(task: RectificationTaskRecord, status: RectificationTaskStatus) { openEdit(task); editForm.status = status }
-async function proposeEdit() { if (!editingTaskId.value || !editForm.owner.trim() || !editForm.dueAt) return ElMessage.warning('请填写负责人和截止时间'); proposing.value = true; try { pendingAction.value = await proposeRectificationTaskUpdate(editingTaskId.value, { conversation_id: conversationId(), owner: editForm.owner.trim(), due_at_utc: editForm.dueAt.toISOString(), status: editForm.status, note: editForm.note.trim() || undefined }); editVisible.value = false } finally { proposing.value = false } }
+async function proposeEdit() {
+  if (!editingTaskId.value || !editForm.owner.trim() || !editForm.dueAt) return ElMessage.warning('请填写负责人和截止时间')
+  proposing.value = true
+  try {
+    await updateRectificationTask(editingTaskId.value, {
+      conversation_id: conversationId(),
+      owner: editForm.owner.trim(),
+      due_at_utc: editForm.dueAt.toISOString(),
+      status: editForm.status,
+      note: editForm.note.trim() || undefined,
+    })
+    editVisible.value = false
+    ElMessage.success('整改任务已更新')
+    await load()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail || '更新整改任务失败')
+  } finally {
+    proposing.value = false
+  }
+}
 async function confirmPending() { if (!pendingAction.value) return; confirming.value = true; try { await confirmPendingAction(pendingAction.value.confirmation_id, conversationId()); pendingAction.value = null; ElMessage.success('操作已执行'); await load() } finally { confirming.value = false } }
 async function cancelPending() { if (!pendingAction.value) return; await cancelPendingAction(pendingAction.value.confirmation_id, conversationId()); pendingAction.value = null; ElMessage.info('已取消待确认操作') }
 async function openDetail(taskId: string) { detail.value = await fetchRectificationTask(taskId); detailVisible.value = true }

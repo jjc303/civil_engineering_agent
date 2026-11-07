@@ -34,6 +34,11 @@ from agent.prompts import load_prompt
 from agent.repositories.learning import LearningRepository
 from agent.services.knowledge_service import KnowledgeService
 from agent.services.report_pdf import render_safety_report_pdf
+from agent.services.training_qr import (
+    build_training_public_url,
+    build_training_qr_url,
+    generate_training_qr_png,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -554,7 +559,8 @@ class LearningService:
         return training
 
     def _task(self, row: TrainingTaskModel) -> TrainingResponse:
-        url = f"{self.public_base_url}/learn/{row.access_token}" if row.access_token and self.public_base_url else None
+        url = build_training_public_url(self.public_base_url, self.app_base_path, row.access_token)
+        qr_url = build_training_qr_url(self.app_base_path, row.task_id, bool(url))
         return TrainingResponse(
             task_id=row.task_id,
             report_id=row.report_id,
@@ -570,18 +576,14 @@ class LearningService:
             material=row.material,
             questions=[TrainingQuestion.model_validate(q) for q in row.questions_json],
             public_url=url,
-            qr_url=f"{self.app_base_path}/api/v1/learning/training/{row.task_id}/qr" if url else None,
+            qr_url=qr_url,
         )
 
     def qr_png(self, task_id: str) -> bytes:
-        import qrcode
-
         task = self.get_training(task_id)
         if not task.public_url:
             raise ValueError("training task is not published")
-        output = io.BytesIO()
-        qrcode.make(task.public_url).save(output, format="PNG")
-        return output.getvalue()
+        return generate_training_qr_png(task.public_url)
 
     def public_task(self, token: str) -> dict:
         with self.database.session() as session:

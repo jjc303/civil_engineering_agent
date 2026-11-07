@@ -3,7 +3,20 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Protocol, Sequence, runtime_checkable
+
+
+@runtime_checkable
+class KnowledgeRetrieverPort(Protocol):
+    """Abstract port for vector-based knowledge retrieval and indexing (DIP)."""
+
+    def index_chunks(self, chunks: Sequence[KnowledgeChunk]) -> int: ...
+
+    def delete_document_version(self, document_version_id: str, collection_name: str | None = None) -> None: ...
+
+    def query(self, query: str, top_k: int, document_type: str = "ACCIDENT_REPORT") -> list[KnowledgeChunk]: ...
+
+    def collection_for_type(self, document_type: str) -> str: ...
 
 
 @dataclass(frozen=True)

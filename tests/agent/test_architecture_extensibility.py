@@ -34,6 +34,7 @@ from agent.services.agent_write_actions import (
     WriteActionHandlerSpec,
 )
 from agent.services.camera_management import CameraManagementService
+from agent.services.rectification_task_service import RectificationTaskService
 from agent.services.report_pdf import render_report_html
 from agent.services.ui_config_service import (
     DEFAULT_ASSISTANT_UI_CONFIG,
@@ -365,4 +366,169 @@ def test_ui_config_default_fallback_and_tool_context_extensions() -> None:
     dummy_repo = ViolationRepository(None)  # type: ignore[arg-type]
     ctx = ToolContext(repository=dummy_repo, extensions={"custom_plugin": "v1"})
     assert ctx.extensions["custom_plugin"] == "v1"
+
+
+def test_isp_base_notification_channel_minimal_subclass() -> None:
+    from agent.notifications.protocol import BaseNotificationChannel, ViolationNotificationPort
+
+    class SirenAlarmChannel(BaseNotificationChannel):
+        def __init__(self) -> None:
+            self.alarms: list[str] = []
+
+        def notify_violation_event(self, record: ViolationRecord, *, bypass_throttle: bool = False, sync: bool = False) -> dict[str, Any]:
+            self.alarms.append(record.event_uuid)
+            return {"alarm": "sounded"}
+
+    siren = SirenAlarmChannel()
+    assert isinstance(siren, ViolationNotificationPort)
+    assert isinstance(siren, NotificationPort)
+    assert siren.is_configured is True
+    assert siren.notify_rectification_created({}) is None
+    assert siren.send_custom_briefing("t", "b") is None
+    siren.shutdown()
+
+
+def test_dip_knowledge_retriever_port() -> None:
+    from agent.rag.chroma_adapter import KnowledgeChunk, KnowledgeRetrieverPort
+
+    class InMemoryMockRetriever:
+        def __init__(self) -> None:
+            self.indexed: list[KnowledgeChunk] = []
+
+        def index_chunks(self, chunks: list[KnowledgeChunk]) -> int:
+            self.indexed.extend(chunks)
+            return len(chunks)
+
+        def delete_document_version(self, document_version_id: str, collection_name: str | None = None) -> None:
+            self.indexed = [c for c in self.indexed if c.document_version_id != document_version_id]
+
+        def query(self, query: str, top_k: int, document_type: str = "ACCIDENT_REPORT") -> list[KnowledgeChunk]:
+            return self.indexed[:top_k]
+
+        def collection_for_type(self, document_type: str) -> str:
+            return "mock_collection"
+
+    mock_retriever = InMemoryMockRetriever()
+    assert isinstance(mock_retriever, KnowledgeRetrieverPort)
+
+
+def test_ocp_tool_catalog_extensibility_and_intent_pruning() -> None:
+    from agent.tools.base import AgentTool, ToolOutcome
+    from agent.tools.catalog import DEFAULT_TOOL_CATALOG
+
+    custom_tool = AgentTool(
+        name="custom_drone_patrol",
+        description="触发无人机现场巡查",
+        parameters='{"drone_id": "string"}',
+        handler=lambda dec, ctx: ToolOutcome(data={"patrol": "started"}),
+    )
+
+    extended_catalog = DEFAULT_TOOL_CATALOG.with_tools(custom_tool)
+    assert extended_catalog.get("custom_drone_patrol").name == "custom_drone_patrol"
+
+    ctx = ToolContext(repository=ViolationRepository(None))  # type: ignore[arg-type]
+    weather_tools = extended_catalog.available_catalog(ctx, question="今天现场下雨吗？气温多少？", prune_by_intent=True)
+    assert any(t["name"] == "get_current_weather" for t in weather_tools)
+    assert not any(t["name"] == "create_training_task" for t in weather_tools)
+
+
+def test_rectification_task_direct_execution_with_audit() -> None:
+    db = Database("sqlite+pysqlite:///:memory:")
+    db.create_schema()
+    now = datetime.now(timezone.utc)
+    event_uuid = str(uuid4())
+
+    with db.session() as session:
+        session.add(
+            ViolationEventModel(
+                schema_version="1.0",
+                event_uuid=event_uuid,
+                camera_id="cam_01",
+                monitor_session_id="sess_01",
+                track_id=1,
+                violation_type="NO_HELMET",
+                severity="WARNING",
+                status="ACTIVE",
+                occurred_at_utc=now,
+            )
+        )
+        session.flush()
+
+    write_service = AgentWriteActionService(db, camera_management=None)
+    task_service = RectificationTaskService(db, write_service)
+
+    from agent.contracts.rectification import RectificationTaskCreateRequest, RectificationTaskUpdateRequest
+
+    task = task_service.create_task(
+        RectificationTaskCreateRequest(
+            conversation_id="conv-direct-01",
+            event_uuid=event_uuid,
+            title="直接创建整改任务",
+            description="班组自查整改",
+            owner="李工",
+            due_at_utc=now + timedelta(days=3),
+        )
+    )
+    assert task.title == "直接创建整改任务"
+    assert task.owner == "李工"
+
+    updated = task_service.update_task(
+        task.task_id,
+        RectificationTaskUpdateRequest(
+            conversation_id="conv-direct-01",
+            status="COMPLETED",
+            note="现场已复核",
+        ),
+    )
+    assert updated.status == "COMPLETED"
+
+
+def test_outbox_store_dead_letter_and_requeue(tmp_path) -> None:
+    from perception.services.event_publisher import OutboxStore, DEAD_LETTER_RETRY_AT
+
+    store = OutboxStore(tmp_path / "outbox.db")
+    ev_uuid = str(uuid4())
+    store.enqueue(ev_uuid, {"test": "data"})
+    store.record_failure(ev_uuid, "HTTP 422 Unprocessable", can_retry=False)
+
+    dead_letters = store.get_dead_letter_events()
+    assert len(dead_letters) == 1
+    assert dead_letters[0]["event_uuid"] == ev_uuid
+    assert dead_letters[0]["next_retry_at"] >= DEAD_LETTER_RETRY_AT
+
+    requeued_count = store.requeue_dead_letters()
+    assert requeued_count == 1
+    assert len(store.get_dead_letter_events()) == 0
+    pending = store.get_pending()
+    assert len(pending) == 1
+    assert pending[0]["event_uuid"] == ev_uuid
+
+
+def test_compiled_safety_graph_threadsafe_reuse() -> None:
+    from agent.graph.safety_graph import COMPILED_SAFETY_GRAPH
+
+    db = Database("sqlite+pysqlite:///:memory:")
+    db.create_schema()
+
+    with db.session() as session:
+        ctx = ToolContext(repository=ViolationRepository(session))
+        res = COMPILED_SAFETY_GRAPH.invoke(
+            {"operation": "statistics", "query": {}, "camera_id": None},
+            config={"configurable": {"tool_context": ctx}},
+        )
+        assert res["operation"] == "statistics"
+        assert res["result"]["total_violations"] == 0
+
+
+def test_flexible_tool_max_calls_setting() -> None:
+    s = Settings(
+        database_url="sqlite+pysqlite:///:memory:",
+        internal_perception_token="tok",
+        tool_max_calls=4,
+        llm_provider="fake",
+        auto_create_schema=True,
+    )
+    s.validate_for_runtime()
+    assert s.tool_max_calls == 4
+
 

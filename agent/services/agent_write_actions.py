@@ -22,8 +22,8 @@ class AgentWriteActionError(RuntimeError):
     """An expected, safe-to-display write-action rejection."""
 
 
-_ACTOR = "agent-ui-confirmation"
-_TTL = timedelta(minutes=15)
+_DEFAULT_ACTOR = "agent-ui-confirmation"
+_DEFAULT_TTL = timedelta(minutes=15)
 _LEARNING_ACTIONS = {
     "create_safety_report", "update_safety_report", "confirm_safety_report", "delete_safety_report",
     "create_training_task", "update_training_task", "publish_training_task", "delete_training_task",
@@ -60,12 +60,14 @@ class AgentWriteActionService:
         learning_service: LearningService | None = None,
         notification_service: Any = None,
         pending_action_ttl_minutes: int = 15,
+        default_actor: str = _DEFAULT_ACTOR,
     ) -> None:
         self.database = database
         self.camera_management = camera_management
         self.learning_service = learning_service
         self.notification_service = notification_service
-        self._ttl = timedelta(minutes=pending_action_ttl_minutes) if pending_action_ttl_minutes > 0 else _TTL
+        self.default_actor = default_actor
+        self._ttl = timedelta(minutes=pending_action_ttl_minutes) if pending_action_ttl_minutes > 0 else _DEFAULT_TTL
         self._handlers: dict[str, WriteActionHandlerSpec] = {}
         self._register_default_handlers()
 
@@ -251,10 +253,91 @@ class AgentWriteActionService:
     def _safe_error(exc: Exception) -> str:
         return str(exc).replace("\n", " ")[:400] or "未知错误"
 
-    @staticmethod
-    def _audit(session: Any, confirmation_id: str, action: str, detail: dict[str, Any]) -> None:
+    def execute_direct(
+        self,
+        conversation_id: str,
+        decision: ToolDecision,
+        actor: str = "web-ui-direct",
+    ) -> ActionExecutionResponse:
+        """Execute a write action directly without pending confirmation delay, preserving full audit trail."""
+        handler = self._handlers.get(decision.tool_name)
+        if not handler:
+            raise AgentWriteActionError(f"不支持的写操作：{decision.tool_name}")
+
+        summary, payload = handler.propose_fn(self, conversation_id, decision)
+        now = _utc_now()
+        confirmation_id = str(uuid4())
+
+        if handler.execution_mode == "transactional":
+            with self.database.session() as session:
+                model = AgentPendingActionModel(
+                    confirmation_id=confirmation_id,
+                    conversation_id=conversation_id,
+                    action_type=decision.tool_name,
+                    summary=summary[:512],
+                    payload_safe_json=payload,
+                    status="EXECUTING",
+                    expires_at_utc=now + self._ttl,
+                    result_safe_json={},
+                    created_at_utc=now,
+                )
+                session.add(model)
+                session.flush()
+                self._audit(session, confirmation_id, "DIRECT_EXECUTE", {"action_type": decision.tool_name}, actor=actor)
+
+                result_data, notify = handler.execute_fn(self, session, payload)
+                model.status = "EXECUTED"
+                model.executed_at_utc = _utc_now()
+                model.result_safe_json = result_data
+                self._audit(session, confirmation_id, "EXECUTED", result_data, actor=actor)
+                session.flush()
+
+                if notify and self.notification_service is not None:
+                    self._dispatch_notification(notify[0], notify[1])
+                return self._execution_response(model)
+        else:
+            with self.database.session() as session:
+                model = AgentPendingActionModel(
+                    confirmation_id=confirmation_id,
+                    conversation_id=conversation_id,
+                    action_type=decision.tool_name,
+                    summary=summary[:512],
+                    payload_safe_json=payload,
+                    status="EXECUTING",
+                    expires_at_utc=now + self._ttl,
+                    result_safe_json={},
+                    created_at_utc=now,
+                )
+                session.add(model)
+                session.flush()
+                self._audit(session, confirmation_id, "DIRECT_EXECUTE", {"action_type": decision.tool_name}, actor=actor)
+
+            try:
+                result_data, notify = handler.execute_fn(self, None, payload)
+            except Exception as exc:
+                with self.database.session() as session:
+                    action = session.get(AgentPendingActionModel, confirmation_id)
+                    if action:
+                        action.status = "FAILED"
+                        action.failure_detail_safe = self._safe_error(exc)
+                        self._audit(session, confirmation_id, "FAILED", {"error": str(exc)}, actor=actor)
+                raise AgentWriteActionError(f"执行失败：{self._safe_error(exc)}") from exc
+
+            with self.database.session() as session:
+                action = session.get(AgentPendingActionModel, confirmation_id)
+                if not action:
+                    raise AgentWriteActionError("操作已被清理")
+                action.status = "EXECUTED"
+                action.executed_at_utc = _utc_now()
+                action.result_safe_json = result_data
+                self._audit(session, confirmation_id, "EXECUTED", result_data, actor=actor)
+                if notify and self.notification_service is not None:
+                    self._dispatch_notification(notify[0], notify[1])
+                return self._execution_response(action)
+
+    def _audit(self, session: Any, confirmation_id: str, action: str, detail: dict[str, Any], actor: str | None = None) -> None:
         session.add(AgentPendingActionAuditModel(
-            audit_id=str(uuid4()), confirmation_id=confirmation_id, action=action, actor=_ACTOR,
+            audit_id=str(uuid4()), confirmation_id=confirmation_id, action=action, actor=actor or self.default_actor,
             detail_safe_json=detail, created_at_utc=_utc_now(),
         ))
 

@@ -137,6 +137,7 @@ def build_service_container(settings: Settings, database: Database) -> ServiceCo
         settings.rag_top_k,
         learning_service,
         notification_service=notification_service,
+        standards_on_demand=settings.rag_standards_on_demand,
     )
     return ServiceContainer(
         notification_service=notification_service,

@@ -1,5 +1,5 @@
 import { apiClient, isMockEnabled } from './client'
-import type { PendingAction, RectificationTaskDetail, RectificationTaskPageResponse, RectificationTaskStatus } from '@/types/contract'
+import type { PendingAction, RectificationTaskDetail, RectificationTaskPageResponse, RectificationTaskRecord, RectificationTaskStatus } from '@/types/contract'
 
 export interface RectificationTaskFilters {
   status?: RectificationTaskStatus
@@ -34,6 +34,16 @@ export async function fetchRectificationTasks(filters: RectificationTaskFilters 
 
 export async function fetchRectificationTask(taskId: string): Promise<RectificationTaskDetail> {
   const res = await apiClient.get<RectificationTaskDetail>(`/api/v1/rectification-tasks/${taskId}`)
+  return res.data
+}
+
+export async function createRectificationTask(payload: CreateRectificationTaskPayload): Promise<RectificationTaskRecord> {
+  const res = await apiClient.post<RectificationTaskRecord>('/api/v1/rectification-tasks', payload)
+  return res.data
+}
+
+export async function updateRectificationTask(taskId: string, payload: UpdateRectificationTaskPayload): Promise<RectificationTaskRecord> {
+  const res = await apiClient.patch<RectificationTaskRecord>(`/api/v1/rectification-tasks/${taskId}`, payload)
   return res.data
 }
 

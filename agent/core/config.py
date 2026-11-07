@@ -11,6 +11,10 @@ load_dotenv(override=False)
 
 DEFAULT_RAG_STANDARDS_SUBDIRECTORY = "standards"
 DEFAULT_RAG_ACCIDENT_REPORTS_SUBDIRECTORY = "accident_reports"
+DEFAULT_TOOL_MAX_CALLS = 4
+MIN_TOOL_CALLS = 1
+MAX_TOOL_CALLS = 5
+DEFAULT_RAG_TOP_K = 4
 
 
 def validate_rag_inbox_subdirectories(standards: str, accident_reports: str) -> None:
@@ -27,7 +31,7 @@ class Settings:
 
     database_url: str
     internal_perception_token: str
-    tool_max_calls: int = 2
+    tool_max_calls: int = DEFAULT_TOOL_MAX_CALLS
     auto_create_schema: bool = False
     llm_provider: str = "deepseek"
     llm_model: str = "deepseek-flash"
@@ -54,6 +58,7 @@ class Settings:
     rag_inbox_directory: str = "./runs/knowledge/inbox"
     rag_standards_subdirectory: str = DEFAULT_RAG_STANDARDS_SUBDIRECTORY
     rag_accident_reports_subdirectory: str = DEFAULT_RAG_ACCIDENT_REPORTS_SUBDIRECTORY
+    rag_standards_on_demand: bool = False
     rag_sync_interval_seconds: int = 30
     rag_embedding_provider: str = "dashscope"
     rag_embedding_model: str = "text-embedding-v4"
@@ -63,7 +68,7 @@ class Settings:
     rag_collection_name: str = ""
     rag_chunk_size: int = 800
     rag_chunk_overlap: int = 120
-    rag_top_k: int = 4
+    rag_top_k: int = DEFAULT_RAG_TOP_K
     rag_top_k_max: int = 8
     rag_max_upload_bytes: int = 20 * 1024 * 1024
     rag_allowed_extensions: str = ".pdf,.docx,.md,.txt"
@@ -87,7 +92,7 @@ class Settings:
             llm_api_key=os.getenv("AGENT_LLM_API_KEY", ""),
             llm_timeout_seconds=float(os.getenv("AGENT_LLM_TIMEOUT_SECONDS", "20")),
             database_url=os.getenv("AGENT_DATABASE_URL", ""),
-            tool_max_calls=int(os.getenv("AGENT_TOOL_MAX_CALLS", "2")),
+            tool_max_calls=int(os.getenv("AGENT_TOOL_MAX_CALLS", str(DEFAULT_TOOL_MAX_CALLS))),
             internal_perception_token=os.getenv("INTERNAL_PERCEPTION_TOKEN", ""),
             auto_create_schema=os.getenv("AGENT_AUTO_CREATE_SCHEMA", "false").lower() == "true",
             media_root=os.getenv("AGENT_MEDIA_ROOT", "./runs/media"),
@@ -110,6 +115,7 @@ class Settings:
             rag_inbox_directory=os.getenv("AGENT_RAG_INBOX_DIRECTORY", "./runs/knowledge/inbox"),
             rag_standards_subdirectory=os.getenv("AGENT_RAG_STANDARDS_SUBDIRECTORY", DEFAULT_RAG_STANDARDS_SUBDIRECTORY),
             rag_accident_reports_subdirectory=os.getenv("AGENT_RAG_ACCIDENT_REPORTS_SUBDIRECTORY", DEFAULT_RAG_ACCIDENT_REPORTS_SUBDIRECTORY),
+            rag_standards_on_demand=os.getenv("AGENT_RAG_STANDARDS_ON_DEMAND", "false").lower() == "true",
             rag_sync_interval_seconds=int(os.getenv("AGENT_RAG_SYNC_INTERVAL_SECONDS", "30")),
             rag_embedding_provider=os.getenv("AGENT_RAG_EMBEDDING_PROVIDER", "dashscope").lower(),
             rag_embedding_model=os.getenv("AGENT_RAG_EMBEDDING_MODEL", "text-embedding-v4"),
@@ -121,7 +127,7 @@ class Settings:
             rag_collection_name=os.getenv("AGENT_RAG_COLLECTION_NAME", "").strip(),
             rag_chunk_size=int(os.getenv("AGENT_RAG_CHUNK_SIZE", "800")),
             rag_chunk_overlap=int(os.getenv("AGENT_RAG_CHUNK_OVERLAP", "120")),
-            rag_top_k=int(os.getenv("AGENT_RAG_TOP_K", "4")),
+            rag_top_k=int(os.getenv("AGENT_RAG_TOP_K", str(DEFAULT_RAG_TOP_K))),
             rag_top_k_max=int(os.getenv("AGENT_RAG_TOP_K_MAX", "8")),
             rag_max_upload_bytes=int(os.getenv("AGENT_RAG_MAX_UPLOAD_BYTES", str(20 * 1024 * 1024))),
             rag_allowed_extensions=os.getenv("AGENT_RAG_ALLOWED_EXTENSIONS", ".pdf,.docx,.md,.txt"),
@@ -147,8 +153,8 @@ class Settings:
             raise RuntimeError("AGENT_DATABASE_URL must be configured")
         if not self.internal_perception_token:
             raise RuntimeError("INTERNAL_PERCEPTION_TOKEN must be configured")
-        if not 1 <= self.tool_max_calls <= 2:
-            raise RuntimeError("AGENT_TOOL_MAX_CALLS must be between 1 and 2")
+        if not MIN_TOOL_CALLS <= self.tool_max_calls <= MAX_TOOL_CALLS:
+            raise RuntimeError(f"AGENT_TOOL_MAX_CALLS must be between {MIN_TOOL_CALLS} and {MAX_TOOL_CALLS}")
         from agent.llm.factory import supported_providers
         if self.llm_provider not in supported_providers():
             raise RuntimeError("AGENT_LLM_PROVIDER must be fake or deepseek")

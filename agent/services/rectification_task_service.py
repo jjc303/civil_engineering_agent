@@ -48,12 +48,51 @@ class RectificationTaskService:
             task_due_at_utc=request.due_at_utc, purpose="页面人工创建关联违规的整改任务",
         ))
 
+    def create_task(self, request: RectificationTaskCreateRequest) -> RectificationTaskRecord:
+        """Directly create rectification task without pending confirmation delay (with audit)."""
+        conv_id = request.conversation_id or "web-ui-direct"
+        action_res = self.write_actions.execute_direct(
+            conv_id,
+            ToolDecision(
+                tool_name="create_rectification_task",
+                violation_event_uuid=request.event_uuid,
+                task_title=request.title,
+                task_description=request.description,
+                task_owner=request.owner,
+                task_due_at_utc=request.due_at_utc,
+                purpose="页面人工创建关联违规的整改任务",
+            ),
+            actor="web-ui-direct",
+        )
+        task_id = action_res.result["task_id"]
+        detail = self.get_task(task_id)
+        return detail.task
+
     def propose_update(self, task_id: str, request: RectificationTaskUpdateRequest) -> PendingActionResponse:
         return self.write_actions.propose(request.conversation_id, ToolDecision(
             tool_name="update_rectification_task", task_id=task_id, task_owner=request.owner,
             task_due_at_utc=request.due_at_utc, task_status=request.status, task_note=request.note,
             purpose="页面更新整改任务",
         ))
+
+    def update_task(self, task_id: str, request: RectificationTaskUpdateRequest) -> RectificationTaskRecord:
+        """Directly update rectification task without pending confirmation delay (with audit)."""
+        conv_id = request.conversation_id or "web-ui-direct"
+        self.write_actions.execute_direct(
+            conv_id,
+            ToolDecision(
+                tool_name="update_rectification_task",
+                task_id=task_id,
+                task_owner=request.owner,
+                task_due_at_utc=request.due_at_utc,
+                task_status=request.status,
+                task_note=request.note,
+                purpose="页面更新整改任务",
+            ),
+            actor="web-ui-direct",
+        )
+        detail = self.get_task(task_id)
+        return detail.task
 
     # Compatibility alias
     _record = staticmethod(RectificationTaskRepository.to_record)

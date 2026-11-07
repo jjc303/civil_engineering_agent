@@ -5,6 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from agent.contracts.chat import ChatRequest, ChatResponse, KnowledgeCitation, ReportPreview, ToolResult, TrainingPreview
+from agent.core.config import DEFAULT_RAG_TOP_K, DEFAULT_TOOL_MAX_CALLS
 from agent.db.base import Database
 from agent.graph.chat_graph import build_compiled_chat_graph
 from agent.llm.protocol import ChatModelPort
@@ -23,15 +24,16 @@ class ChatService:
         self,
         database: Database,
         model: ChatModelPort,
-        max_tool_calls: int = 2,
+        max_tool_calls: int = DEFAULT_TOOL_MAX_CALLS,
         memory_enabled: bool = True,
         memory_ttl_hours: int = 24,
         memory_recent_turns: int = 6,
         knowledge_service: KnowledgeService | None = None,
         write_action_service: AgentWriteActionService | None = None,
-        standards_top_k: int = 4,
+        standards_top_k: int = DEFAULT_RAG_TOP_K,
         learning_service: LearningService | None = None,
         notification_service: Any = None,
+        standards_on_demand: bool = False,
     ):
         self.database = database
         self.model = model
@@ -42,6 +44,7 @@ class ChatService:
         self.standards_top_k = standards_top_k
         self.learning_service = learning_service
         self.notification_service = notification_service
+        self.standards_on_demand = standards_on_demand
         self._graph = build_compiled_chat_graph(self.model, self.max_tool_calls)
 
     def _build_standards_context(self, question: str) -> tuple[str, list[KnowledgeCitation], str | None]:
@@ -69,7 +72,12 @@ class ChatService:
             if self.memory_enabled:
                 memory.cleanup_expired()
             context = memory.load_context(request.conversation_id) if self.memory_enabled else ""
-            standards_context, standard_citations, standards_error = self._build_standards_context(request.question)
+            if self.standards_on_demand:
+                standards_context = None
+                standard_citations = []
+                standards_error = None
+            else:
+                standards_context, standard_citations, standards_error = self._build_standards_context(request.question)
             tool_context = ToolContext(
                 repository=ViolationRepository(session),
                 knowledge_service=self.knowledge_service,
@@ -78,6 +86,7 @@ class ChatService:
                 notification_service=self.notification_service,
                 conversation_id=request.conversation_id,
                 model=self.model,
+                extensions={"standards_top_k": self.standards_top_k},
             )
             output = self._graph.invoke(
                 {

@@ -610,7 +610,7 @@ python3 -m uvicorn agent.main:create_app --factory --host 0.0.0.0 --port 8000 --
 | `AGENT_LLM_BASE_URL` | 否 | `https://api.deepseek.com` | DeepSeek API 地址 |
 | `AGENT_LLM_API_KEY` | 是* | `sk-...` | 默认 provider 为 deepseek 时必填；仅显式设为 `fake` 时可省略 |
 | `AGENT_LLM_TIMEOUT_SECONDS` | 否 | `20.0` | LLM 交互超时时间（秒） |
-| `AGENT_TOOL_MAX_CALLS` | 否 | `2` | 单次问答允许的最大工具调用次数 |
+| `AGENT_TOOL_MAX_CALLS` | 否 | `4` | 单次问答允许的最大工具调用次数（1～5，默认 4） |
 | `AGENT_AUTO_CREATE_SCHEMA` | 否 | `true` | 是否启动时自动创建 SQLite/MySQL 数据表 |
 
 ### 8.3 本地代理绕过设置 (Proxy Bypass)

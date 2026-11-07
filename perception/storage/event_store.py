@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import cv2
 import numpy as np
 
+from perception.config import DEFAULT_EVENT_DB, DEFAULT_SNAPSHOT_DIR
 from perception.schemas.detection import (
     BoundingBox,
     ViolationEvent,
@@ -24,8 +25,8 @@ class EventStore:
 
     def __init__(
         self,
-        db_path: Union[str, Path],
-        snapshot_dir: Optional[Union[str, Path]] = None,
+        db_path: Union[str, Path] = DEFAULT_EVENT_DB,
+        snapshot_dir: Optional[Union[str, Path]] = DEFAULT_SNAPSHOT_DIR,
         annotator: Optional[SnapshotAnnotator] = None,
     ):
         self.db_path = Path(db_path)

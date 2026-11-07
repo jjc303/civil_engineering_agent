@@ -8,6 +8,7 @@ from agent.contracts.rectification import (
     RectificationTaskCreateRequest,
     RectificationTaskDetail,
     RectificationTaskPageResponse,
+    RectificationTaskRecord,
     RectificationTaskUpdateRequest,
 )
 from agent.services.agent_write_actions import AgentWriteActionError
@@ -23,12 +24,34 @@ def list_tasks(
     return _service(request).list_tasks(status=status, owner=owner, overdue=overdue, limit=limit, offset=offset)
 
 
+@router.post("", response_model=RectificationTaskRecord)
+def create_task(payload: RectificationTaskCreateRequest, request: Request) -> RectificationTaskRecord:
+    try:
+        return _service(request).create_task(payload)
+    except AgentWriteActionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/{task_id}", response_model=RectificationTaskDetail)
 def get_task(task_id: str, request: Request) -> RectificationTaskDetail:
     try:
         return _service(request).get_task(task_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="rectification task not found") from exc
+
+
+@router.patch("/{task_id}", response_model=RectificationTaskRecord)
+def update_task(task_id: str, payload: RectificationTaskUpdateRequest, request: Request) -> RectificationTaskRecord:
+    try:
+        return _service(request).update_task(task_id, payload)
+    except AgentWriteActionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="rectification task not found") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/pending-create", response_model=RectificationPendingActionResponse)

@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
 
-from perception.config import DEFAULT_AGENT_URL
+from perception.config import DEFAULT_AGENT_URL, DEFAULT_OUTBOX_DB
 from perception.schemas.contract_v1 import (
     AgentEventResponseV1,
     CameraRunConfigContractV1,
@@ -19,6 +19,8 @@ from perception.schemas.contract_v1 import (
 
 logger = logging.getLogger(__name__)
 
+DEAD_LETTER_RETRY_AT: float = 1e12
+
 
 class OutboxStore:
     """
@@ -26,7 +28,7 @@ class OutboxStore:
     Guarantees zero event loss during transient network disconnects or Agent restarts.
     """
 
-    def __init__(self, db_path: Union[str, Path] = "runs/outbox.db"):
+    def __init__(self, db_path: Union[str, Path] = DEFAULT_OUTBOX_DB):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
@@ -116,8 +118,8 @@ class OutboxStore:
                 delay = min(max_backoff, backoff_base ** min(new_count, 10))
                 next_retry = now + delay
             else:
-                # Permanent failure (400, 422): do not automatically retry
-                next_retry = 1e12
+                # Permanent failure (400, 422): mark as dead letter, do not automatically retry
+                next_retry = DEAD_LETTER_RETRY_AT
 
             conn.execute(
                 """
@@ -128,6 +130,35 @@ class OutboxStore:
                 (new_count, next_retry, error_msg[:1000], event_uuid),
             )
             conn.commit()
+
+    def get_dead_letter_events(self) -> List[Dict[str, Any]]:
+        """Return events marked as dead letters (failed with permanent rejection)."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT event_uuid, payload_json, retry_count, next_retry_at, last_error, created_at, delivered_at
+                FROM outbox_events
+                WHERE delivered_at IS NULL AND next_retry_at >= ?
+                ORDER BY created_at ASC;
+                """,
+                (DEAD_LETTER_RETRY_AT,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def requeue_dead_letters(self) -> int:
+        """Reset retry timer for dead letter events to enable reprocessing."""
+        now = time.time()
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE outbox_events
+                SET next_retry_at = ?, retry_count = 0, last_error = NULL
+                WHERE delivered_at IS NULL AND next_retry_at >= ?;
+                """,
+                (now, DEAD_LETTER_RETRY_AT),
+            )
+            conn.commit()
+            return cursor.rowcount
 
     def get_pending(self, limit: int = 50) -> List[Dict[str, Any]]:
         now = time.time()
@@ -171,7 +202,7 @@ class PerceptionEventPublisher:
     def __init__(
         self,
         agent_base_url: str = DEFAULT_AGENT_URL,
-        db_path: Union[str, Path] = "runs/outbox.db",
+        db_path: Union[str, Path] = DEFAULT_OUTBOX_DB,
         outbox_store: Optional[OutboxStore] = None,
         bearer_token: Optional[str] = None,
         timeout: float = 5.0,

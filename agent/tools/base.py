@@ -118,7 +118,7 @@ ToolHandler = Callable[[ToolDecision, ToolContext], ToolOutcome]
 
 @dataclass(frozen=True)
 class AgentTool:
-    name: ToolName
+    name: str
     description: str
     parameters: str
     handler: ToolHandler
