@@ -274,10 +274,10 @@ class CompositeNotificationService:
             ch.shutdown(wait=wait)
 
 
-NotificationProviderBuilder = Callable[["Settings"], NotificationPort]
+NotificationProviderBuilder = Callable[..., NotificationPort]
 
 
-def _build_feishu_provider(settings: "Settings") -> NotificationPort:
+def _build_feishu_provider(settings: "Settings", throttle: Any | None = None) -> NotificationPort:
     return FeishuNotificationService(
         settings.feishu_webhook_url,
         webhook_secret=settings.feishu_webhook_secret,
@@ -287,6 +287,7 @@ def _build_feishu_provider(settings: "Settings") -> NotificationPort:
         cooldown_seconds=settings.feishu_alert_cooldown_seconds,
         min_severity=settings.feishu_alert_min_severity,
         timeout_seconds=settings.feishu_timeout_seconds,
+        throttle=throttle,
     )
 
 
@@ -304,9 +305,14 @@ def supported_notification_providers() -> frozenset[str]:
     return frozenset(_NOTIFICATION_PROVIDERS)
 
 
-def create_notification_service(settings: "Settings") -> NotificationPort:
+def create_notification_service(settings: "Settings", throttle: Any | None = None) -> NotificationPort:
     """Build configured notification service(s) from Settings."""
-    channels = [builder(settings) for builder in _NOTIFICATION_PROVIDERS.values()]
+    channels = []
+    for builder in _NOTIFICATION_PROVIDERS.values():
+        try:
+            channels.append(builder(settings, throttle=throttle))
+        except TypeError:
+            channels.append(builder(settings))
     if len(channels) == 1:
         return channels[0]
     return CompositeNotificationService(channels)

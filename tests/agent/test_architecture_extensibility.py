@@ -532,3 +532,37 @@ def test_flexible_tool_max_calls_setting() -> None:
     assert s.tool_max_calls == 4
 
 
+def test_redis_infrastructure_ports_and_fail_open_extensibility() -> None:
+    from agent.infra import build_infra_container
+    from agent.infra.ports import (
+        CachePort,
+        DistributedLockPort,
+        EventStreamPort,
+        RealtimeBroadcastPort,
+        ThrottlePort,
+    )
+
+    # When REDIS_URL is invalid/unreachable, container must fail open with in-memory adapters
+    s = Settings(
+        database_url="sqlite+pysqlite:///:memory:",
+        internal_perception_token="tok",
+        llm_provider="fake",
+        auto_create_schema=True,
+        redis_url="redis://127.0.0.1:59999/0",  # dead port
+    )
+    infra = build_infra_container(s)
+    assert isinstance(infra.cache, CachePort)
+    assert isinstance(infra.throttle, ThrottlePort)
+    assert isinstance(infra.lock_service, DistributedLockPort)
+    assert isinstance(infra.event_stream, EventStreamPort)
+    assert isinstance(infra.broadcaster, RealtimeBroadcastPort)
+
+    # In-memory fail-open works normally
+    infra.cache.set_json("test_ns", "key", {"hello": "world"})
+    assert infra.cache.get_json("test_ns", "key") == {"hello": "world"}
+
+    with infra.lock_service.acquire("test_lock") as handle:
+        assert handle.is_acquired is True
+
+
+

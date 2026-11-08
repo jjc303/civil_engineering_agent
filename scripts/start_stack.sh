@@ -86,6 +86,27 @@ fi
 echo "Applying database migrations"
 alembic upgrade head >"$log_dir/alembic.log" 2>&1
 
+redis_url="${AGENT_REDIS_URL:-}"
+if [[ -n "$redis_url" ]]; then
+    if [[ "$redis_url" == *"127.0.0.1"* || "$redis_url" == *"localhost"* ]]; then
+        if command -v redis-cli >/dev/null 2>&1; then
+            if ! redis-cli ping >/dev/null 2>&1; then
+                echo "Starting local redis-server..."
+                service redis-server start >/dev/null 2>&1 || redis-server --daemonize yes >/dev/null 2>&1 || true
+            fi
+            if redis-cli ping >/dev/null 2>&1; then
+                echo "Redis is online ($redis_url)"
+            else
+                echo "Warning: Redis is configured at $redis_url but unreachable; Agent will run in in-memory fallback mode." >&2
+            fi
+        fi
+    else
+        echo "Using remote Redis at $redis_url"
+    fi
+else
+    echo "AGENT_REDIS_URL is not set; Agent will run in in-memory fallback mode."
+fi
+
 echo "Starting Agent API on $AGENT_URL"
 python3 -m uvicorn agent.main:create_app --factory --host "$AGENT_BIND_HOST" --port "$AGENT_PORT" \
     >"$log_dir/agent.log" 2>&1 &

@@ -137,11 +137,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { Refresh, View } from '@element-plus/icons-vue'
 import { fetchViolations } from '@/api/violations'
 import { fetchCameras } from '@/api/cameras'
+import { createSafetyEventStream, type SafetyEventStreamHandle } from '@/api/realtime'
 import type {
   CameraStatusResponse,
   EventStatus,
@@ -251,9 +252,26 @@ function formatTime(utcStr: string): string {
   return new Date(utcStr).toLocaleString()
 }
 
+let streamHandle: SafetyEventStreamHandle | undefined
+let refreshDebounceTimer: ReturnType<typeof setTimeout> | undefined
+
 onMounted(() => {
   loadCameras()
   loadData()
+  streamHandle = createSafetyEventStream({
+    onViolationEvent() {
+      if (currentPage.value !== 1) return
+      if (refreshDebounceTimer) clearTimeout(refreshDebounceTimer)
+      refreshDebounceTimer = setTimeout(() => {
+        void loadData()
+      }, 500)
+    },
+  })
+})
+
+onUnmounted(() => {
+  streamHandle?.close()
+  if (refreshDebounceTimer) clearTimeout(refreshDebounceTimer)
 })
 </script>
 

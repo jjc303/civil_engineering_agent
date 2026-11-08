@@ -16,9 +16,23 @@ from agent.tools.base import ToolContext
 class PerceptionService:
     """Application service: transaction boundary for the Agent perception API."""
 
-    def __init__(self, database: Database, notification_service: NotificationPort | None = None):
+    def __init__(
+        self,
+        database: Database,
+        notification_service: NotificationPort | None = None,
+        cache: Any | None = None,
+        event_stream: Any | None = None,
+        broadcaster: Any | None = None,
+        cache_camera_status_ttl_seconds: int = 30,
+        cache_stats_ttl_seconds: int = 15,
+    ):
         self.database = database
         self.notification_service = notification_service
+        self.cache = cache
+        self.event_stream = event_stream
+        self.broadcaster = broadcaster
+        self.cache_camera_status_ttl = cache_camera_status_ttl_seconds
+        self.cache_stats_ttl = cache_stats_ttl_seconds
         self._safety_graph = COMPILED_SAFETY_GRAPH
 
     def upsert_event(self, event: SafetyViolationEventV1) -> EventUpsertResponse:
@@ -30,13 +44,46 @@ class PerceptionService:
                 status=record.status,
                 server_received_at_utc=datetime.now(timezone.utc),
             )
+        if self.cache is not None:
+            self.cache.invalidate_namespace("stats")
+
+        if self.broadcaster is not None:
+            try:
+                self.broadcaster.publish("violation_event", {
+                    "operation": operation,
+                    "record": record.model_dump(mode="json"),
+                })
+            except Exception:
+                pass
+
         if self.notification_service is not None and operation == "CREATED" and record.status == "ACTIVE":
-            self.notification_service.notify_violation_event(record)
+            if self.event_stream is not None:
+                self.event_stream.publish_event({
+                    "event_type": "violation_event",
+                    "record": record.model_dump(mode="json"),
+                })
+            else:
+                self.notification_service.notify_violation_event(record)
         return response
 
     def upsert_camera_status(self, report: CameraStatusReportV1) -> CameraStatusResponse:
         with self.database.session() as session:
-            return ViolationRepository(session).upsert_camera_status(report)
+            repo = ViolationRepository(session)
+            status_resp = repo.upsert_camera_status(report)
+            effective_resp = repo.get_camera_status(report.camera_id) or status_resp
+        if self.cache is not None:
+            self.cache.set_json(
+                "camera_status",
+                report.camera_id,
+                effective_resp.model_dump(mode="json"),
+                ttl_seconds=self.cache_camera_status_ttl,
+            )
+        if self.broadcaster is not None:
+            try:
+                self.broadcaster.publish("camera_status", effective_resp.model_dump(mode="json"))
+            except Exception:
+                pass
+        return status_resp
 
     def query_violations(self, query: ViolationQuery) -> list[ViolationRecord]:
         with self.database.session() as session:
@@ -61,12 +108,40 @@ class PerceptionService:
             return CameraConfigRepository(session).upsert(camera_id, request)
 
     def get_statistics(self, query: ViolationQuery) -> ViolationStatisticsResponse:
+        cache_key = None
+        if self.cache is not None:
+            cache_key = f"stats:{query.camera_id}:{query.start_time_utc}:{query.end_time_utc}"
+            cached = self.cache.get_json("stats", cache_key)
+            if cached is not None:
+                return ViolationStatisticsResponse.model_validate(cached)
+
         with self.database.session() as session:
-            return ViolationRepository(session).get_statistics(query)
+            stats = ViolationRepository(session).get_statistics(query)
+
+        if self.cache is not None and cache_key is not None:
+            self.cache.set_json("stats", cache_key, stats.model_dump(mode="json"), ttl_seconds=self.cache_stats_ttl)
+        return stats
 
     def get_camera_status(self, camera_id: str) -> CameraStatusResponse | None:
+        if self.cache is not None:
+            cached = self.cache.get_json("camera_status", camera_id)
+            if cached is not None:
+                item = CameraStatusResponse.model_validate(cached)
+                reported_at = item.reported_at_utc
+                if reported_at.tzinfo is None:
+                    reported_at = reported_at.replace(tzinfo=timezone.utc)
+                if (datetime.now(timezone.utc) - reported_at).total_seconds() > 30:
+                    item.is_online = False
+                    item.fps = 0.0
+                    item.active_workers_count = 0
+                return item
+
         with self.database.session() as session:
-            return ViolationRepository(session).get_camera_status(camera_id)
+            res = ViolationRepository(session).get_camera_status(camera_id)
+
+        if res is not None and self.cache is not None:
+            self.cache.set_json("camera_status", camera_id, res.model_dump(mode="json"), ttl_seconds=self.cache_camera_status_ttl)
+        return res
 
     def list_camera_statuses(self) -> list[CameraStatusResponse]:
         with self.database.session() as session:
@@ -82,5 +157,16 @@ class PerceptionService:
         return SafetyQueryResponse(operation=output["operation"], result=output["result"], summary=output["summary"])
 
     def get_risk_heatmap(self, lookback_days: int = 7, timezone_offset_hours: int = 8) -> RiskHeatmapResponse:
+        cache_key = None
+        if self.cache is not None:
+            cache_key = f"heatmap:{lookback_days}:{timezone_offset_hours}"
+            cached = self.cache.get_json("stats", cache_key)
+            if cached is not None:
+                return RiskHeatmapResponse.model_validate(cached)
+
         with self.database.session() as session:
-            return ViolationRepository(session).get_risk_heatmap(lookback_days, timezone_offset_hours)
+            heatmap = ViolationRepository(session).get_risk_heatmap(lookback_days, timezone_offset_hours)
+
+        if self.cache is not None and cache_key is not None:
+            self.cache.set_json("stats", cache_key, heatmap.model_dump(mode="json"), ttl_seconds=self.cache_stats_ttl)
+        return heatmap

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime, timezone
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
@@ -21,6 +22,7 @@ from agent.contracts.camera_management import (
 from agent.db.base import Database
 from agent.db.models import CvNodeModel, ManagedCameraModel
 from agent.repositories.camera_management import CameraManagementRepository
+from agent.repositories.violations import ViolationRepository
 
 
 class CameraManagementError(RuntimeError):
@@ -34,11 +36,19 @@ class CameraManagementService:
         encryption_key: str,
         control_timeout_seconds: float = 10.0,
         node_offline_threshold_seconds: float = 30.0,
+        lock_service: Any | None = None,
+        lock_ttl_seconds: int = 15,
+        cache: Any | None = None,
+        broadcaster: Any | None = None,
     ):
         self.database = database
         self.encryption_key = encryption_key
         self.control_timeout_seconds = control_timeout_seconds
         self.node_offline_threshold_seconds = max(1.0, float(node_offline_threshold_seconds))
+        self.lock_service = lock_service
+        self.lock_ttl_seconds = max(5, lock_ttl_seconds)
+        self.cache = cache
+        self.broadcaster = broadcaster
 
     def _fernet(self) -> Fernet:
         if not self.encryption_key:
@@ -197,6 +207,24 @@ class CameraManagementService:
                 continue
 
     def _control(self, camera_id: str, action: str) -> MonitoringSessionResponse:
+        lock_handle = None
+        if self.lock_service is not None:
+            lock_handle = self.lock_service.acquire(
+                f"camera_control:{camera_id}",
+                ttl_seconds=self.lock_ttl_seconds,
+                blocking_timeout=2.0,
+                watchdog=True,
+            )
+            if not lock_handle.is_acquired:
+                raise CameraManagementError(f"摄像头 {camera_id} 正在执行控制操作，请稍后重试")
+
+        try:
+            return self._do_control(camera_id, action)
+        finally:
+            if lock_handle is not None:
+                lock_handle.release()
+
+    def _do_control(self, camera_id: str, action: str) -> MonitoringSessionResponse:
         with self.database.session() as session:
             repo = CameraManagementRepository(session)
             camera = repo.get_camera(camera_id)
@@ -238,13 +266,22 @@ class CameraManagementService:
                 action=action,
                 monitor_session_id=body.get("monitor_session_id"),
             )
-            return MonitoringSessionResponse(
+            effective_status = ViolationRepository(session).get_camera_status(camera_id)
+            result = MonitoringSessionResponse(
                 camera_id=camera_id,
                 node_id=camera.node_id,
                 monitor_session_id=camera.monitor_session_id,
                 desired_state=camera.desired_state,
                 accepted=True,
             )
+        if self.cache is not None:
+            self.cache.delete("camera_status", camera_id)
+        if self.broadcaster is not None and effective_status is not None:
+            try:
+                self.broadcaster.publish("camera_status", effective_status.model_dump(mode="json"))
+            except Exception:
+                pass
+        return result
 
     def _decrypt(self, value: str) -> str:
         try:

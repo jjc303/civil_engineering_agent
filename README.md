@@ -13,6 +13,7 @@
 │   ├── contracts/                 # Pydantic 请求/响应契约
 │   ├── db/                        # SQLAlchemy 模型与 Alembic 迁移
 │   ├── graph/                     # Agent 多步工具规划图
+│   ├── infra/                     # Redis 缓存、分布式锁(Watchdog)、Streams消息流、SSE实时广播
 │   ├── llm/                       # DeepSeek / Fake 模型适配器
 │   ├── rag/                       # RagManager、Chroma 检索与 Embedding 适配器
 │   ├── services/                  # 领域服务、写操作确认、整改任务服务
@@ -29,6 +30,8 @@
 | --- | --- |
 | 后端 | Python 3.10+、FastAPI、Uvicorn、Pydantic、SQLAlchemy、Alembic |
 | 业务数据库 | MySQL 8（开发测试也可用 SQLite 内存库） |
+| 缓存与消息 | Redis 6+（高频数据缓存、原子分布式锁与看门狗、Streams 可靠队列、Pub/Sub）及内存优雅降级 |
+| 实时推送 | Server-Sent Events (SSE) 毫秒级单向流式推送，原生断线自动重连 |
 | Agent | LangGraph、DeepSeek API、短期会话记忆、工具调用与重试 |
 | RAG | ChromaDB、阿里云百炼 DashScope `text-embedding-v4`、`pypdf`、`python-docx` |
 | CV | PyTorch、Ultralytics、OpenCV、目标跟踪、危险区域几何判断 |
@@ -37,13 +40,14 @@
 运行拓扑：
 
 ```text
-浏览器 (Vue :5173)
-        │
-        ▼
-Agent API (FastAPI :8000) ── MySQL
-        │       │                │
-        │       ├── Chroma + 文档目录（RAG）
-        │       └── DeepSeek（推理/工具规划）
+浏览器 (Vue :5173) ◄─────── [SSE 实时事件流 / 监控大屏秒级直推] ─────────┐
+        │                                                               │
+        ▼                                                               │
+Agent API (FastAPI :8000) ── MySQL                                      │
+        │       │                │                                      │
+        │       ├── Chroma + 文档目录（RAG）                             │
+        │       ├── DeepSeek（推理/工具规划）                            │
+        │       └── Redis (缓存/分布式锁/Streams削峰/PubSub广播) ───────┘
         │
         ▼
 本地 CV 控制节点 (:8100) ── 摄像头 / 视频文件 / RTSP
@@ -92,6 +96,13 @@ Agent API (FastAPI :8000) ── MySQL
 - CV 节点注册、摄像头配置和启停等本地管理接口无需管理员令牌；CV 节点回传事件仍需节点或内部通信令牌。
 - 摄像头源地址与控制令牌不返回浏览器；写操作采用“提议 → 用户确认 → 服务端执行”的模式，并保留审计记录。
 
+### 分布式基础设施与实时事件流（Redis & SSE）
+
+- **高频数据缓存与 $O(1)$ 版本化失效**：今日聚合统计、风险热力图、摄像头在线状态采用分层缓存；违规入库时触发版本递增，全局瞬间失效旧统计，杜绝全库扫描与 `KEYS *` 阻塞。
+- **带看门狗（Watchdog）的分布式互斥锁**：智能体写动作确认（防双击）、摄像头启停控制（防竞争）和知识库定时同步加持原子互斥锁与后台自动续期守护，在多进程与集群部署下保证幂等与并发安全。
+- **可靠流式队列与发布订阅广播**：基于 Redis Streams 消费者组提供 At-Least-Once 事件派发削峰，配合 Redis Pub/Sub 与 FastAPI SSE（Server-Sent Events）端点，前端大屏原生毫秒级接收安全事件与状态更新。
+- **Fail-Open 优雅降级**：所有组件严格基于 DIP 接口抽象；若 Redis 未配置或网络断连，系统自动无缝降级为进程内内存实现，主业务完全不受影响。
+
 ## 3. 从零开始运行
 
 ### 3.1 前置条件
@@ -99,6 +110,7 @@ Agent API (FastAPI :8000) ── MySQL
 - Python 3.10 或更高版本。
 - Node.js 20 或更高版本，npm。
 - MySQL 8.0（推荐）并已启动。示例配置使用宿主机 `127.0.0.1:3307`；按实际端口修改。
+- 可选：Redis 6.0+（提供跨实例分布式锁、高频统计缓存与实时事件流；未配置时系统自动优雅降级为进程内模式运行）。
 - 可选：NVIDIA GPU、CUDA、可访问的摄像头/RTSP 地址。没有 GPU 时可使用视频文件演示。
 - 可访问 DeepSeek（Agent）和阿里云百炼（启用 RAG 时）的网络。
 

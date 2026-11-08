@@ -79,6 +79,19 @@ class Settings:
     feishu_alert_cooldown_seconds: int = 60
     feishu_alert_min_severity: str = "WARNING"
     feishu_timeout_seconds: float = 5.0
+    redis_url: str = ""
+    redis_key_prefix: str = "cea"
+    redis_socket_timeout_seconds: float = 2.0
+    cache_stats_ttl_seconds: int = 15
+    cache_camera_status_ttl_seconds: int = 30
+    lock_default_ttl_seconds: int = 30
+    lock_rag_sync_ttl_seconds: int = 120
+    lock_action_confirm_ttl_seconds: int = 60
+    lock_watchdog_interval_ratio: float = 0.33
+    stream_violation_events_key: str = "streams:violation_events"
+    stream_consumer_group: str = "agent_notification_workers"
+    stream_async_enabled: bool = False
+    pubsub_realtime_channel: str = "pubsub:realtime_events"
     bind_host: str = ""
     port: int = 0
     cors_origins: tuple[str, ...] = ()
@@ -138,6 +151,19 @@ class Settings:
             feishu_alert_cooldown_seconds=int(os.getenv("FEISHU_ALERT_COOLDOWN_SECONDS", "60")),
             feishu_alert_min_severity=os.getenv("FEISHU_ALERT_MIN_SEVERITY", "WARNING").upper().strip(),
             feishu_timeout_seconds=float(os.getenv("FEISHU_TIMEOUT_SECONDS", "5.0")),
+            redis_url=os.getenv("AGENT_REDIS_URL", "").strip(),
+            redis_key_prefix=os.getenv("AGENT_REDIS_KEY_PREFIX", "cea").strip() or "cea",
+            redis_socket_timeout_seconds=float(os.getenv("AGENT_REDIS_SOCKET_TIMEOUT_SECONDS", "2.0")),
+            cache_stats_ttl_seconds=int(os.getenv("AGENT_CACHE_STATS_TTL_SECONDS", "15")),
+            cache_camera_status_ttl_seconds=int(os.getenv("AGENT_CACHE_CAMERA_STATUS_TTL_SECONDS", "30")),
+            lock_default_ttl_seconds=int(os.getenv("AGENT_LOCK_DEFAULT_TTL_SECONDS", "30")),
+            lock_rag_sync_ttl_seconds=int(os.getenv("AGENT_LOCK_RAG_SYNC_TTL_SECONDS", "120")),
+            lock_action_confirm_ttl_seconds=int(os.getenv("AGENT_LOCK_ACTION_CONFIRM_TTL_SECONDS", "60")),
+            lock_watchdog_interval_ratio=float(os.getenv("AGENT_LOCK_WATCHDOG_INTERVAL_RATIO", "0.33")),
+            stream_violation_events_key=os.getenv("AGENT_STREAM_VIOLATION_EVENTS_KEY", "streams:violation_events").strip() or "streams:violation_events",
+            stream_consumer_group=os.getenv("AGENT_STREAM_CONSUMER_GROUP", "agent_notification_workers").strip() or "agent_notification_workers",
+            stream_async_enabled=os.getenv("AGENT_STREAM_ASYNC_ENABLED", "false").lower() == "true",
+            pubsub_realtime_channel=os.getenv("AGENT_PUBSUB_REALTIME_CHANNEL", "pubsub:realtime_events").strip() or "pubsub:realtime_events",
             bind_host=_required("AGENT_BIND_HOST"),
             port=int(_required("AGENT_PORT")),
             cors_origins=tuple(origin.strip() for origin in _required("AGENT_CORS_ORIGINS").split(",") if origin.strip()),
@@ -179,6 +205,14 @@ class Settings:
         validate_rag_inbox_subdirectories(self.rag_standards_subdirectory, self.rag_accident_reports_subdirectory)
         if not 1 <= self.rag_top_k <= self.rag_top_k_max:
             raise RuntimeError("AGENT_RAG_TOP_K must be between 1 and AGENT_RAG_TOP_K_MAX")
+        if self.redis_socket_timeout_seconds <= 0:
+            raise RuntimeError("AGENT_REDIS_SOCKET_TIMEOUT_SECONDS must be positive")
+        if self.cache_stats_ttl_seconds < 0 or self.cache_camera_status_ttl_seconds < 0:
+            raise RuntimeError("Cache TTL settings must be non-negative")
+        if self.lock_default_ttl_seconds <= 0 or self.lock_rag_sync_ttl_seconds <= 0 or self.lock_action_confirm_ttl_seconds <= 0:
+            raise RuntimeError("Lock TTL settings must be positive")
+        if not (0.05 <= self.lock_watchdog_interval_ratio <= 0.8):
+            raise RuntimeError("AGENT_LOCK_WATCHDOG_INTERVAL_RATIO must be between 0.05 and 0.8")
         from agent.rag.chroma_adapter import validate_embedding_settings
         validate_embedding_settings(
             self.rag_embedding_provider,

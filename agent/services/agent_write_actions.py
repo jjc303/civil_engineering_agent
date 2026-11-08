@@ -61,12 +61,16 @@ class AgentWriteActionService:
         notification_service: Any = None,
         pending_action_ttl_minutes: int = 15,
         default_actor: str = _DEFAULT_ACTOR,
+        lock_service: Any | None = None,
+        lock_ttl_seconds: int = 60,
     ) -> None:
         self.database = database
         self.camera_management = camera_management
         self.learning_service = learning_service
         self.notification_service = notification_service
         self.default_actor = default_actor
+        self.lock_service = lock_service
+        self.lock_ttl_seconds = max(5, lock_ttl_seconds)
         self._ttl = timedelta(minutes=pending_action_ttl_minutes) if pending_action_ttl_minutes > 0 else _DEFAULT_TTL
         self._handlers: dict[str, WriteActionHandlerSpec] = {}
         self._register_default_handlers()
@@ -131,6 +135,24 @@ class AgentWriteActionService:
         )
 
     def confirm(self, confirmation_id: str, conversation_id: str) -> ActionExecutionResponse:
+        lock_handle = None
+        if self.lock_service is not None:
+            lock_handle = self.lock_service.acquire(
+                f"action_confirm:{confirmation_id}",
+                ttl_seconds=self.lock_ttl_seconds,
+                blocking_timeout=0,
+                watchdog=True,
+            )
+            if not lock_handle.is_acquired:
+                raise AgentWriteActionError("该确认操作正在执行中，请勿重复提交")
+
+        try:
+            return self._do_confirm(confirmation_id, conversation_id)
+        finally:
+            if lock_handle is not None:
+                lock_handle.release()
+
+    def _do_confirm(self, confirmation_id: str, conversation_id: str) -> ActionExecutionResponse:
         with self.database.session() as session:
             action = self._load_bound_action(session, confirmation_id, conversation_id)
             if action.status == "EXECUTED":

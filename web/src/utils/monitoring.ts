@@ -1,4 +1,4 @@
-import type { CameraStatusResponse } from '../types/contract'
+import type { CameraStatusResponse, ViolationRecord } from '../types/contract'
 
 // SQLite responses may omit the offset even though these contract fields are UTC.
 export function utcDate(value: string | Date) {
@@ -29,4 +29,43 @@ export function filterCameras(cameras: CameraStatusResponse[], query: string, st
     return `${camera.camera_id} ${location}`.toLocaleLowerCase().includes(term)
       && (status === 'all' || camera.is_online === (status === 'online'))
   })
+}
+
+export function applyRealtimeCameraStatus(
+  cameras: CameraStatusResponse[],
+  incoming: CameraStatusResponse,
+): CameraStatusResponse[] {
+  const index = cameras.findIndex(c => c.camera_id === incoming.camera_id)
+  if (index === -1) {
+    return [...cameras, incoming]
+  }
+  const next = [...cameras]
+  next[index] = incoming
+  return next
+}
+
+export function applyRealtimeViolationEvent(
+  events: ViolationRecord[],
+  eventTotal: number,
+  incoming: ViolationRecord,
+  maxItems = 6,
+): { events: ViolationRecord[]; eventTotal: number } {
+  const existingIndex = events.findIndex(e => e.event_uuid === incoming.event_uuid)
+
+  if (incoming.status === 'ACTIVE') {
+    if (existingIndex !== -1) {
+      const next = [...events]
+      next[existingIndex] = incoming
+      return { events: next, eventTotal }
+    }
+    const next = [incoming, ...events].slice(0, maxItems)
+    return { events: next, eventTotal: eventTotal + 1 }
+  }
+
+  if (existingIndex !== -1) {
+    const next = events.filter(e => e.event_uuid !== incoming.event_uuid)
+    return { events: next, eventTotal: Math.max(0, eventTotal - 1) }
+  }
+
+  return { events, eventTotal }
 }

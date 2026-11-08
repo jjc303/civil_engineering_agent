@@ -23,10 +23,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings.auto_create_schema:
         database.create_schema()
 
+    def _run_sync_with_lock(app: FastAPI) -> None:
+        lock_service = getattr(app.state, "lock_service", None)
+        if lock_service is not None:
+            handle = lock_service.acquire(
+                "rag_inbox_sync",
+                ttl_seconds=settings.lock_rag_sync_ttl_seconds,
+                blocking_timeout=0,
+                watchdog=True,
+            )
+            if not handle.is_acquired:
+                logger.debug("RAG inbox sync skipped: lock held by another worker")
+                return
+            try:
+                app.state.knowledge_service.sync_inbox()
+            finally:
+                handle.release()
+        else:
+            app.state.knowledge_service.sync_inbox()
+
     async def sync_knowledge_inbox_periodically(app: FastAPI) -> None:
         while True:
             try:
-                await asyncio.to_thread(app.state.knowledge_service.sync_inbox)
+                await asyncio.to_thread(_run_sync_with_lock, app)
             except Exception:
                 logger.exception("Knowledge inbox synchronization failed")
             await asyncio.sleep(settings.rag_sync_interval_seconds)
@@ -47,6 +66,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     await task
             if getattr(app.state, "notification_service", None) is not None:
                 app.state.notification_service.shutdown(wait=False)
+            if getattr(app.state, "infra", None) is not None:
+                app.state.infra.shutdown(wait=False)
 
     app = FastAPI(title="Civil Engineering Safety Agent", version="0.1.0", lifespan=lifespan)
     media_root = Path(settings.media_root)

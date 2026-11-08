@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
+import json
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from agent.api.dependencies import get_perception_service
@@ -74,3 +78,56 @@ def test_feishu_notification(payload: FeishuTestRequest, request: Request) -> di
     if not result or not result.get("ok"):
         raise HTTPException(status_code=502, detail=f"Feishu webhook delivery failed: {result}")
     return {"status": "sent", "detail": result}
+
+
+@router.get("/safety/events/stream")
+async def stream_safety_events(
+    request: Request,
+    max_events: int = Query(default=0, ge=0, description="Max events to yield before closing stream (0 for infinite)"),
+) -> StreamingResponse:
+    broadcaster = getattr(request.app.state, "broadcaster", None)
+    if broadcaster is None:
+        raise HTTPException(status_code=503, detail="Realtime event broadcasting is not available")
+
+    async def event_generator():
+        yield f"event: ping\ndata: {{\"connected\": true}}\n\n"
+        yielded_count = 1
+        if max_events > 0 and yielded_count >= max_events:
+            return
+
+        iterator = broadcaster.subscribe()
+        last_keepalive = time.monotonic()
+        try:
+            while not await request.is_disconnected():
+                item = await asyncio.to_thread(lambda: next(iterator, None))
+                if item is None:
+                    now = time.monotonic()
+                    if (now - last_keepalive) >= 15.0:
+                        yield ": keepalive\n\n"
+                        last_keepalive = now
+                    continue
+                event_type = item.get("event_type", "message")
+                payload = json.dumps(item.get("data", {}), ensure_ascii=False)
+                yield f"event: {event_type}\ndata: {payload}\n\n"
+                last_keepalive = time.monotonic()
+                yielded_count += 1
+                if max_events > 0 and yielded_count >= max_events:
+                    break
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+        finally:
+            if hasattr(iterator, "close"):
+                try:
+                    iterator.close()
+                except Exception:
+                    pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

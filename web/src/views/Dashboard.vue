@@ -2,7 +2,7 @@
   <div class="monitor-dashboard" :class="{ 'focus-mode': focusMode }">
     <header class="page-heading">
       <div><p class="eyebrow">LIVE MONITORING</p><h1>现场监控</h1><p class="subtitle">查看监控画面，关注现场风险，及时跟进安全事件。</p></div>
-      <div class="heading-actions"><label class="auto-refresh"><input v-model="autoRefresh" type="checkbox">30 秒刷新数据</label><button class="monitor-button" :disabled="loading" @click="refreshAll"><el-icon><Refresh /></el-icon>{{ loading ? '更新中' : '刷新数据' }}</button></div>
+      <div class="heading-actions"><label class="auto-refresh"><input v-model="autoRefresh" type="checkbox">实时推送<span v-if="autoRefresh && streamStateLabel" class="stream-badge" :class="streamState">{{ streamStateLabel }}</span></label><button class="monitor-button" :disabled="loading" @click="refreshAll"><el-icon><Refresh /></el-icon>{{ loading ? '更新中' : '刷新数据' }}</button></div>
     </header>
     <div v-if="isMockEnabled" class="notice">演示模式 · 使用仓库样例数据；视频与证据不连接现场，统计口径以样例为准。</div>
     <div v-if="errorLabels.length" class="notice error" role="alert">{{ errorLabels.join('、') }}读取失败。{{ hasAnyData ? '保留上次成功数据，请注意更新时间。' : '尚未取得现场数据，请检查服务连接。' }}<button :disabled="loading" @click="refreshAll">重新加载 ↗</button></div>
@@ -84,12 +84,13 @@ import { ElMessage } from 'element-plus'
 import { Refresh, FullScreen, VideoCamera, ChatDotRound, CircleCheck, Warning, Search } from '@element-plus/icons-vue'
 import { fetchCameras } from '@/api/cameras'
 import { fetchViolations, fetchViolationStatistics, fetchRiskHeatmap, type RiskHeatmapData } from '@/api/violations'
+import { createSafetyEventStream, type RealtimeConnectionState, type SafetyEventStreamHandle } from '@/api/realtime'
 import { isMockEnabled } from '@/api/client'
 import type { CameraStatusResponse, ViolationRecord, ViolationStatistics, ViolationType, ViolationSeverity } from '@/types/contract'
 import MonitorCamera from '@/components/MonitorCamera.vue'
 import EvidenceModal from '@/components/EvidenceModal.vue'
 import { useDictionariesStore } from '@/stores/dictionaries'
-import { todayWindow, cameraPage, cameraSelection, utcDate, filterCameras } from '@/utils/monitoring'
+import { todayWindow, cameraPage, cameraSelection, utcDate, filterCameras, applyRealtimeCameraStatus, applyRealtimeViolationEvent } from '@/utils/monitoring'
 const cameras = ref<CameraStatusResponse[]>([])
 const cameraQuery = ref(''), cameraStatus = ref<'all' | 'online' | 'offline'>('all'), focusMode = ref(false)
 const statusOptions = [{ value: 'all', label: '全部' }, { value: 'online', label: '在线' }, { value: 'offline', label: '离线' }] as const
@@ -129,6 +130,82 @@ function focusCamera(id: string) { selectedCameraId.value = id; layout.value = 1
 function openEvidence(event: ViolationRecord) { selectedEvent.value = event; evidenceVisible.value = true }
 let alive = true
 let timer: ReturnType<typeof setInterval> | undefined
+let statsDebounceTimer: ReturnType<typeof setTimeout> | undefined
+let streamHandle: SafetyEventStreamHandle | undefined
+let lastFullRefreshAt = 0
+const streamState = ref<RealtimeConnectionState>('closed')
+const streamStateLabel = computed(() => {
+  if (streamState.value === 'connected') return '已连接'
+  if (streamState.value === 'connecting') return '连接中'
+  if (streamState.value === 'reconnecting') return '重连中'
+  return ''
+})
+
+async function refreshStatsAndHeatmap() {
+  const now = new Date()
+  try {
+    const statsResult = await fetchViolationStatistics(todayWindow(now))
+    if (!alive) return
+    stats.value = statsResult
+    errors.stats = false
+    updatedAt.stats = new Date()
+    dayLabel.value = now.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+  } catch {
+    if (alive) errors.stats = true
+  }
+  fetchRiskHeatmap(7).then(data => { if (alive) heatmap.value = data }).catch(() => {})
+}
+
+function scheduleStatsRefresh() {
+  if (statsDebounceTimer) clearTimeout(statsDebounceTimer)
+  statsDebounceTimer = setTimeout(() => {
+    if (alive) void refreshStatsAndHeatmap()
+  }, 300)
+}
+
+function startEventStream() {
+  stopEventStream()
+  if (!autoRefresh.value) return
+  streamHandle = createSafetyEventStream({
+    onStateChange(state) {
+      if (alive) streamState.value = state
+    },
+    onCameraStatus(incoming) {
+      if (!alive) return
+      cameras.value = applyRealtimeCameraStatus(cameras.value, incoming)
+      cameraLoaded.value = true
+      errors.cameras = false
+      updatedAt.cameras = new Date()
+    },
+    onViolationEvent(payload) {
+      if (!alive) return
+      const next = applyRealtimeViolationEvent(events.value, eventTotal.value, payload.record, 6)
+      events.value = next.events
+      eventTotal.value = next.eventTotal
+      eventLoaded.value = true
+      errors.events = false
+      updatedAt.events = new Date()
+      scheduleStatsRefresh()
+    },
+  })
+}
+
+function stopEventStream() {
+  if (streamHandle) {
+    streamHandle.close()
+    streamHandle = undefined
+  }
+}
+
+watch(autoRefresh, enabled => {
+  if (enabled) {
+    startEventStream()
+    void refreshAll()
+  } else {
+    stopEventStream()
+  }
+})
+
 async function refreshAll() {
   if (loading.value) return
   loading.value = true
@@ -139,6 +216,7 @@ async function refreshAll() {
     // Fetch risk heatmap separately (not critical, don't block other loading)
     fetchRiskHeatmap(7).then(data => { if (alive) heatmap.value = data }).catch(() => {})
     if (!alive) return
+    lastFullRefreshAt = Date.now()
     errors.cameras = cameraResult.status === 'rejected'; errors.stats = statsResult.status === 'rejected'; errors.events = eventResult.status === 'rejected'
     if (cameraResult.status === 'fulfilled') {
       cameras.value = cameraResult.value; cameraLoaded.value = true; updatedAt.cameras = new Date()
@@ -152,8 +230,27 @@ async function refreshAll() {
 async function toggleFullscreen() { try { if (document.fullscreenElement) await document.exitFullscreen(); else await videoPanel.value?.requestFullscreen() } catch { ElMessage.info('当前浏览器不支持全屏，可以使用单屏放大查看') } }
 function syncFullscreen() { fullscreen.value = document.fullscreenElement === videoPanel.value }
 function onVisibility() { pageVisible.value = !document.hidden; if (pageVisible.value && autoRefresh.value) void refreshAll() }
-onMounted(() => { void refreshAll(); timer = setInterval(() => { if (autoRefresh.value && !document.hidden) void refreshAll() }, 30000); document.addEventListener('visibilitychange', onVisibility); document.addEventListener('fullscreenchange', syncFullscreen) })
-onUnmounted(() => { alive = false; clearInterval(timer); document.removeEventListener('visibilitychange', onVisibility); document.removeEventListener('fullscreenchange', syncFullscreen) })
+onMounted(() => {
+  void refreshAll()
+  startEventStream()
+  timer = setInterval(() => {
+    if (!autoRefresh.value || document.hidden) return
+    const intervalMs = streamState.value === 'connected' ? 60000 : 30000
+    if (Date.now() - lastFullRefreshAt >= intervalMs) {
+      void refreshAll()
+    }
+  }, 15000)
+  document.addEventListener('visibilitychange', onVisibility)
+  document.addEventListener('fullscreenchange', syncFullscreen)
+})
+onUnmounted(() => {
+  alive = false
+  stopEventStream()
+  clearInterval(timer)
+  if (statsDebounceTimer) clearTimeout(statsDebounceTimer)
+  document.removeEventListener('visibilitychange', onVisibility)
+  document.removeEventListener('fullscreenchange', syncFullscreen)
+})
 const typePieOption = computed(() => ({
   animation: chartAnimation, animationDuration: 400,
   color: ['#9181ea', '#e4a58c', '#85b5b2'],
@@ -366,5 +463,8 @@ h1{font-size:28px;font-weight:600;letter-spacing:-.5px}.eyebrow{font-size:11px;l
 .zone-info{flex:1;min-width:0}.zone-info strong{display:block;font-size:13px;color:#504963}.zone-info small{font-size:10px;color:#9b93ab}
 .zone-count b{font-size:16px;color:#695bb4;font-weight:600}.zone-count span{font-size:10px;color:#a29ab5;margin-left:3px}
 .risk-bar{width:90px;height:6px;background:#eae5f2;border-radius:3px;overflow:hidden;flex-shrink:0}.risk-fill{height:100%;border-radius:3px;transition:width .4s}
+.stream-badge{display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:500;background:#eef6f0;color:#4e9a67}
+.stream-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+.stream-badge.connecting,.stream-badge.reconnecting{background:#fef6e7;color:#b88230}
 @media(max-width:760px){.heatmap-grid{grid-template-columns:1fr}.risk-bar{width:60px}.heatmap-summary{max-width:100%;white-space:normal}}
 </style>

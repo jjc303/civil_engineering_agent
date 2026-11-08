@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
+from typing import Any
 
 from fastapi import APIRouter, FastAPI
 
@@ -15,8 +17,10 @@ from agent.api.meta import router as meta_router
 from agent.api.public_safety import router as public_router
 from agent.api.rectification_tasks import router as rectification_task_router
 from agent.api.ui_config import admin_router as ui_config_admin_router, public_router as ui_config_public_router
+from agent.contracts.query import ViolationRecord
 from agent.core.config import Settings
 from agent.db.base import Database
+from agent.infra import InfraContainer, build_infra_container
 from agent.llm.factory import create_chat_model
 from agent.notifications import NotificationPort, create_notification_service
 from agent.rag.chroma_adapter import ChromaKnowledgeRetriever
@@ -27,6 +31,8 @@ from agent.services.knowledge_service import KnowledgeService
 from agent.services.learning_service import LearningService
 from agent.services.perception_service import PerceptionService
 from agent.services.rectification_task_service import RectificationTaskService
+
+logger = logging.getLogger(__name__)
 
 ROUTERS: tuple[APIRouter, ...] = (
     chat_router,
@@ -55,6 +61,7 @@ class ServiceContainer:
     agent_write_action_service: AgentWriteActionService
     rectification_task_service: RectificationTaskService
     chat_service: ChatService
+    infra: InfraContainer | None = None
 
     def attach_to_app(self, app: FastAPI) -> None:
         app.state.services = self
@@ -66,16 +73,34 @@ class ServiceContainer:
         app.state.agent_write_action_service = self.agent_write_action_service
         app.state.rectification_task_service = self.rectification_task_service
         app.state.chat_service = self.chat_service
+        if self.infra is not None:
+            app.state.infra = self.infra
+            app.state.cache = self.infra.cache
+            app.state.lock_service = self.infra.lock_service
+            app.state.broadcaster = self.infra.broadcaster
 
 
-def build_service_container(settings: Settings, database: Database) -> ServiceContainer:
-    notification_service = create_notification_service(settings)
-    perception_service = PerceptionService(database, notification_service=notification_service)
+def build_service_container(settings: Settings, database: Database, infra: InfraContainer | None = None) -> ServiceContainer:
+    infra = infra or build_infra_container(settings)
+    notification_service = create_notification_service(settings, throttle=infra.throttle)
+    perception_service = PerceptionService(
+        database,
+        notification_service=notification_service,
+        cache=infra.cache,
+        event_stream=infra.event_stream if settings.stream_async_enabled else None,
+        broadcaster=infra.broadcaster,
+        cache_camera_status_ttl_seconds=settings.cache_camera_status_ttl_seconds,
+        cache_stats_ttl_seconds=settings.cache_stats_ttl_seconds,
+    )
     camera_management_service = CameraManagementService(
         database,
         settings.credential_encryption_key,
         settings.cv_control_timeout_seconds,
         settings.cv_node_offline_threshold_seconds,
+        lock_service=infra.lock_service,
+        lock_ttl_seconds=settings.lock_default_ttl_seconds,
+        cache=infra.cache,
+        broadcaster=infra.broadcaster,
     )
     retriever = (
         ChromaKnowledgeRetriever(
@@ -116,6 +141,7 @@ def build_service_container(settings: Settings, database: Database) -> ServiceCo
         app_base_path=settings.app_base_path,
         notification_service=notification_service,
         report_source_label=settings.report_source_label,
+        cache=infra.cache,
     )
     agent_write_action_service = AgentWriteActionService(
         database,
@@ -123,6 +149,8 @@ def build_service_container(settings: Settings, database: Database) -> ServiceCo
         learning_service,
         notification_service=notification_service,
         pending_action_ttl_minutes=settings.pending_action_ttl_minutes,
+        lock_service=infra.lock_service,
+        lock_ttl_seconds=settings.lock_action_confirm_ttl_seconds,
     )
     rectification_task_service = RectificationTaskService(database, agent_write_action_service)
     chat_service = ChatService(
@@ -139,6 +167,20 @@ def build_service_container(settings: Settings, database: Database) -> ServiceCo
         notification_service=notification_service,
         standards_on_demand=settings.rag_standards_on_demand,
     )
+
+    if settings.stream_async_enabled and notification_service is not None:
+        def _handle_stream_event(payload: dict[str, Any]) -> None:
+            if payload.get("event_type") == "violation_event":
+                record_data = payload.get("record")
+                if record_data:
+                    try:
+                        record = ViolationRecord.model_validate(record_data)
+                        notification_service.notify_violation_event(record)
+                    except Exception as err:
+                        logger.warning("Stream consumer notification failed: %s", err)
+
+        infra.event_stream.start_consumer(_handle_stream_event)
+
     return ServiceContainer(
         notification_service=notification_service,
         perception_service=perception_service,
@@ -148,4 +190,5 @@ def build_service_container(settings: Settings, database: Database) -> ServiceCo
         agent_write_action_service=agent_write_action_service,
         rectification_task_service=rectification_task_service,
         chat_service=chat_service,
+        infra=infra,
     )

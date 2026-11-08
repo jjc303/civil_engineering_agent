@@ -82,6 +82,7 @@ class LearningService:
         app_base_path: str = "",
         notification_service: Any = None,
         report_source_label: str | None = None,
+        cache: Any | None = None,
     ) -> None:
         self.database = database
         self.knowledge = knowledge
@@ -93,6 +94,7 @@ class LearningService:
         self.insights_ttl_seconds = insights_ttl_seconds
         self.notification_service = notification_service
         self.report_source_label = report_source_label
+        self.cache = cache
         self._insights_lock = Lock()
         self._insights_cache: tuple[tuple, float, dict] | None = None
 
@@ -205,7 +207,15 @@ class LearningService:
         overview = self.weekly_overview()
         main_risks = overview["main_risks"]
         week_start = datetime.fromisoformat(overview["period_start_utc"])
-        key = (overview["period_start_utc"], tuple(risk["code"] for risk in main_risks))
+        risk_codes = tuple(sorted(risk["code"] for risk in main_risks))
+        key = (overview["period_start_utc"], risk_codes)
+        cache_key = f"insights:{overview['period_start_utc']}:{','.join(risk_codes)}"
+
+        if not refresh and self.cache is not None:
+            cached_val = self.cache.get_json("learning", cache_key)
+            if cached_val is not None:
+                return cached_val
+
         with self._insights_lock:
             cached = self._insights_cache
             if not refresh and cached and cached[0] == key and cached[1] > monotonic():
@@ -213,6 +223,8 @@ class LearningService:
             result = self._generate_weekly_insights(main_risks, week_start)
             ttl_seconds = self.insights_ttl_seconds if result["advice"] or not main_risks else min(60, self.insights_ttl_seconds)
             self._insights_cache = (key, monotonic() + ttl_seconds, result)
+            if self.cache is not None:
+                self.cache.set_json("learning", cache_key, result, ttl_seconds=ttl_seconds)
             return result
 
     def _generate_weekly_insights(self, main_risks: list[dict], week_start: datetime) -> dict:

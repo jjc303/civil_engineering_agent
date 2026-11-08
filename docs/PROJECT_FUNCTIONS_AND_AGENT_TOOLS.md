@@ -8,17 +8,19 @@
 
 | 层 | 实现 | 主要职责 |
 | --- | --- | --- |
-| Web | Vue 3、TypeScript、Vite、Element Plus、ECharts、Konva | 监控、事件、整改、标定、聊天、学习中心与工人答题界面 |
-| Agent API | FastAPI、Pydantic、SQLAlchemy、Alembic | 业务接口、工具编排、待确认写操作、知识库与学习任务 |
+| Web | Vue 3、TypeScript、Vite、Element Plus、ECharts、Konva | 监控、事件、整改、标定、聊天、学习中心与工人答题界面；支持 SSE 实时事件流与状态归约 |
+| Agent API | FastAPI、Pydantic、SQLAlchemy、Alembic | 业务接口、工具编排、待确认写操作、知识库与学习任务、SSE 实时事件推流端点 |
 | Agent 模型 | LangGraph、DeepSeek 兼容接口；可切换 Fake 适配器 | 选择工具、生成回答、报告、教育建议和培训材料 |
-| 数据 | MySQL；ChromaDB；本地文档、快照和 PDF | 业务记录、向量索引及文件存储 |
+| 数据与缓存 | MySQL；ChromaDB；Redis 6+（含内存降级）；本地文档与快照 | 业务持久化、向量索引、分布式互斥锁(Watchdog)、高频缓存及可靠消息流 |
 | CV 节点 | PyTorch、Ultralytics、OpenCV、跟踪和本地控制 API | 解码视频、检测人员与安全帽、判断危险区域、发布事件和状态 |
 
 ```mermaid
 graph LR
     Web[Web and H5] --> API[Agent API]
+    API -.->|SSE 实时事件推送| Web
     API --> DB[MySQL]
     API --> KB[Chroma]
+    API --> REDIS[(Redis 缓存/锁/PubSub)]
     API --> LLM[DeepSeek or Fake]
     API --> CV[CV Node]
     Video[Video or RTSP] --> CV

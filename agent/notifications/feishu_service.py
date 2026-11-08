@@ -69,6 +69,7 @@ class FeishuNotificationService:
         timeout_seconds: float = 5.0,
         max_workers: int = 2,
         http_sender: Callable[[str, dict[str, Any], float], dict[str, Any]] | None = None,
+        throttle: Any | None = None,
     ) -> None:
         self.webhook_url = webhook_url.strip()
         self.webhook_secret = webhook_secret.strip()
@@ -77,7 +78,7 @@ class FeishuNotificationService:
         self.timezone_name = timezone_name
         self.min_severity_rank = SEVERITY_RANK.get(min_severity.upper(), 2)
         self.timeout_seconds = max(1.0, timeout_seconds)
-        self.throttle = AlertThrottle(cooldown_seconds=cooldown_seconds)
+        self.throttle = throttle if throttle is not None else AlertThrottle(cooldown_seconds=cooldown_seconds)
         self._http_sender = http_sender or self._default_http_post
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="feishu-webhook")
         self._closed = False
