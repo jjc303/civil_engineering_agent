@@ -25,6 +25,19 @@ class Capability(str, Enum):
     NOTIFICATION = "notification"
 
 
+_CAPABILITY_METADATA: dict[Capability, tuple[str, str]] = {
+    Capability.KNOWLEDGE: ("知识库与规范检索", "未启用或未配置知识库检索服务"),
+    Capability.WRITE: ("运维写入待确认操作", "当前对话未开启写操作权限或服务未挂载"),
+    Capability.LEARNING: ("安全报告与培训管理", "学习与报告服务未启用"),
+    Capability.NOTIFICATION: ("群消息通知推送", "通知功能未开启或未配置有效推送通道（如 Webhook）"),
+}
+
+
+def describe_capability(cap: Capability) -> tuple[str, str]:
+    """Return (display_label, disabled_reason) for a Capability."""
+    return _CAPABILITY_METADATA.get(cap, (cap.value, f"{cap.value} 未启用"))
+
+
 @dataclass
 class ToolContext:
     repository: "ViolationRepository"
@@ -47,6 +60,12 @@ class ToolContext:
         if getattr(self.notification_service, "is_configured", False):
             active.add(Capability.NOTIFICATION)
         return frozenset(active)
+
+    def describe_notification_channels(self) -> dict[str, Any]:
+        """Return runtime metadata about configured notification channels."""
+        from agent.notifications.protocol import describe_notification_channels
+
+        return describe_notification_channels(self.notification_service)
 
 
 def extract_evidence(data: object) -> list[Evidence]:
@@ -125,13 +144,37 @@ class AgentTool:
     handler: ToolHandler
     requires: frozenset[Capability] = frozenset()
     terminal_summary: Callable[[Any], str] | None = None
+    intent_keywords: tuple[str, ...] = ()
+    context_keywords: Callable[[ToolContext], tuple[str, ...]] | None = None
+    description_resolver: Callable[[ToolContext], str] | None = None
 
     def execute(self, decision: ToolDecision, ctx: ToolContext) -> ToolOutcome:
         return self.handler(decision, ctx)
 
-    def to_catalog_entry(self) -> dict[str, str]:
+    def resolve_description(self, ctx: ToolContext | None = None) -> str:
+        if ctx is not None and self.description_resolver is not None:
+            resolved = self.description_resolver(ctx).strip()
+            if resolved:
+                return resolved
+        return self.description
+
+    def matches_intent(self, normalized_question: str, ctx: ToolContext | None = None) -> bool:
+        """Return True when the normalized question matches this tool's declared intent keywords."""
+        for kw in self.intent_keywords:
+            if kw and kw.lower() in normalized_question:
+                return True
+        if ctx is not None and self.context_keywords is not None:
+            for kw in self.context_keywords(ctx):
+                if kw and kw.lower() in normalized_question:
+                    return True
+        # Allow dynamically registered custom tools without explicit intent_keywords
+        # to match on normalized identifier tokens.
+        name_token = self.name.replace("_", " ").lower()
+        return bool(name_token and name_token in normalized_question)
+
+    def to_catalog_entry(self, ctx: ToolContext | None = None) -> dict[str, str]:
         return {
             "name": self.name,
-            "description": self.description,
+            "description": self.resolve_description(ctx),
             "parameters": self.parameters,
         }

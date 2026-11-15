@@ -90,6 +90,7 @@ LEARNING_READ_TOOLS: tuple[AgentTool, ...] = (
         parameters="无",
         handler=_get_learning_overview,
         requires=_REQ_LEARNING,
+        intent_keywords=("报告", "周报", "培训", "学习", "教育"),
     ),
     AgentTool(
         name="get_learning_insights",
@@ -97,6 +98,7 @@ LEARNING_READ_TOOLS: tuple[AgentTool, ...] = (
         parameters="无",
         handler=_get_learning_insights,
         requires=_REQ_LEARNING,
+        intent_keywords=("报告", "周报", "培训", "学习", "建议", "教育"),
     ),
     AgentTool(
         name="list_safety_reports",
@@ -105,6 +107,7 @@ LEARNING_READ_TOOLS: tuple[AgentTool, ...] = (
         handler=_list_safety_reports,
         requires=_REQ_LEARNING,
         terminal_summary=_summarize_safety_reports,
+        intent_keywords=("报告", "周报", "安全报告", "pdf"),
     ),
     AgentTool(
         name="get_safety_report",
@@ -112,6 +115,7 @@ LEARNING_READ_TOOLS: tuple[AgentTool, ...] = (
         parameters="report_id: string",
         handler=_get_safety_report,
         requires=_REQ_LEARNING,
+        intent_keywords=("报告", "周报", "安全报告", "pdf"),
     ),
     AgentTool(
         name="list_training_tasks",
@@ -120,6 +124,7 @@ LEARNING_READ_TOOLS: tuple[AgentTool, ...] = (
         handler=_list_training_tasks,
         requires=_REQ_LEARNING,
         terminal_summary=_summarize_training_tasks,
+        intent_keywords=("培训", "学习", "答题", "考试", "教育"),
     ),
     AgentTool(
         name="get_training_task",
@@ -127,6 +132,7 @@ LEARNING_READ_TOOLS: tuple[AgentTool, ...] = (
         parameters="training_id: string",
         handler=_get_training_task,
         requires=_REQ_LEARNING,
+        intent_keywords=("培训", "学习", "答题", "考试", "教育"),
     ),
     AgentTool(
         name="get_training_statistics",
@@ -134,5 +140,6 @@ LEARNING_READ_TOOLS: tuple[AgentTool, ...] = (
         parameters="training_id: string",
         handler=_get_training_statistics,
         requires=_REQ_LEARNING,
+        intent_keywords=("培训", "学习", "答题", "考试", "教育", "成绩"),
     ),
 )

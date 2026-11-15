@@ -27,6 +27,8 @@ class FakeChatModel(ChatModelPort):
                     purpose="补充最近的违规事件作为统计依据",
                 )
             return None
+        if self._asks_for_capabilities(question):
+            return None
         if any(token in question for token in ("启动监控", "开启监控", "开始监控")):
             return ToolDecision(tool_name="start_monitoring", camera_id=camera_id, purpose="生成摄像头监控启动的待确认操作") if camera_id else None
         if any(token in question for token in ("停止监控", "关闭监控", "结束监控")):
@@ -73,8 +75,17 @@ class FakeChatModel(ChatModelPort):
             return ToolDecision(tool_name="get_violation_statistics", query=self._query(camera_id, normalized), purpose="汇总违规数量和严重级别")
         return ToolDecision(tool_name="query_violations", query=self._query(camera_id, normalized), purpose="查询符合条件的违规事件")
 
-    def respond(self, question: str, results: Sequence[ToolResult], memory_context: str = "") -> str:
+    def respond(
+        self,
+        question: str,
+        results: Sequence[ToolResult],
+        memory_context: str = "",
+        tool_catalog: Sequence[dict[str, str]] = (),
+        capability_status: dict[str, Any] | None = None,
+    ) -> str:
         if not results:
+            if (tool_catalog or capability_status) and self._asks_for_capabilities(question):
+                return self._format_capability_answer(tool_catalog, capability_status)
             return "未找到可用于回答的安全数据。"
         fragments: list[str] = []
         for result in results:
@@ -142,6 +153,68 @@ class FakeChatModel(ChatModelPort):
         if "事故经过" in instruction:
             return {"process": "依据已收录文档片段查看事故经过。", "causes": "请核对原文。", "risks": "请核对原文。", "prevention": "按现场管理要求防范。"}
         return {"summary": "根据统计数据形成的安全报告草稿。", "risk_analysis": "请结合统计表核对风险分布。", "remediation": "针对高频违规开展现场整改。"}
+
+    @staticmethod
+    def _asks_for_capabilities(question: str) -> bool:
+        capability_tokens = (
+            "什么工具",
+            "哪些工具",
+            "工具列表",
+            "有什么工具",
+            "没有工具",
+            "什么功能",
+            "哪些功能",
+            "什么能力",
+            "哪些能力",
+            "是否支持",
+            "有没有通知",
+            "没有通知",
+            "通知工具",
+            "能发通知",
+            "能不能通知",
+            "能不能发",
+            "可以发",
+        )
+        return any(token in question for token in capability_tokens)
+
+    @staticmethod
+    def _format_capability_answer(
+        tool_catalog: Sequence[dict[str, str]],
+        capability_status: dict[str, Any] | None,
+    ) -> str:
+        status = capability_status or {}
+        enabled_tools = list(tool_catalog) or list(status.get("enabled_tools", []))
+        disabled_tools = list(status.get("disabled_tools", []))
+        cap_items = list(status.get("capabilities", []))
+
+        parts: list[str] = []
+        if enabled_tools:
+            tool_names = "、".join(item.get("name", "") for item in enabled_tools if item.get("name"))
+            parts.append(f"当前已启用 {len(enabled_tools)} 项工具（{tool_names}）。")
+        else:
+            parts.append("当前未启用任何工具。")
+
+        enabled_caps = [c for c in cap_items if c.get("enabled")]
+        if enabled_caps:
+            cap_texts = []
+            for item in enabled_caps:
+                channels = item.get("active_channels") or []
+                label = item.get("label", item.get("capability", ""))
+                cap_texts.append(f"{label}（通道：{'、'.join(channels)}）" if channels else str(label))
+            parts.append(f"已启用扩展能力：{'；'.join(cap_texts)}。")
+
+        disabled_caps = [c for c in cap_items if not c.get("enabled")]
+        if disabled_caps:
+            cap_texts = [
+                f"{item.get('label', item.get('capability', ''))}（{item.get('reason', '未启用')}）"
+                for item in disabled_caps
+            ]
+            parts.append(f"当前未启用能力：{'；'.join(cap_texts)}。")
+        elif disabled_tools:
+            names = "、".join(item.get("name", "") for item in disabled_tools if item.get("name"))
+            parts.append(f"当前未启用工具：{names}。")
+
+        return "".join(parts)
 
     @staticmethod
     def _camera_id(question: str) -> str | None:

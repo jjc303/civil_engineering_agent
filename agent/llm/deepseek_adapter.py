@@ -88,11 +88,38 @@ class DeepSeekChatModel(ChatModelPort):
         assert last_error is not None
         raise last_error
 
-    def respond(self, question: str, results: Sequence[ToolResult], memory_context: str = "") -> str:
+    def respond(
+        self,
+        question: str,
+        results: Sequence[ToolResult],
+        memory_context: str = "",
+        tool_catalog: Sequence[dict[str, str]] = (),
+        capability_status: dict[str, Any] | None = None,
+    ) -> str:
         safe_results = [result.model_dump(mode="json") for result in results]
+        capability_section = ""
+        if tool_catalog or capability_status:
+            status_payload = capability_status or {}
+            capability_payload = {
+                "available_tools": list(tool_catalog),
+                "capabilities": status_payload.get("capabilities", []),
+                "disabled_tools": status_payload.get("disabled_tools", []),
+                "active_notification_channels": status_payload.get("active_notification_channels", []),
+            }
+            capability_section = (
+                "\n\n当前系统可用工具目录与能力状态（仅供如实说明已启用/未启用能力；未执行的工具不代表已执行）："
+                + json.dumps(capability_payload, ensure_ascii=False)
+            )
         message = self._answer_client.invoke([
             SystemMessage(content=_RESPONSE_PROMPT),
-            HumanMessage(content=f"用户问题：{question}\n\n会话摘要（非实时事实）：{memory_context[:3000]}\n\n已验证工具结果：{json.dumps(safe_results, ensure_ascii=False)}"),
+            HumanMessage(
+                content=(
+                    f"用户问题：{question}\n\n"
+                    f"会话摘要（非实时事实）：{memory_context[:3000]}"
+                    f"{capability_section}\n\n"
+                    f"已验证工具结果：{json.dumps(safe_results, ensure_ascii=False)}"
+                )
+            ),
         ])
         answer = _content_to_text(message.content).strip()
         if not answer:

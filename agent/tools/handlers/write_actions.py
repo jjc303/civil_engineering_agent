@@ -30,6 +30,7 @@ CORE_WRITE_TOOLS: tuple[AgentTool, ...] = (
         parameters="violation_event_uuid, task_title, task_description, task_owner, task_due_at_utc",
         handler=_propose_write_action,
         requires=_REQ_WRITE,
+        intent_keywords=("整改", "工单", "闭环", "责任人", "截止时间"),
     ),
     AgentTool(
         name="update_rectification_task",
@@ -37,6 +38,7 @@ CORE_WRITE_TOOLS: tuple[AgentTool, ...] = (
         parameters="task_id, task_owner, task_due_at_utc, task_status, task_note",
         handler=_propose_write_action,
         requires=_REQ_WRITE,
+        intent_keywords=("整改", "工单", "闭环", "责任人", "截止时间", "销项"),
     ),
     AgentTool(
         name="start_monitoring",
@@ -44,6 +46,7 @@ CORE_WRITE_TOOLS: tuple[AgentTool, ...] = (
         parameters="camera_id",
         handler=_propose_write_action,
         requires=_REQ_WRITE,
+        intent_keywords=("监控", "摄像头", "启动", "开启"),
     ),
     AgentTool(
         name="stop_monitoring",
@@ -51,6 +54,7 @@ CORE_WRITE_TOOLS: tuple[AgentTool, ...] = (
         parameters="camera_id",
         handler=_propose_write_action,
         requires=_REQ_WRITE,
+        intent_keywords=("监控", "摄像头", "停止", "关闭"),
     ),
     LIST_RECTIFICATION_TARGETS_TOOL,
     LIST_MONITORING_TARGETS_TOOL,
@@ -63,6 +67,7 @@ LEARNING_WRITE_TOOLS: tuple[AgentTool, ...] = (
         parameters="可选 report_period=THIS_WEEK 或 report_period_start_utc, report_period_end_utc",
         handler=_propose_write_action,
         requires=_REQ_LEARNING_WRITE,
+        intent_keywords=("报告", "周报", "安全报告"),
     ),
     AgentTool(
         name="update_safety_report",
@@ -70,6 +75,7 @@ LEARNING_WRITE_TOOLS: tuple[AgentTool, ...] = (
         parameters="report_id 及 report_summary, report_risk_analysis, report_remediation 中至少一项",
         handler=_propose_write_action,
         requires=_REQ_LEARNING_WRITE,
+        intent_keywords=("报告", "周报", "安全报告"),
     ),
     AgentTool(
         name="confirm_safety_report",
@@ -77,6 +83,7 @@ LEARNING_WRITE_TOOLS: tuple[AgentTool, ...] = (
         parameters="report_id",
         handler=_propose_write_action,
         requires=_REQ_LEARNING_WRITE,
+        intent_keywords=("报告", "周报", "安全报告", "pdf"),
     ),
     AgentTool(
         name="delete_safety_report",
@@ -84,6 +91,7 @@ LEARNING_WRITE_TOOLS: tuple[AgentTool, ...] = (
         parameters="report_id",
         handler=_propose_write_action,
         requires=_REQ_LEARNING_WRITE,
+        intent_keywords=("报告", "周报", "安全报告"),
     ),
     AgentTool(
         name="create_training_task",
@@ -91,6 +99,7 @@ LEARNING_WRITE_TOOLS: tuple[AgentTool, ...] = (
         parameters="report_id, training_title, training_target_count；可选 training_document_ids, training_question_count, training_pass_score",
         handler=_propose_write_action,
         requires=_REQ_LEARNING_WRITE,
+        intent_keywords=("培训", "学习", "答题", "考试", "教育"),
     ),
     PREPARE_TRAINING_TASK_TOOL,
     AgentTool(
@@ -99,6 +108,7 @@ LEARNING_WRITE_TOOLS: tuple[AgentTool, ...] = (
         parameters="training_id；training_title, training_target_count, training_pass_score, training_material, training_questions 至少一项",
         handler=_propose_write_action,
         requires=_REQ_LEARNING_WRITE,
+        intent_keywords=("培训", "学习", "答题", "考试", "教育"),
     ),
     AgentTool(
         name="publish_training_task",
@@ -106,6 +116,7 @@ LEARNING_WRITE_TOOLS: tuple[AgentTool, ...] = (
         parameters="training_id",
         handler=_propose_write_action,
         requires=_REQ_LEARNING_WRITE,
+        intent_keywords=("培训", "学习", "答题", "考试", "教育"),
     ),
     AgentTool(
         name="delete_training_task",
@@ -113,5 +124,6 @@ LEARNING_WRITE_TOOLS: tuple[AgentTool, ...] = (
         parameters="training_id",
         handler=_propose_write_action,
         requires=_REQ_LEARNING_WRITE,
+        intent_keywords=("培训", "学习", "答题", "考试", "教育"),
     ),
 )

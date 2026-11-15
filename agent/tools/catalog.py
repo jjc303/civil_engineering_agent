@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import get_args
+from typing import Any, get_args
 
 from agent.contracts.chat import ToolName
-from agent.tools.base import AgentTool, ToolContext
+from agent.tools.base import AgentTool, Capability, ToolContext, describe_capability
 from agent.tools.handlers import ALL_TOOLS
 
 
@@ -53,80 +53,59 @@ class ToolCatalog:
     ) -> list[dict[str, str]]:
         tools = self.available_tools(ctx)
         if prune_by_intent and question:
-            tools = _prune_tools_by_intent(tools, question)
-        return [tool.to_catalog_entry() for tool in tools]
+            tools = _prune_tools_by_intent(tools, question, ctx)
+        return [tool.to_catalog_entry(ctx) for tool in tools]
+
+    def capability_summary(self, ctx: ToolContext) -> dict[str, Any]:
+        """Build a data-driven runtime snapshot of enabled/disabled capabilities and tools."""
+        active_caps = ctx.capabilities()
+        notification_info = ctx.describe_notification_channels()
+
+        capability_items: list[dict[str, Any]] = []
+        for cap in Capability:
+            label, disabled_reason = describe_capability(cap)
+            entry: dict[str, Any] = {
+                "capability": cap.value,
+                "label": label,
+                "enabled": cap in active_caps,
+            }
+            if cap not in active_caps:
+                entry["reason"] = disabled_reason
+            elif cap == Capability.NOTIFICATION and notification_info["labels"]:
+                entry["active_channels"] = notification_info["labels"]
+            capability_items.append(entry)
+
+        enabled_tools: list[dict[str, str]] = []
+        disabled_tools: list[dict[str, Any]] = []
+        for tool in self._tools.values():
+            if tool.requires <= active_caps:
+                enabled_tools.append(tool.to_catalog_entry(ctx))
+            else:
+                missing = sorted((cap.value for cap in (tool.requires - active_caps)))
+                reasons = [describe_capability(cap)[1] for cap in sorted(tool.requires - active_caps, key=lambda c: c.value)]
+                disabled_tools.append({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "missing_capabilities": missing,
+                    "reasons": reasons,
+                })
+
+        return {
+            "capabilities": capability_items,
+            "enabled_tools": enabled_tools,
+            "disabled_tools": disabled_tools,
+            "active_notification_channels": notification_info["labels"],
+        }
 
 
-_INTENT_TOOL_RULES: tuple[tuple[tuple[str, ...], frozenset[str]], ...] = (
-    (
-        ("天气", "气温", "下雨", "风力", "气象"),
-        frozenset({"get_current_weather"}),
-    ),
-    (
-        ("违规", "事件", "摄像头", "监控", "巡检", "人数", "画面", "离线", "在线"),
-        frozenset({
-            "query_violations",
-            "get_violation_statistics",
-            "get_camera_status",
-            "get_all_camera_statuses",
-            "get_workforce_summary",
-            "list_monitoring_targets",
-            "start_monitoring",
-            "stop_monitoring",
-        }),
-    ),
-    (
-        ("规范", "标准", "规程", "条例", "案例", "事故", "查规", "文件", "条文"),
-        frozenset({"search_knowledge", "list_standard_catalog"}),
-    ),
-    (
-        ("报告", "周报", "培训", "学习", "答题", "考试", "建议", "教育"),
-        frozenset({
-            "get_learning_overview",
-            "get_learning_insights",
-            "list_safety_reports",
-            "get_safety_report",
-            "create_safety_report",
-            "update_safety_report",
-            "confirm_safety_report",
-            "delete_safety_report",
-            "list_training_tasks",
-            "get_training_task",
-            "get_training_statistics",
-            "prepare_training_task",
-            "create_training_task",
-            "update_training_task",
-            "publish_training_task",
-            "delete_training_task",
-        }),
-    ),
-    (
-        ("整改", "工单", "闭环", "责任人", "截止时间"),
-        frozenset({
-            "create_rectification_task",
-            "update_rectification_task",
-            "list_rectification_targets",
-        }),
-    ),
-    (
-        ("飞书", "通知", "推送", "通报", "简报", "播报", "告警群", "发群"),
-        frozenset({"send_feishu_notification"}),
-    ),
-)
-
-
-def _prune_tools_by_intent(tools: list[AgentTool], question: str) -> list[AgentTool]:
-    """Lightweight intent-based pruning to keep tool catalogue bounded."""
+def _prune_tools_by_intent(
+    tools: list[AgentTool],
+    question: str,
+    ctx: ToolContext | None = None,
+) -> list[AgentTool]:
+    """Prune tools using each tool's cohesive intent metadata (OCP, no central keyword table)."""
     q = question.lower()
-    intent_tools: set[str] = set()
-    for keywords, mapped_tools in _INTENT_TOOL_RULES:
-        if any(keyword in q for keyword in keywords):
-            intent_tools.update(mapped_tools)
-
-    if not intent_tools:
-        return tools
-
-    filtered = [t for t in tools if t.name in intent_tools]
+    filtered = [tool for tool in tools if tool.matches_intent(q, ctx)]
     return filtered if filtered else tools
 
 

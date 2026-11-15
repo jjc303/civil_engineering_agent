@@ -47,6 +47,7 @@ KNOWLEDGE_TOOLS: tuple[AgentTool, ...] = (
         parameters="knowledge_query: string, top_k: integer",
         handler=_search_knowledge,
         requires=_REQ_KNOWLEDGE,
+        intent_keywords=("事故", "案例", "事故报告", "调查报告"),
     ),
     AgentTool(
         name="list_standard_catalog",
@@ -54,5 +55,6 @@ KNOWLEDGE_TOOLS: tuple[AgentTool, ...] = (
         parameters="无",
         handler=_list_standard_catalog,
         requires=_REQ_KNOWLEDGE,
+        intent_keywords=("规范", "标准", "规程", "条例", "查规", "文件", "条文", "目录", "清单"),
     ),
 )

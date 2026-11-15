@@ -24,6 +24,8 @@ class FeishuNotificationService(BaseNotificationChannel):
     """High-cohesion, non-blocking Feishu custom bot webhook notification channel."""
 
     channel_name: str = "feishu"
+    channel_label: str = "飞书安全管理群"
+    channel_aliases: tuple[str, ...] = ("feishu", "飞书")
 
     def __init__(
         self,

@@ -171,6 +171,8 @@ class BaseNotificationChannel:
     """Default base implementation allowing channels to selectively implement only needed methods (ISP)."""
 
     channel_name: str = "base"
+    channel_label: str = ""
+    channel_aliases: tuple[str, ...] = ()
 
     @property
     def is_configured(self) -> bool:
@@ -246,6 +248,37 @@ class CompositeNotificationService(BaseNotificationChannel):
     def is_configured(self) -> bool:
         return any(ch.is_configured for ch in self.channels)
 
+    def active_channels(self) -> list[NotificationPort]:
+        """Return currently configured child channels."""
+        return [ch for ch in self.channels if ch.is_configured]
+
+    def active_channel_names(self) -> list[str]:
+        """Return normalized channel identifiers for configured child channels."""
+        return [
+            name
+            for ch in self.active_channels()
+            if (name := str(getattr(ch, "channel_name", "") or "").strip())
+        ]
+
+    def active_channel_labels(self) -> list[str]:
+        """Return display labels for configured child channels."""
+        labels: list[str] = []
+        for ch in self.active_channels():
+            label = str(getattr(ch, "channel_label", "") or getattr(ch, "channel_name", "") or "").strip()
+            if label and label not in labels:
+                labels.append(label)
+        return labels
+
+    def active_channel_aliases(self) -> list[str]:
+        """Return search/intent aliases declared by configured child channels."""
+        aliases: list[str] = []
+        for ch in self.active_channels():
+            for raw in getattr(ch, "channel_aliases", ()) or ():
+                token = str(raw).strip()
+                if token and token not in aliases:
+                    aliases.append(token)
+        return aliases
+
     def add_channel(self, channel: NotificationPort) -> None:
         self.channels.append(channel)
 
@@ -256,7 +289,7 @@ class CompositeNotificationService(BaseNotificationChannel):
         sync: bool = False,
         **kwargs: Any,
     ) -> dict[str, Any] | Future[dict[str, Any]] | None:
-        active_channels = [ch for ch in self.channels if ch.is_configured]
+        active_channels = self.active_channels()
         if not active_channels:
             if sync:
                 return NotificationDeliveryResult(
@@ -376,6 +409,35 @@ class CompositeNotificationService(BaseNotificationChannel):
     def shutdown(self, wait: bool = False) -> None:
         for ch in self.channels:
             ch.shutdown(wait=wait)
+
+
+def describe_notification_channels(service: object | None) -> dict[str, Any]:
+    """Inspect configured notification channel metadata without hardcoding providers."""
+    if service is None or not getattr(service, "is_configured", False):
+        return {"configured": False, "channels": [], "labels": [], "aliases": []}
+
+    targets = service.active_channels() if isinstance(service, CompositeNotificationService) else [service]
+    channels: list[str] = []
+    labels: list[str] = []
+    aliases: list[str] = []
+    for target in targets:
+        ch_name = str(getattr(target, "channel_name", "") or "").strip()
+        ch_label = str(getattr(target, "channel_label", "") or "").strip()
+        if ch_name and ch_name not in channels:
+            channels.append(ch_name)
+        effective_label = ch_label or ch_name
+        if effective_label and effective_label not in labels:
+            labels.append(effective_label)
+        for token in (ch_name, ch_label, *(getattr(target, "channel_aliases", ()) or ())):
+            cleaned = str(token or "").strip()
+            if cleaned and cleaned not in aliases:
+                aliases.append(cleaned)
+    return {
+        "configured": True,
+        "channels": channels,
+        "labels": labels,
+        "aliases": aliases,
+    }
 
 
 NotificationProviderBuilder = Callable[..., NotificationPort]

@@ -13,8 +13,15 @@ class ChatModelPort(Protocol):
     def decide(self, question: str, previous_results: Sequence[ToolResult], memory_context: str = "", tool_catalog: Sequence[dict[str, str]] = ()) -> ToolDecision | None:
         """Return a validated tool decision, or None when enough facts are available."""
 
-    def respond(self, question: str, results: Sequence[ToolResult], memory_context: str = "") -> str:
-        """Create a user-facing answer only from the validated tool results."""
+    def respond(
+        self,
+        question: str,
+        results: Sequence[ToolResult],
+        memory_context: str = "",
+        tool_catalog: Sequence[dict[str, str]] = (),
+        capability_status: dict[str, Any] | None = None,
+    ) -> str:
+        """Create a user-facing answer from validated tool results and runtime capability status."""
 
     def generate_structured(self, instruction: str, context: dict[str, Any]) -> dict[str, Any]:
         """Generate a JSON object from bounded, server supplied evidence."""

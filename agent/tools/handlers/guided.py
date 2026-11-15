@@ -92,6 +92,7 @@ LIST_RECTIFICATION_TARGETS_TOOL = AgentTool(
     parameters="无",
     handler=_list_rectification_targets,
     requires=_REQ_WRITE,
+    intent_keywords=("整改", "工单", "闭环", "责任人", "截止时间"),
 )
 
 LIST_MONITORING_TARGETS_TOOL = AgentTool(
@@ -100,6 +101,7 @@ LIST_MONITORING_TARGETS_TOOL = AgentTool(
     parameters="selection_action: start | stop",
     handler=_list_monitoring_targets,
     requires=_REQ_WRITE,
+    intent_keywords=("监控", "摄像头", "启停", "启动", "停止"),
 )
 
 PREPARE_TRAINING_TASK_TOOL = AgentTool(
@@ -108,4 +110,5 @@ PREPARE_TRAINING_TASK_TOOL = AgentTool(
     parameters="无",
     handler=_prepare_training_task,
     requires=_REQ_LEARNING_WRITE,
+    intent_keywords=("培训", "学习", "答题", "考试", "教育"),
 )

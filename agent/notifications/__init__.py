@@ -16,6 +16,7 @@ from .protocol import (
     RectificationNotificationPort,
     ViolationNotificationPort,
     WebhookTransport,
+    describe_notification_channels,
     dispatch_violation_notification,
 )
 from .registry import (
@@ -46,6 +47,7 @@ __all__ = [
     "ViolationNotificationPort",
     "WebhookTransport",
     "create_notification_service",
+    "describe_notification_channels",
     "dispatch_violation_notification",
     "format_local_time",
     "register_notification_provider",
