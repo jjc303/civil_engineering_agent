@@ -22,7 +22,7 @@ from agent.core.config import Settings
 from agent.db.base import Database
 from agent.infra import InfraContainer, build_infra_container
 from agent.llm.factory import create_chat_model
-from agent.notifications import NotificationPort, create_notification_service
+from agent.notifications import NotificationPort, create_notification_service, dispatch_violation_notification
 from agent.rag.chroma_adapter import ChromaKnowledgeRetriever
 from agent.services.agent_write_actions import AgentWriteActionService
 from agent.services.camera_management import CameraManagementService
@@ -170,14 +170,33 @@ def build_service_container(settings: Settings, database: Database, infra: Infra
 
     if settings.stream_async_enabled and notification_service is not None:
         def _handle_stream_event(payload: dict[str, Any]) -> None:
-            if payload.get("event_type") == "violation_event":
-                record_data = payload.get("record")
-                if record_data:
-                    try:
-                        record = ViolationRecord.model_validate(record_data)
-                        notification_service.notify_violation_event(record)
-                    except Exception as err:
-                        logger.warning("Stream consumer notification failed: %s", err)
+            if payload.get("event_type") != "violation_event":
+                return
+            record_data = payload.get("record")
+            if not record_data:
+                return
+            try:
+                record = ViolationRecord.model_validate(record_data)
+            except Exception as err:
+                logger.warning("Dropping invalid stream violation record: %s", err)
+                return
+
+            escalated = bool(payload.get("escalated", False))
+            result = dispatch_violation_notification(
+                notification_service,
+                record,
+                bypass_throttle=escalated,
+                escalated=escalated,
+                sync=True,
+            )
+            if isinstance(result, dict) and not result.get("ok") and not result.get("skipped"):
+                if result.get("retryable"):
+                    raise RuntimeError(result.get("error") or "retryable notification failure")
+                logger.warning(
+                    "Non-retryable notification failure for stream event %s: %s",
+                    record.event_uuid,
+                    result,
+                )
 
         infra.event_stream.start_consumer(_handle_stream_event)
 

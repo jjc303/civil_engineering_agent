@@ -30,6 +30,7 @@ from agent.db.models import SafetyReportModel, TrainingSubmissionModel, Training
 from agent.domain.standards_guard import guard_standard_references as _guard_standard_references
 from agent.domain.violation_catalog import VIOLATION_RETRIEVAL_TERMS
 from agent.llm.protocol import ChatModelPort
+from agent.notifications.protocol import LearningNotificationPort
 from agent.prompts import load_prompt
 from agent.repositories.learning import LearningRepository
 from agent.services.knowledge_service import KnowledgeService
@@ -80,7 +81,7 @@ class LearningService:
         display_timezone: str = "Asia/Shanghai",
         insights_ttl_seconds: int = 600,
         app_base_path: str = "",
-        notification_service: Any = None,
+        notification_service: LearningNotificationPort | None = None,
         report_source_label: str | None = None,
         cache: Any | None = None,
     ) -> None:

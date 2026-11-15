@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
 from dotenv import load_dotenv
+from agent.contracts.event_v1 import ViolationSeverity
 from agent.core.deployment import normalize_base_path
 
 
@@ -79,6 +81,25 @@ class Settings:
     feishu_alert_cooldown_seconds: int = 60
     feishu_alert_min_severity: str = "WARNING"
     feishu_timeout_seconds: float = 5.0
+    feishu_max_workers: int = 2
+    feishu_shutdown_wait_seconds: float = 3.0
+    feishu_brand_name: str = "智慧施工安全智能体"
+    feishu_summary_max_chars: int = 200
+    feishu_remediation_max_chars: int = 160
+    feishu_material_preview_max_chars: int = 150
+    feishu_test_default_title: str = "施工安全飞书联动自检通报"
+    feishu_test_default_content: str = (
+        "✅ **飞书自定义机器人通道已就绪**\n"
+        "- 边缘感知高危违规实时告警已开启\n"
+        "- 整改任务派发与销项闭环通知已开启\n"
+        "- 安全周报与全员培训发布推送已开启"
+    )
+    feishu_standard_hints_json: str = ""
+    feishu_route_dashboard: str = "/dashboard"
+    feishu_route_violations: str = "/violations"
+    feishu_route_rectification_tasks: str = "/rectification-tasks"
+    feishu_route_copilot: str = "/copilot"
+    feishu_route_learning: str = "/learning"
     redis_url: str = ""
     redis_key_prefix: str = "cea"
     redis_socket_timeout_seconds: float = 2.0
@@ -151,6 +172,23 @@ class Settings:
             feishu_alert_cooldown_seconds=int(os.getenv("FEISHU_ALERT_COOLDOWN_SECONDS", "60")),
             feishu_alert_min_severity=os.getenv("FEISHU_ALERT_MIN_SEVERITY", "WARNING").upper().strip(),
             feishu_timeout_seconds=float(os.getenv("FEISHU_TIMEOUT_SECONDS", "5.0")),
+            feishu_max_workers=int(os.getenv("FEISHU_MAX_WORKERS", "2")),
+            feishu_shutdown_wait_seconds=float(os.getenv("FEISHU_SHUTDOWN_WAIT_SECONDS", "3.0")),
+            feishu_brand_name=os.getenv("FEISHU_BRAND_NAME", "智慧施工安全智能体").strip() or "智慧施工安全智能体",
+            feishu_summary_max_chars=int(os.getenv("FEISHU_SUMMARY_MAX_CHARS", "200")),
+            feishu_remediation_max_chars=int(os.getenv("FEISHU_REMEDIATION_MAX_CHARS", "160")),
+            feishu_material_preview_max_chars=int(os.getenv("FEISHU_MATERIAL_PREVIEW_MAX_CHARS", "150")),
+            feishu_test_default_title=os.getenv("FEISHU_TEST_DEFAULT_TITLE", "施工安全飞书联动自检通报").strip() or "施工安全飞书联动自检通报",
+            feishu_test_default_content=os.getenv(
+                "FEISHU_TEST_DEFAULT_CONTENT",
+                "✅ **飞书自定义机器人通道已就绪**\n- 边缘感知高危违规实时告警已开启\n- 整改任务派发与销项闭环通知已开启\n- 安全周报与全员培训发布推送已开启",
+            ),
+            feishu_standard_hints_json=os.getenv("FEISHU_STANDARD_HINTS_JSON", "").strip(),
+            feishu_route_dashboard=os.getenv("FEISHU_ROUTE_DASHBOARD", "/dashboard").strip() or "/dashboard",
+            feishu_route_violations=os.getenv("FEISHU_ROUTE_VIOLATIONS", "/violations").strip() or "/violations",
+            feishu_route_rectification_tasks=os.getenv("FEISHU_ROUTE_RECTIFICATION_TASKS", "/rectification-tasks").strip() or "/rectification-tasks",
+            feishu_route_copilot=os.getenv("FEISHU_ROUTE_COPILOT", "/copilot").strip() or "/copilot",
+            feishu_route_learning=os.getenv("FEISHU_ROUTE_LEARNING", "/learning").strip() or "/learning",
             redis_url=os.getenv("AGENT_REDIS_URL", "").strip(),
             redis_key_prefix=os.getenv("AGENT_REDIS_KEY_PREFIX", "cea").strip() or "cea",
             redis_socket_timeout_seconds=float(os.getenv("AGENT_REDIS_SOCKET_TIMEOUT_SECONDS", "2.0")),
@@ -213,6 +251,23 @@ class Settings:
             raise RuntimeError("Lock TTL settings must be positive")
         if not (0.05 <= self.lock_watchdog_interval_ratio <= 0.8):
             raise RuntimeError("AGENT_LOCK_WATCHDOG_INTERVAL_RATIO must be between 0.05 and 0.8")
+        if self.feishu_alert_min_severity not in {s.value for s in ViolationSeverity}:
+            raise RuntimeError("FEISHU_ALERT_MIN_SEVERITY must be INFO, WARNING, or CRITICAL")
+        if self.feishu_alert_cooldown_seconds < 0:
+            raise RuntimeError("FEISHU_ALERT_COOLDOWN_SECONDS must be non-negative")
+        if self.feishu_timeout_seconds <= 0:
+            raise RuntimeError("FEISHU_TIMEOUT_SECONDS must be positive")
+        if self.feishu_max_workers < 1:
+            raise RuntimeError("FEISHU_MAX_WORKERS must be at least 1")
+        if self.feishu_shutdown_wait_seconds < 0:
+            raise RuntimeError("FEISHU_SHUTDOWN_WAIT_SECONDS must be non-negative")
+        if min(
+            self.feishu_summary_max_chars,
+            self.feishu_remediation_max_chars,
+            self.feishu_material_preview_max_chars,
+        ) <= 0:
+            raise RuntimeError("FEISHU_*_MAX_CHARS settings must be positive")
+        self.parsed_feishu_standard_hints()
         from agent.rag.chroma_adapter import validate_embedding_settings
         validate_embedding_settings(
             self.rag_embedding_provider,
@@ -224,6 +279,31 @@ class Settings:
         )
         if not self.auto_create_schema and (not self.bind_host or not 1 <= self.port <= 65535 or not self.cors_origins):
             raise RuntimeError("AGENT_BIND_HOST, AGENT_PORT and AGENT_CORS_ORIGINS must be configured")
+
+    def parsed_feishu_standard_hints(self) -> dict[str, str]:
+        """Parse optional JSON mapping of violation_type -> standard hint overrides."""
+        raw = self.feishu_standard_hints_json.strip()
+        if not raw:
+            return {}
+        try:
+            loaded = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("FEISHU_STANDARD_HINTS_JSON must be valid JSON") from exc
+        if not isinstance(loaded, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in loaded.items()
+        ):
+            raise RuntimeError("FEISHU_STANDARD_HINTS_JSON must be a JSON object mapping strings to strings")
+        return loaded
+
+    def feishu_routes(self) -> dict[str, str]:
+        """Return configured frontend route mapping for notification action links."""
+        return {
+            "dashboard": self.feishu_route_dashboard,
+            "violations": self.feishu_route_violations,
+            "rectification_tasks": self.feishu_route_rectification_tasks,
+            "copilot": self.feishu_route_copilot,
+            "learning": self.feishu_route_learning,
+        }
 
 
 def _required(name: str) -> str:

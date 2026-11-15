@@ -1,60 +1,29 @@
+"""Lightweight Feishu notification orchestrator delegating policy, rendering, and transport (SRP & DIP)."""
 from __future__ import annotations
 
-import base64
-from concurrent.futures import Future, ThreadPoolExecutor
-import hashlib
-import hmac
-import logging
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor, wait as wait_futures
 import threading
-import time
-from typing import Any, Callable
-
-import httpx
+from typing import Any
 
 from agent.contracts.learning import ReportResponse, TrainingResponse
 from agent.contracts.query import ViolationRecord
-from .feishu_cards import FeishuCardBuilder
+from agent.infra.cache import InMemoryThrottleAdapter
+from agent.infra.ports import ThrottlePort
+from .feishu_cards import FeishuCardBuilder, FeishuCardConfig
+from .feishu_policy import FeishuAlertPolicy
+from .feishu_transport import CallableWebhookTransport, FeishuWebhookClient
+from .links import DEFAULT_WEB_BASE_URL, NotificationLinkBuilder
+from .protocol import BaseNotificationChannel, NotificationDeliveryResult, WebhookTransport
 
-logger = logging.getLogger(__name__)
-
-SEVERITY_RANK: dict[str, int] = {
-    "INFO": 1,
-    "WARNING": 2,
-    "CRITICAL": 3,
-}
-
-
-class AlertThrottle:
-    """Thread-safe sliding window throttle to prevent duplicate alert flooding."""
-
-    def __init__(self, cooldown_seconds: int = 60) -> None:
-        self.cooldown_seconds = max(0, cooldown_seconds)
-        self._lock = threading.Lock()
-        self._last_sent: dict[tuple[str, str, str], float] = {}
-
-    def should_send(self, camera_id: str, violation_type: str, zone_id: str | None = None) -> bool:
-        if self.cooldown_seconds <= 0:
-            return True
-        key = (camera_id, violation_type, zone_id or "")
-        now = time.monotonic()
-        with self._lock:
-            last = self._last_sent.get(key)
-            if last is not None and (now - last) < self.cooldown_seconds:
-                return False
-            self._last_sent[key] = now
-            # Prevent unbounded dict growth in long-running processes
-            if len(self._last_sent) > 2048:
-                cutoff = now - self.cooldown_seconds
-                self._last_sent = {k: v for k, v in self._last_sent.items() if v >= cutoff}
-            return True
-
-    def reset(self) -> None:
-        with self._lock:
-            self._last_sent.clear()
+# Backwards-compatible alias referencing the shared ThrottlePort implementation (zero duplication).
+AlertThrottle = InMemoryThrottleAdapter
 
 
-class FeishuNotificationService:
-    """High-cohesion, non-blocking Feishu custom bot webhook notification service."""
+class FeishuNotificationService(BaseNotificationChannel):
+    """High-cohesion, non-blocking Feishu custom bot webhook notification channel."""
+
+    channel_name: str = "feishu"
 
     def __init__(
         self,
@@ -62,110 +31,128 @@ class FeishuNotificationService:
         *,
         webhook_secret: str = "",
         enabled: bool = True,
-        web_base_url: str = "http://127.0.0.1:5173",
+        web_base_url: str = DEFAULT_WEB_BASE_URL,
+        app_base_path: str = "",
         timezone_name: str = "Asia/Shanghai",
         cooldown_seconds: int = 60,
         min_severity: str = "WARNING",
         timeout_seconds: float = 5.0,
         max_workers: int = 2,
         http_sender: Callable[[str, dict[str, Any], float], dict[str, Any]] | None = None,
-        throttle: Any | None = None,
+        transport: WebhookTransport | None = None,
+        throttle: ThrottlePort | None = None,
+        policy: FeishuAlertPolicy | None = None,
+        card_builder: FeishuCardBuilder | None = None,
+        card_config: FeishuCardConfig | None = None,
+        link_builder: NotificationLinkBuilder | None = None,
     ) -> None:
-        self.webhook_url = webhook_url.strip()
-        self.webhook_secret = webhook_secret.strip()
-        self.enabled = bool(enabled and self.webhook_url)
-        self.web_base_url = web_base_url.rstrip("/") or "http://127.0.0.1:5173"
-        self.timezone_name = timezone_name
-        self.min_severity_rank = SEVERITY_RANK.get(min_severity.upper(), 2)
-        self.timeout_seconds = max(1.0, timeout_seconds)
-        self.throttle = throttle if throttle is not None else AlertThrottle(cooldown_seconds=cooldown_seconds)
-        self._http_sender = http_sender or self._default_http_post
-        self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="feishu-webhook")
+        resolved_transport = transport or (CallableWebhookTransport(http_sender) if http_sender is not None else None)
+        self.client = FeishuWebhookClient(
+            webhook_url,
+            webhook_secret=webhook_secret,
+            enabled=enabled,
+            timeout_seconds=timeout_seconds,
+            transport=resolved_transport,
+        )
+        self.policy = policy or FeishuAlertPolicy(
+            min_severity=min_severity,
+            cooldown_seconds=cooldown_seconds,
+            throttle=throttle,
+        )
+        resolved_links = link_builder or NotificationLinkBuilder(
+            web_base_url,
+            app_base_path=app_base_path,
+        )
+        resolved_config = card_config or FeishuCardConfig(timezone_name=timezone_name)
+        self.card_builder = card_builder or FeishuCardBuilder(
+            link_builder=resolved_links,
+            config=resolved_config,
+        )
+        self.throttle = self.policy.throttle
+        self.web_base_url = resolved_links.base_url
+        self.timezone_name = resolved_config.timezone_name
+        self._executor = ThreadPoolExecutor(max_workers=max(1, max_workers), thread_name_prefix="feishu-webhook")
+        self._pending_lock = threading.Lock()
+        self._pending_futures: set[Future[dict[str, Any]]] = set()
         self._closed = False
 
     @property
     def is_configured(self) -> bool:
-        return self.enabled and bool(self.webhook_url)
+        return self.client.is_configured
 
     @staticmethod
     def compute_signature(timestamp: str, secret: str) -> str:
-        string_to_sign = f"{timestamp}\n{secret}"
-        hmac_code = hmac.new(string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
-        return base64.b64encode(hmac_code).decode("utf-8")
+        return FeishuWebhookClient.compute_signature(timestamp, secret)
 
     def build_envelope(self, card: dict[str, Any]) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "msg_type": "interactive",
-            "card": card,
-        }
-        if self.webhook_secret:
-            ts = str(int(time.time()))
-            payload["timestamp"] = ts
-            payload["sign"] = self.compute_signature(ts, self.webhook_secret)
-        return payload
+        return self.client.build_envelope(card)
 
-    @staticmethod
-    def _default_http_post(url: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
-        with httpx.Client(timeout=timeout) as client:
-            response = client.post(url, json=payload)
-            response.raise_for_status()
-            return response.json()
+    def set_transport(self, transport: WebhookTransport) -> None:
+        """Replace underlying webhook transport (DIP helper for tests or custom adapters)."""
+        self.client.transport = transport
 
     def send_card_sync(self, card: dict[str, Any]) -> dict[str, Any]:
         """Synchronously send a card to Feishu webhook and return status dict."""
-        if not self.is_configured:
-            return {"ok": False, "skipped": True, "reason": "feishu webhook not configured or disabled"}
-        envelope = self.build_envelope(card)
-        try:
-            data = self._http_sender(self.webhook_url, envelope, self.timeout_seconds)
-            code = data.get("code", data.get("StatusCode", -1))
-            if code != 0:
-                logger.warning("Feishu webhook returned non-zero code: %s", data)
-                return {"ok": False, "response": data}
-            return {"ok": True, "response": data}
-        except Exception as exc:
-            logger.warning("Feishu webhook delivery failed: %s", exc)
-            return {"ok": False, "error": str(exc)}
+        return self.client.send_card(card).to_dict()
 
     def dispatch_card_async(self, card: dict[str, Any]) -> Future[dict[str, Any]] | None:
         """Submit card delivery to the background thread pool without blocking caller."""
         if not self.is_configured or self._closed:
             return None
         try:
-            return self._executor.submit(self.send_card_sync, card)
+            future = self._executor.submit(self.send_card_sync, card)
         except RuntimeError:
-            # Executor already shut down
             return None
+
+        with self._pending_lock:
+            self._pending_futures.add(future)
+
+        def _discard(done_future: Future[dict[str, Any]]) -> None:
+            with self._pending_lock:
+                self._pending_futures.discard(done_future)
+
+        future.add_done_callback(_discard)
+        return future
+
+    def _dispatch(self, card: dict[str, Any], *, sync: bool) -> dict[str, Any] | Future[dict[str, Any]] | None:
+        return self.send_card_sync(card) if sync else self.dispatch_card_async(card)
 
     def notify_violation_event(
         self,
         record: ViolationRecord,
         *,
         bypass_throttle: bool = False,
+        escalated: bool = False,
         sync: bool = False,
     ) -> dict[str, Any] | Future[dict[str, Any]] | None:
-        """Trigger real-time safety violation alert card if severity and cooldown qualify."""
+        """Trigger real-time safety violation alert card if eligibility policy passes."""
         if not self.is_configured:
-            return None
-        if record.status != "ACTIVE":
-            return None
-        event_rank = SEVERITY_RANK.get(record.severity.upper(), 1)
-        if event_rank < self.min_severity_rank:
-            return None
-        if not bypass_throttle and not self.throttle.should_send(record.camera_id, record.violation_type, record.zone_id):
-            logger.debug(
-                "Skipped throttled Feishu violation alert for camera=%s type=%s",
-                record.camera_id,
-                record.violation_type,
-            )
+            if sync:
+                return NotificationDeliveryResult(
+                    ok=False,
+                    skipped=True,
+                    channel=self.channel_name,
+                    reason="feishu webhook not configured or disabled",
+                ).to_dict()
             return None
 
-        card = FeishuCardBuilder.build_violation_alert_card(
+        allowed, skip_reason = self.policy.evaluate(
             record,
-            web_base_url=self.web_base_url,
-            timezone_name=self.timezone_name,
+            bypass_throttle=bypass_throttle,
+            escalated=escalated,
         )
-        return self.send_card_sync(card) if sync else self.dispatch_card_async(card)
+        if not allowed:
+            if sync:
+                return NotificationDeliveryResult(
+                    ok=False,
+                    skipped=True,
+                    channel=self.channel_name,
+                    reason=skip_reason,
+                ).to_dict()
+            return None
+
+        card = self.card_builder.violation_alert(record, escalated=escalated)
+        return self._dispatch(card, sync=sync)
 
     def notify_rectification_created(
         self,
@@ -173,15 +160,9 @@ class FeishuNotificationService:
         *,
         sync: bool = False,
     ) -> dict[str, Any] | Future[dict[str, Any]] | None:
-        """Trigger rectification task assignment card."""
         if not self.is_configured:
             return None
-        card = FeishuCardBuilder.build_rectification_created_card(
-            task_payload,
-            web_base_url=self.web_base_url,
-            timezone_name=self.timezone_name,
-        )
-        return self.send_card_sync(card) if sync else self.dispatch_card_async(card)
+        return self._dispatch(self.card_builder.rectification_created(task_payload), sync=sync)
 
     def notify_rectification_completed(
         self,
@@ -189,15 +170,9 @@ class FeishuNotificationService:
         *,
         sync: bool = False,
     ) -> dict[str, Any] | Future[dict[str, Any]] | None:
-        """Trigger rectification task completion & resolution card."""
         if not self.is_configured:
             return None
-        card = FeishuCardBuilder.build_rectification_completed_card(
-            task_payload,
-            web_base_url=self.web_base_url,
-            timezone_name=self.timezone_name,
-        )
-        return self.send_card_sync(card) if sync else self.dispatch_card_async(card)
+        return self._dispatch(self.card_builder.rectification_completed(task_payload), sync=sync)
 
     def notify_report_confirmed(
         self,
@@ -205,15 +180,9 @@ class FeishuNotificationService:
         *,
         sync: bool = False,
     ) -> dict[str, Any] | Future[dict[str, Any]] | None:
-        """Trigger safety report confirmation & PDF ready card."""
         if not self.is_configured:
             return None
-        card = FeishuCardBuilder.build_report_confirmed_card(
-            report,
-            web_base_url=self.web_base_url,
-            timezone_name=self.timezone_name,
-        )
-        return self.send_card_sync(card) if sync else self.dispatch_card_async(card)
+        return self._dispatch(self.card_builder.report_confirmed(report), sync=sync)
 
     def notify_training_published(
         self,
@@ -221,15 +190,9 @@ class FeishuNotificationService:
         *,
         sync: bool = False,
     ) -> dict[str, Any] | Future[dict[str, Any]] | None:
-        """Trigger worker training task publication card with H5 link."""
         if not self.is_configured:
             return None
-        card = FeishuCardBuilder.build_training_published_card(
-            training,
-            web_base_url=self.web_base_url,
-            timezone_name=self.timezone_name,
-        )
-        return self.send_card_sync(card) if sync else self.dispatch_card_async(card)
+        return self._dispatch(self.card_builder.training_published(training), sync=sync)
 
     def send_custom_briefing(
         self,
@@ -238,16 +201,25 @@ class FeishuNotificationService:
         *,
         sync: bool = False,
     ) -> dict[str, Any] | Future[dict[str, Any]] | None:
-        """Send an AI safety briefing or test card."""
         if not self.is_configured:
-            return {"ok": False, "skipped": True, "reason": "feishu webhook not configured"} if sync else None
-        card = FeishuCardBuilder.build_custom_briefing_card(
-            title=title,
-            summary_markdown=summary_markdown,
-            web_base_url=self.web_base_url,
-            timezone_name=self.timezone_name,
-        )
-        return self.send_card_sync(card) if sync else self.dispatch_card_async(card)
+            return (
+                NotificationDeliveryResult(
+                    ok=False,
+                    skipped=True,
+                    channel=self.channel_name,
+                    reason="feishu webhook not configured",
+                ).to_dict()
+                if sync
+                else None
+            )
+        return self._dispatch(self.card_builder.custom_briefing(title, summary_markdown), sync=sync)
+
+    def flush(self, timeout: float | None = None) -> None:
+        """Wait for currently queued async notification tasks to settle."""
+        with self._pending_lock:
+            pending = list(self._pending_futures)
+        if pending:
+            wait_futures(pending, timeout=timeout)
 
     def shutdown(self, wait: bool = False) -> None:
         self._closed = True

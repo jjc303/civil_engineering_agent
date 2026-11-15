@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from agent.contracts.camera_config import CameraConfigUpdateRequest, CameraRunConfigV1
 from agent.contracts.event_v1 import CameraStatusReportV1, EventUpsertResponse, SafetyViolationEventV1
 from agent.contracts.query import CameraStatusResponse, RiskHeatmapResponse, SafetyQueryRequest, SafetyQueryResponse, ViolationPageResponse, ViolationQuery, ViolationRecord, ViolationStatisticsResponse
 from agent.db.base import Database
 from agent.graph.safety_graph import COMPILED_SAFETY_GRAPH
-from agent.notifications.protocol import NotificationPort
+from agent.notifications.protocol import ViolationNotificationPort, dispatch_violation_notification
 from agent.repositories.camera_configs import CameraConfigRepository
 from agent.repositories.violations import ViolationRepository
 from agent.tools.base import ToolContext
@@ -19,7 +20,7 @@ class PerceptionService:
     def __init__(
         self,
         database: Database,
-        notification_service: NotificationPort | None = None,
+        notification_service: ViolationNotificationPort | None = None,
         cache: Any | None = None,
         event_stream: Any | None = None,
         broadcaster: Any | None = None,
@@ -37,7 +38,9 @@ class PerceptionService:
 
     def upsert_event(self, event: SafetyViolationEventV1) -> EventUpsertResponse:
         with self.database.session() as session:
-            record, operation = ViolationRepository(session).upsert_event(event)
+            outcome = ViolationRepository(session).upsert_event_with_transition(event)
+            record = outcome.record
+            operation = outcome.operation
             response = EventUpsertResponse(
                 event_uuid=record.event_uuid,
                 operation=operation,
@@ -51,19 +54,26 @@ class PerceptionService:
             try:
                 self.broadcaster.publish("violation_event", {
                     "operation": operation,
+                    "escalated": outcome.escalated,
                     "record": record.model_dump(mode="json"),
                 })
             except Exception:
                 pass
 
-        if self.notification_service is not None and operation == "CREATED" and record.status == "ACTIVE":
+        if self.notification_service is not None and outcome.should_notify:
             if self.event_stream is not None:
                 self.event_stream.publish_event({
                     "event_type": "violation_event",
+                    "escalated": outcome.escalated,
                     "record": record.model_dump(mode="json"),
                 })
             else:
-                self.notification_service.notify_violation_event(record)
+                dispatch_violation_notification(
+                    self.notification_service,
+                    record,
+                    bypass_throttle=outcome.escalated,
+                    escalated=outcome.escalated,
+                )
         return response
 
     def upsert_camera_status(self, report: CameraStatusReportV1) -> CameraStatusResponse:

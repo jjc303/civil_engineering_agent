@@ -9,6 +9,7 @@ from agent.core.config import DEFAULT_RAG_TOP_K, DEFAULT_TOOL_MAX_CALLS
 from agent.db.base import Database
 from agent.graph.chat_graph import build_compiled_chat_graph
 from agent.llm.protocol import ChatModelPort
+from agent.notifications.protocol import BriefingNotificationPort
 from agent.repositories.violations import ViolationRepository
 from agent.services.agent_write_actions import AgentWriteActionService
 from agent.services.conversation_memory import ConversationMemory
@@ -32,7 +33,7 @@ class ChatService:
         write_action_service: AgentWriteActionService | None = None,
         standards_top_k: int = DEFAULT_RAG_TOP_K,
         learning_service: LearningService | None = None,
-        notification_service: Any = None,
+        notification_service: BriefingNotificationPort | None = None,
         standards_on_demand: bool = False,
     ):
         self.database = database

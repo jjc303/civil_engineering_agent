@@ -13,6 +13,7 @@ from agent.contracts.chat import ToolDecision
 from agent.contracts.learning import ReportContent, ReportCreate, TrainingCreate, TrainingEdit
 from agent.db.base import Database
 from agent.db.models import AgentPendingActionAuditModel, AgentPendingActionModel
+from agent.notifications.protocol import RectificationNotificationPort
 from agent.repositories.rectification_tasks import RectificationTaskRepository
 from agent.services.camera_management import CameraManagementService
 from agent.services.learning_service import LearningService
@@ -58,7 +59,7 @@ class AgentWriteActionService:
         database: Database,
         camera_management: CameraManagementService | None,
         learning_service: LearningService | None = None,
-        notification_service: Any = None,
+        notification_service: RectificationNotificationPort | None = None,
         pending_action_ttl_minutes: int = 15,
         default_actor: str = _DEFAULT_ACTOR,
         lock_service: Any | None = None,
@@ -175,14 +176,20 @@ class AgentWriteActionService:
                 action.executed_at_utc = _utc_now()
                 action.result_safe_json = result_data
                 self._audit(session, action.confirmation_id, "EXECUTED", result_data)
-                if notify and self.notification_service is not None:
-                    self._dispatch_notification(notify[0], notify[1])
-                return self._execution_response(action)
+                response = self._execution_response(action)
+                pending_notify = notify
+            else:
+                action.status = "EXECUTING"
+                self._audit(session, action.confirmation_id, "CONFIRMED", {})
+                payload = dict(action.payload_safe_json or {})
+                action_type = action.action_type
+                response = None
+                pending_notify = None
 
-            action.status = "EXECUTING"
-            self._audit(session, action.confirmation_id, "CONFIRMED", {})
-            payload = dict(action.payload_safe_json or {})
-            action_type = action.action_type
+        if response is not None:
+            if pending_notify:
+                self._dispatch_notification(pending_notify[0], pending_notify[1])
+            return response
 
         # Outside DB transaction
         try:
@@ -205,9 +212,11 @@ class AgentWriteActionService:
             action.executed_at_utc = _utc_now()
             action.result_safe_json = result_data
             self._audit(session, confirmation_id, "EXECUTED", result_data)
-            if notify and self.notification_service is not None:
-                self._dispatch_notification(notify[0], notify[1])
-            return self._execution_response(action)
+            response = self._execution_response(action)
+
+        if notify:
+            self._dispatch_notification(notify[0], notify[1])
+        return response
 
     def cancel(self, confirmation_id: str, conversation_id: str) -> ActionExecutionResponse:
         with self.database.session() as session:
@@ -221,9 +230,9 @@ class AgentWriteActionService:
     def _dispatch_notification(self, kind: str, payload: dict[str, Any]) -> None:
         if self.notification_service is None:
             return
-        if kind == "created" and hasattr(self.notification_service, "notify_rectification_created"):
+        if kind == "created":
             self.notification_service.notify_rectification_created(payload)
-        elif kind == "completed" and hasattr(self.notification_service, "notify_rectification_completed"):
+        elif kind == "completed":
             self.notification_service.notify_rectification_completed(payload)
 
     def _execute_learning(self, action_type: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -313,10 +322,11 @@ class AgentWriteActionService:
                 model.result_safe_json = result_data
                 self._audit(session, confirmation_id, "EXECUTED", result_data, actor=actor)
                 session.flush()
+                response = self._execution_response(model)
 
-                if notify and self.notification_service is not None:
-                    self._dispatch_notification(notify[0], notify[1])
-                return self._execution_response(model)
+            if notify:
+                self._dispatch_notification(notify[0], notify[1])
+            return response
         else:
             with self.database.session() as session:
                 model = AgentPendingActionModel(
@@ -353,9 +363,11 @@ class AgentWriteActionService:
                 action.executed_at_utc = _utc_now()
                 action.result_safe_json = result_data
                 self._audit(session, confirmation_id, "EXECUTED", result_data, actor=actor)
-                if notify and self.notification_service is not None:
-                    self._dispatch_notification(notify[0], notify[1])
-                return self._execution_response(action)
+                response = self._execution_response(action)
+
+            if notify:
+                self._dispatch_notification(notify[0], notify[1])
+            return response
 
     def _audit(self, session: Any, confirmation_id: str, action: str, detail: dict[str, Any], actor: str | None = None) -> None:
         session.add(AgentPendingActionAuditModel(

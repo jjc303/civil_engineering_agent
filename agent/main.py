@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from agent.bootstrap import ROUTERS, build_service_container
 from agent.core.config import Settings
 from agent.db.base import Database
+from agent.notifications.protocol import FlushableNotificationPort
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 with suppress(asyncio.CancelledError):
                     await task
             if getattr(app.state, "notification_service", None) is not None:
+                if isinstance(app.state.notification_service, FlushableNotificationPort):
+                    await asyncio.to_thread(
+                        app.state.notification_service.flush,
+                        settings.feishu_shutdown_wait_seconds,
+                    )
                 app.state.notification_service.shutdown(wait=False)
             if getattr(app.state, "infra", None) is not None:
                 app.state.infra.shutdown(wait=False)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -9,20 +10,36 @@ from sqlalchemy.orm import Session
 from agent.contracts.event_v1 import CameraStatusReportV1, SafetyViolationEventV1
 from agent.contracts.query import CameraStatusResponse, RiskHeatmapResponse, ViolationQuery, ViolationRecord, ViolationStatisticsResponse
 from agent.db.models import CameraConfigModel, CameraStatusModel, ManagedCameraModel, ViolationEventModel
+from agent.domain.violation_catalog import should_notify_violation_change
 
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+@dataclass(frozen=True)
+class ViolationUpsertOutcome:
+    """Result of upserting a violation event, including state transition context."""
+
+    record: ViolationRecord
+    operation: str
+    previous_severity: str | None = None
+    previous_status: str | None = None
+    should_notify: bool = False
+    escalated: bool = False
+
+
 class ViolationRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def upsert_event(self, event: SafetyViolationEventV1) -> tuple[ViolationRecord, str]:
+    def upsert_event_with_transition(self, event: SafetyViolationEventV1) -> ViolationUpsertOutcome:
+        """Upsert a violation event and detect active state or severity escalations."""
         key = str(event.event_uuid)
         model = self.session.get(ViolationEventModel, key)
         operation = "UPDATED" if model else "CREATED"
+        previous_severity = model.severity if model is not None else None
+        previous_status = model.status if model is not None else None
         if model is None:
             model = ViolationEventModel(event_uuid=key)
             self.session.add(model)
@@ -48,7 +65,26 @@ class ViolationRepository:
         }.items():
             setattr(model, field, value)
         self.session.flush()
-        return self._to_record(model), operation
+        record = self._to_record(model)
+        should_notify, escalated = should_notify_violation_change(
+            operation=operation,
+            previous_status=previous_status,
+            previous_severity=previous_severity,
+            current_status=record.status,
+            current_severity=record.severity,
+        )
+        return ViolationUpsertOutcome(
+            record=record,
+            operation=operation,
+            previous_severity=previous_severity,
+            previous_status=previous_status,
+            should_notify=should_notify,
+            escalated=escalated,
+        )
+
+    def upsert_event(self, event: SafetyViolationEventV1) -> tuple[ViolationRecord, str]:
+        outcome = self.upsert_event_with_transition(event)
+        return outcome.record, outcome.operation
 
     def upsert_camera_status(self, report: CameraStatusReportV1) -> CameraStatusResponse:
         model = self.session.get(CameraStatusModel, report.camera_id)

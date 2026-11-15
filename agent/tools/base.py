@@ -11,6 +11,7 @@ from agent.contracts.chat import Evidence, KnowledgeCitation, ToolDecision, Tool
 
 if TYPE_CHECKING:
     from agent.graph.chat_state import ChatGraphState
+    from agent.notifications.protocol import BriefingNotificationPort
     from agent.repositories.violations import ViolationRepository
     from agent.services.agent_write_actions import AgentWriteActionService
     from agent.services.knowledge_service import KnowledgeService
@@ -30,7 +31,7 @@ class ToolContext:
     knowledge_service: "KnowledgeService | None" = None
     write_action_service: "AgentWriteActionService | None" = None
     learning_service: "LearningService | None" = None
-    notification_service: Any = None
+    notification_service: "BriefingNotificationPort | None" = None
     conversation_id: str | None = None
     model: Any = None
     extensions: dict[str, Any] = field(default_factory=dict)

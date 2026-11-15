@@ -6,8 +6,8 @@ from agent.tools.base import AgentTool, Capability, ToolContext, ToolOutcome
 
 
 def _send_feishu_notification(decision: ToolDecision, ctx: ToolContext) -> ToolOutcome:
-    if not getattr(ctx.notification_service, "is_configured", False):
-        raise RuntimeError("feishu notification service is not configured")
+    if ctx.notification_service is None or not ctx.notification_service.is_configured:
+        raise RuntimeError("notification service is not configured")
     stats = ctx.repository.get_statistics(ViolationQuery(limit=20))
     title = (decision.notification_title or "施工现场安全态势通报").strip()
     custom_body = (decision.notification_content or "").strip()
@@ -21,7 +21,7 @@ def _send_feishu_notification(decision: ToolDecision, ctx: ToolContext) -> ToolO
         f"- 平均持续时长：**{stats.average_duration_seconds:.1f}** 秒"
     )
     send_res = ctx.notification_service.send_custom_briefing(title, summary_md, sync=True)
-    ok = bool(send_res and send_res.get("ok"))
+    ok = isinstance(send_res, dict) and bool(send_res.get("ok"))
     answer = (
         f"已将《{title}》互动卡片推送至飞书安全管理群。"
         if ok
