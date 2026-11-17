@@ -1,66 +1,66 @@
 <template>
   <div class="camera-management-page operations-workbench">
-    <WorkspaceIntro eyebrow="CAMERAS & NODES" title="摄像头与节点" description="统一管理视频来源、处理节点和监控会话。">
-      <el-button :loading="loading" @click="load">刷新设备</el-button><el-button @click="nodeDialogVisible = true">登记节点</el-button><el-button type="primary" @click="cameraDialogVisible = true">新增摄像头</el-button>
+    <WorkspaceIntro eyebrow="CAMERAS & NODES" :title="t('cameras.title')" :description="t('cameras.description')">
+      <el-button :loading="loading" @click="load">{{ t('cameras.refreshDevices') }}</el-button><el-button @click="nodeDialogVisible = true">{{ t('cameras.registerNode') }}</el-button><el-button type="primary" @click="cameraDialogVisible = true">{{ t('cameras.addCamera') }}</el-button>
     </WorkspaceIntro>
-    <WorkspaceSummary label="摄像头与节点概览" :items="summaryItems" />
+    <WorkspaceSummary :label="t('cameras.summaryLabel')" :items="summaryItems" />
 
-    <el-alert v-if="isMock" title="Mock 模式不提供 CV 调度；切换 VITE_USE_MOCK=false 后配置真实节点。" type="info" :closable="false" />
+    <el-alert v-if="isMock" :title="t('cameras.mockNotice')" type="info" :closable="false" />
 
-    <el-card class="camera-list"><template #header><div class="section-card-heading"><strong>摄像头清单</strong><span>{{ dataLoaded ? cameras.length : '—' }} 路已登记 · 状态以刷新结果为准</span></div></template>
-      <div class="camera-list-filters"><el-input v-model="cameraQuery" clearable placeholder="搜索摄像头名称或编号" aria-label="搜索摄像头名称或编号" /><el-radio-group v-model="sourceFilter" size="small" aria-label="视频来源筛选"><el-radio-button value="all">全部来源</el-radio-button><el-radio-button value="rtsp">RTSP</el-radio-button><el-radio-button value="file">视频文件</el-radio-button></el-radio-group></div>
-      <el-table :data="filteredCameras" v-loading="loading" empty-text="没有匹配的摄像头">
-        <el-table-column prop="display_name" label="名称" min-width="190" show-overflow-tooltip /><el-table-column prop="camera_id" label="编号" width="140" /><el-table-column prop="node_id" label="处理节点" width="160" />
-        <el-table-column prop="source_uri_masked" label="视频源（脱敏）" min-width="220" show-overflow-tooltip />
-        <el-table-column label="会话" width="105"><template #default="{ row }"><el-tag :type="row.desired_state === 'RUNNING' ? 'success' : 'info'">{{ row.desired_state === 'RUNNING' ? '运行中' : '已停止' }}</el-tag></template></el-table-column>
-        <el-table-column label="操作" width="280"><template #default="{ row }"><el-button size="small" @click="openEdit(row)">编辑</el-button><el-button size="small" type="primary" :disabled="row.desired_state === 'RUNNING'" @click="control(row.camera_id, 'start')">启动</el-button><el-button size="small" :disabled="row.desired_state === 'STOPPED'" @click="control(row.camera_id, 'stop')">停止</el-button><el-button size="small" :disabled="row.desired_state !== 'RUNNING'" @click="openPreview(row.camera_id)">预览</el-button></template></el-table-column>
+    <el-card class="camera-list"><template #header><div class="section-card-heading"><strong>{{ t('cameras.cameraListTitle') }}</strong><span>{{ t('cameras.cameraListSubtitle', { count: dataLoaded ? cameras.length : '—' }) }}</span></div></template>
+      <div class="camera-list-filters"><el-input v-model="cameraQuery" clearable :placeholder="t('cameras.searchPlaceholder')" :aria-label="t('cameras.searchPlaceholder')" /><el-radio-group v-model="sourceFilter" size="small" :aria-label="t('cameras.sourceFilterAria')"><el-radio-button value="all">{{ t('cameras.sourceAll') }}</el-radio-button><el-radio-button value="rtsp">{{ t('cameras.sourceRtsp') }}</el-radio-button><el-radio-button value="file">{{ t('cameras.sourceFile') }}</el-radio-button></el-radio-group></div>
+      <el-table :data="filteredCameras" v-loading="loading" :empty-text="t('cameras.emptyCameras')">
+        <el-table-column prop="display_name" :label="t('cameras.colName')" min-width="190" show-overflow-tooltip /><el-table-column prop="camera_id" :label="t('cameras.colId')" width="140" /><el-table-column prop="node_id" :label="t('cameras.colNode')" width="160" />
+        <el-table-column prop="source_uri_masked" :label="t('cameras.colSource')" min-width="220" show-overflow-tooltip />
+        <el-table-column :label="t('cameras.colSession')" width="105"><template #default="{ row }"><el-tag :type="row.desired_state === 'RUNNING' ? 'success' : 'info'">{{ row.desired_state === 'RUNNING' ? t('cameras.stateRunning') : t('cameras.stateStopped') }}</el-tag></template></el-table-column>
+        <el-table-column :label="t('cameras.colActions')" width="280"><template #default="{ row }"><el-button size="small" @click="openEdit(row)">{{ t('cameras.actionEdit') }}</el-button><el-button size="small" type="primary" :disabled="row.desired_state === 'RUNNING'" @click="control(row.camera_id, 'start')">{{ t('cameras.actionStart') }}</el-button><el-button size="small" :disabled="row.desired_state === 'STOPPED'" @click="control(row.camera_id, 'stop')">{{ t('cameras.actionStop') }}</el-button><el-button size="small" :disabled="row.desired_state !== 'RUNNING'" @click="openPreview(row.camera_id)">{{ t('cameras.actionPreview') }}</el-button></template></el-table-column>
       </el-table>
-      <p class="table-scroll-hint">左右滑动表格，查看视频来源与启停操作。</p>
+      <p class="table-scroll-hint">{{ t('cameras.scrollHint') }}</p>
     </el-card>
     <div class="grid">
-      <el-card><template #header><div class="section-card-heading"><strong>处理节点</strong><span>视频识别与会话调度</span></div></template>
-        <el-empty v-if="!nodes.length" description="暂无已注册节点；请由管理员先创建节点并在 CV 主机启动 Control 服务。" />
+      <el-card><template #header><div class="section-card-heading"><strong>{{ t('cameras.nodesTitle') }}</strong><span>{{ t('cameras.nodesSubtitle') }}</span></div></template>
+        <el-empty v-if="!nodes.length" :description="t('cameras.emptyNodes')" />
         <el-table v-else :data="nodes" size="small">
-          <el-table-column prop="display_name" label="节点" />
-          <el-table-column prop="node_id" label="ID" />
-          <el-table-column label="状态" min-width="110"><template #default="{ row }"><el-tag :type="!row.is_online ? 'danger' : row.active_sessions > row.capacity ? 'warning' : 'success'">{{ !row.is_online ? '离线' : row.active_sessions > row.capacity ? '在线 · 超载' : '在线' }}</el-tag></template></el-table-column>
-          <el-table-column label="负载" min-width="155"><template #default="{ row }">{{ row.active_sessions }}/{{ row.capacity }}<small v-if="row.active_sessions > row.capacity" style="display:block;color:#b7791f">超过容量 {{ row.active_sessions - row.capacity }} 路，请分流</small></template></el-table-column>
+          <el-table-column prop="display_name" :label="t('cameras.colNodeName')" />
+          <el-table-column prop="node_id" :label="t('cameras.colNodeId')" />
+          <el-table-column :label="t('cameras.colNodeStatus')" min-width="110"><template #default="{ row }"><el-tag :type="!row.is_online ? 'danger' : row.active_sessions > row.capacity ? 'warning' : 'success'">{{ !row.is_online ? t('cameras.nodeOffline') : row.active_sessions > row.capacity ? t('cameras.nodeOverloaded') : t('cameras.nodeOnline') }}</el-tag></template></el-table-column>
+          <el-table-column :label="t('cameras.colLoad')" min-width="155"><template #default="{ row }">{{ row.active_sessions }}/{{ row.capacity }}<small v-if="row.active_sessions > row.capacity" style="display:block;color:#b7791f">{{ t('cameras.overloadHint', { count: row.active_sessions - row.capacity }) }}</small></template></el-table-column>
         </el-table>
       </el-card>
 
-      <section class="device-guide"><span>设备接入</span><h3>连接视频来源，<br />开始现场监控。</h3><ol><li><b>01</b>登记并启动处理节点</li><li><b>02</b>添加 RTSP 或本地视频</li><li><b>03</b>启动会话并预览画面</li></ol><router-link to="/dashboard">前往现场监控 <span>↗</span></router-link></section>
+      <section class="device-guide"><span>{{ t('cameras.guideEyebrow') }}</span><h3>{{ t('cameras.guideTitleLine1') }}<br />{{ t('cameras.guideTitleLine2') }}</h3><ol><li><b>01</b>{{ t('cameras.guideStep1') }}</li><li><b>02</b>{{ t('cameras.guideStep2') }}</li><li><b>03</b>{{ t('cameras.guideStep3') }}</li></ol><router-link to="/dashboard">{{ t('cameras.guideAction') }} <span>↗</span></router-link></section>
     </div>
-    <el-dialog v-model="cameraDialogVisible" title="新增摄像头" width="600px">
-      <p class="dialog-description">选择处理节点，再配置摄像头或视频文件来源。</p>
+    <el-dialog v-model="cameraDialogVisible" :title="t('cameras.createCameraTitle')" width="600px">
+      <p class="dialog-description">{{ t('cameras.createCameraDesc') }}</p>
         <el-form label-position="top" @submit.prevent="createCamera">
-          <el-form-item label="摄像头 ID"><el-input v-model="form.camera_id" placeholder="cam-field-01" /></el-form-item>
-          <el-form-item label="显示名称"><el-input v-model="form.display_name" placeholder="东侧塔吊" /></el-form-item>
-          <el-form-item label="CV 节点"><el-select v-model="form.node_id" style="width:100%" placeholder="选择在线节点" @change="clearFileSource(form)"><el-option v-for="node in onlineNodes" :key="node.node_id" :label="`${node.display_name} (${node.node_id})`" :value="node.node_id" /></el-select></el-form-item>
-          <el-form-item label="视频源类型"><el-radio-group v-model="form.source_type" @change="clearFileSource(form)"><el-radio value="rtsp">RTSP</el-radio><el-radio value="file">节点本地文件</el-radio></el-radio-group></el-form-item>
-          <el-form-item :label="form.source_type === 'rtsp' ? 'RTSP 地址' : 'CV 节点本地文件'"><el-input v-model="form.source_uri" :readonly="form.source_type === 'file'" :type="form.source_type === 'rtsp' ? 'password' : 'text'" show-password placeholder="rtsp://user:password@host/live"><template v-if="form.source_type === 'file'" #append><el-button :disabled="!form.node_id" @click="openMediaBrowser('create')">选择文件</el-button></template></el-input></el-form-item>
-          <el-button type="primary" :loading="creating" @click="createCamera">保存摄像头</el-button>
+          <el-form-item :label="t('cameras.fieldCameraId')"><el-input v-model="form.camera_id" placeholder="cam-field-01" /></el-form-item>
+          <el-form-item :label="t('cameras.fieldDisplayName')"><el-input v-model="form.display_name" :placeholder="t('cameras.fieldDisplayNamePlaceholder')" /></el-form-item>
+          <el-form-item :label="t('cameras.fieldCvNode')"><el-select v-model="form.node_id" style="width:100%" :placeholder="t('cameras.selectOnlineNode')" @change="clearFileSource(form)"><el-option v-for="node in onlineNodes" :key="node.node_id" :label="`${node.display_name} (${node.node_id})`" :value="node.node_id" /></el-select></el-form-item>
+          <el-form-item :label="t('cameras.fieldSourceType')"><el-radio-group v-model="form.source_type" @change="clearFileSource(form)"><el-radio value="rtsp">RTSP</el-radio><el-radio value="file">{{ t('cameras.sourceLocalFile') }}</el-radio></el-radio-group></el-form-item>
+          <el-form-item :label="form.source_type === 'rtsp' ? t('cameras.fieldRtspUrl') : t('cameras.fieldLocalFile')"><el-input v-model="form.source_uri" :readonly="form.source_type === 'file'" :type="form.source_type === 'rtsp' ? 'password' : 'text'" show-password placeholder="rtsp://user:password@host/live"><template v-if="form.source_type === 'file'" #append><el-button :disabled="!form.node_id" @click="openMediaBrowser('create')">{{ t('cameras.chooseFile') }}</el-button></template></el-input></el-form-item>
+          <el-button type="primary" :loading="creating" @click="createCamera">{{ t('cameras.saveCamera') }}</el-button>
         </el-form>
     </el-dialog>
 
-    <el-dialog v-model="editDialogVisible" title="编辑摄像头配置" width="560px" destroy-on-close>
-      <el-alert v-if="editingCamera?.desired_state === 'RUNNING'" title="保存时会先停止当前监控会话；修改完成后请重新启动。" type="warning" :closable="false" class="dialog-alert" />
+    <el-dialog v-model="editDialogVisible" :title="t('cameras.editCameraTitle')" width="560px" destroy-on-close>
+      <el-alert v-if="editingCamera?.desired_state === 'RUNNING'" :title="t('cameras.editRunningAlert')" type="warning" :closable="false" class="dialog-alert" />
       <el-form label-position="top">
-        <el-form-item label="摄像头 ID"><el-input v-model="editForm.camera_id" disabled /></el-form-item>
-        <el-form-item label="显示名称"><el-input v-model="editForm.display_name" /></el-form-item>
-        <el-form-item label="CV 节点"><el-select v-model="editForm.node_id" style="width:100%" @change="clearFileSource(editForm)"><el-option v-for="node in onlineNodes" :key="node.node_id" :label="`${node.display_name} (${node.node_id})`" :value="node.node_id" /></el-select></el-form-item>
-        <el-form-item label="视频源类型"><el-radio-group v-model="editForm.source_type" @change="clearFileSource(editForm)"><el-radio value="rtsp">RTSP</el-radio><el-radio value="file">节点本地文件</el-radio></el-radio-group></el-form-item>
-        <el-form-item :label="editForm.source_type === 'rtsp' ? '新的 RTSP 地址（可不填）' : '新的 CV 节点本地文件（可不改）'"><el-input v-model="editForm.source_uri" :readonly="editForm.source_type === 'file'" :type="editForm.source_type === 'rtsp' ? 'password' : 'text'" show-password :placeholder="editForm.source_uri_masked || '不填写则保留原视频源'"><template v-if="editForm.source_type === 'file'" #append><el-button :disabled="!editForm.node_id" @click="openMediaBrowser('edit')">选择文件</el-button></template></el-input><div class="source-hint">为保护凭据，原始视频地址不会回显。只修改名称时可保持为空。</div></el-form-item>
+        <el-form-item :label="t('cameras.fieldCameraId')"><el-input v-model="editForm.camera_id" disabled /></el-form-item>
+        <el-form-item :label="t('cameras.fieldDisplayName')"><el-input v-model="editForm.display_name" /></el-form-item>
+        <el-form-item :label="t('cameras.fieldCvNode')"><el-select v-model="editForm.node_id" style="width:100%" @change="clearFileSource(editForm)"><el-option v-for="node in onlineNodes" :key="node.node_id" :label="`${node.display_name} (${node.node_id})`" :value="node.node_id" /></el-select></el-form-item>
+        <el-form-item :label="t('cameras.fieldSourceType')"><el-radio-group v-model="editForm.source_type" @change="clearFileSource(editForm)"><el-radio value="rtsp">RTSP</el-radio><el-radio value="file">{{ t('cameras.sourceLocalFile') }}</el-radio></el-radio-group></el-form-item>
+        <el-form-item :label="editForm.source_type === 'rtsp' ? t('cameras.fieldNewRtsp') : t('cameras.fieldNewLocalFile')"><el-input v-model="editForm.source_uri" :readonly="editForm.source_type === 'file'" :type="editForm.source_type === 'rtsp' ? 'password' : 'text'" show-password :placeholder="editForm.source_uri_masked || t('cameras.keepOldSourcePlaceholder')"><template v-if="editForm.source_type === 'file'" #append><el-button :disabled="!editForm.node_id" @click="openMediaBrowser('edit')">{{ t('cameras.chooseFile') }}</el-button></template></el-input><div class="source-hint">{{ t('cameras.sourceMaskHint') }}</div></el-form-item>
       </el-form>
-      <template #footer><el-button @click="editDialogVisible = false">取消</el-button><el-button type="primary" :loading="savingEdit" @click="saveEdit">保存修改</el-button></template>
+      <template #footer><el-button @click="editDialogVisible = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="savingEdit" @click="saveEdit">{{ t('cameras.saveChanges') }}</el-button></template>
     </el-dialog>
-    <el-dialog v-model="mediaBrowserVisible" title="选择 CV 节点本地视频文件" width="760px" destroy-on-close>
-      <el-alert title="这里展示的是所选 CV 节点的允许媒体目录，而非浏览器所在电脑的文件系统。" type="info" :closable="false" class="dialog-alert" />
-      <div class="media-path">当前目录：{{ mediaDirectory?.current_path || '加载中…' }}</div><el-button size="small" :disabled="!mediaDirectory?.parent_path || browsingMedia" @click="browseMedia(mediaDirectory?.parent_path || undefined)">返回上级</el-button>
-      <el-table v-loading="browsingMedia" :data="mediaDirectory?.directories || []" class="media-table" empty-text="当前目录没有子目录"><el-table-column prop="name" label="文件夹" /><el-table-column width="120"><template #default="{ row }"><el-button size="small" @click="browseMedia(row.path)">打开</el-button></template></el-table-column></el-table>
-      <el-table v-loading="browsingMedia" :data="mediaDirectory?.files || []" class="media-table" empty-text="当前目录没有支持的视频文件"><el-table-column prop="name" label="视频文件" /><el-table-column width="120"><template #default="{ row }"><el-button size="small" type="primary" @click="selectMediaFile(row.path)">选择</el-button></template></el-table-column></el-table>
+    <el-dialog v-model="mediaBrowserVisible" :title="t('cameras.mediaBrowserTitle')" width="760px" destroy-on-close>
+      <el-alert :title="t('cameras.mediaBrowserAlert')" type="info" :closable="false" class="dialog-alert" />
+      <div class="media-path">{{ t('cameras.currentDir', { path: mediaDirectory?.current_path || t('common.loading') }) }}</div><el-button size="small" :disabled="!mediaDirectory?.parent_path || browsingMedia" @click="browseMedia(mediaDirectory?.parent_path || undefined)">{{ t('cameras.goParentDir') }}</el-button>
+      <el-table v-loading="browsingMedia" :data="mediaDirectory?.directories || []" class="media-table" :empty-text="t('cameras.emptyDirs')"><el-table-column prop="name" :label="t('cameras.colFolder')" /><el-table-column width="120"><template #default="{ row }"><el-button size="small" @click="browseMedia(row.path)">{{ t('cameras.openDir') }}</el-button></template></el-table-column></el-table>
+      <el-table v-loading="browsingMedia" :data="mediaDirectory?.files || []" class="media-table" :empty-text="t('cameras.emptyFiles')"><el-table-column prop="name" :label="t('cameras.colVideoFile')" /><el-table-column width="120"><template #default="{ row }"><el-button size="small" type="primary" @click="selectMediaFile(row.path)">{{ t('cameras.selectFile') }}</el-button></template></el-table-column></el-table>
     </el-dialog>
-    <el-dialog v-model="previewVisible" title="实时 MJPEG 预览" width="760px" destroy-on-close><img v-if="previewCameraId" class="preview" :src="previewUrl(previewCameraId)" alt="摄像头预览" /></el-dialog>
-    <el-dialog v-model="nodeDialogVisible" title="登记 CV Control 节点" width="520px"><el-form label-position="top"><el-form-item label="节点 ID"><el-input v-model="nodeForm.node_id" placeholder="cv-east-01" /></el-form-item><el-form-item label="显示名称"><el-input v-model="nodeForm.display_name" placeholder="东区 GPU 节点" /></el-form-item><el-form-item label="Control URL"><el-input v-model="nodeForm.control_url" placeholder="http://cv-host:8100" /></el-form-item><el-form-item label="并发容量"><el-input-number v-model="nodeForm.capacity" :min="1" :max="128" /></el-form-item></el-form><template #footer><el-button @click="nodeDialogVisible = false">取消</el-button><el-button type="primary" :loading="creatingNode" @click="createNode">登记并获取令牌</el-button></template></el-dialog>
+    <el-dialog v-model="previewVisible" :title="t('cameras.previewTitle')" width="760px" destroy-on-close><img v-if="previewCameraId" class="preview" :src="previewUrl(previewCameraId)" :alt="t('cameras.previewAlt')" /></el-dialog>
+    <el-dialog v-model="nodeDialogVisible" :title="t('cameras.registerNodeTitle')" width="520px"><el-form label-position="top"><el-form-item :label="t('cameras.fieldNodeId')"><el-input v-model="nodeForm.node_id" placeholder="cv-east-01" /></el-form-item><el-form-item :label="t('cameras.fieldDisplayName')"><el-input v-model="nodeForm.display_name" :placeholder="t('cameras.fieldNodeNamePlaceholder')" /></el-form-item><el-form-item :label="t('cameras.fieldControlUrl')"><el-input v-model="nodeForm.control_url" placeholder="http://cv-host:8100" /></el-form-item><el-form-item :label="t('cameras.fieldCapacity')"><el-input-number v-model="nodeForm.capacity" :min="1" :max="128" /></el-form-item></el-form><template #footer><el-button @click="nodeDialogVisible = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="creatingNode" @click="createNode">{{ t('cameras.registerAndGetToken') }}</el-button></template></el-dialog>
   </div>
 </template>
 
@@ -73,7 +73,9 @@ import { isMockEnabled } from '@/api/client'
 import type { CvNodeResponse, ManagedCameraResponse } from '@/types/contract'
 import WorkspaceIntro from '@/components/WorkspaceIntro.vue'
 import WorkspaceSummary from '@/components/WorkspaceSummary.vue'
+import { useAppI18n } from '@/i18n/useAppI18n'
 
+const { t } = useAppI18n()
 const nodes = ref<CvNodeResponse[]>([]); const cameras = ref<ManagedCameraResponse[]>([])
 const loading = ref(false); const creating = ref(false); const creatingNode = ref(false); const nodeDialogVisible = ref(false); const previewVisible = ref(false); const previewCameraId = ref('')
 const editDialogVisible = ref(false); const savingEdit = ref(false); const editingCamera = ref<ManagedCameraResponse | null>(null)
@@ -83,37 +85,37 @@ const onlineNodes = computed(() => nodes.value.filter((node) => node.is_online))
 const cameraDialogVisible = ref(false), dataLoaded = ref(false), cameraQuery = ref(''), sourceFilter = ref<'all' | 'rtsp' | 'file'>('all')
 const filteredCameras = computed(() => cameras.value.filter(camera => (sourceFilter.value === 'all' || camera.source_type === sourceFilter.value) && `${camera.display_name} ${camera.camera_id}`.toLowerCase().includes(cameraQuery.value.trim().toLowerCase())))
 const summaryItems = computed(() => [
-  { label: '已登记摄像头', value: dataLoaded.value ? cameras.value.length : '—', hint: 'RTSP 与节点本地视频来源' },
-  { label: '在线处理节点', value: dataLoaded.value ? onlineNodes.value.length : '—', hint: '以节点心跳状态为准', tone: 'success' as const },
-  { label: '节点会话占用', value: dataLoaded.value ? `${onlineNodes.value.reduce((sum, node) => sum + node.active_sessions, 0)} / ${onlineNodes.value.reduce((sum, node) => sum + node.capacity, 0)}` : '—', hint: '在线节点 · 活动会话 / 容量上限', tone: onlineNodes.value.some(node => node.active_sessions > node.capacity) ? 'warning' as const : undefined },
+  { label: t('cameras.summaryRegistered'), value: dataLoaded.value ? cameras.value.length : '—', hint: t('cameras.summaryRegisteredHint') },
+  { label: t('cameras.summaryOnlineNodes'), value: dataLoaded.value ? onlineNodes.value.length : '—', hint: t('cameras.summaryOnlineNodesHint'), tone: 'success' as const },
+  { label: t('cameras.summaryCapacity'), value: dataLoaded.value ? `${onlineNodes.value.reduce((sum, node) => sum + node.active_sessions, 0)} / ${onlineNodes.value.reduce((sum, node) => sum + node.capacity, 0)}` : '—', hint: t('cameras.summaryCapacityHint'), tone: onlineNodes.value.some(node => node.active_sessions > node.capacity) ? 'warning' as const : undefined },
 ])
 type CameraForm = { camera_id: string; display_name: string; node_id: string; source_type: 'rtsp' | 'file'; source_uri: string; source_uri_masked?: string }
 const form = reactive<CameraForm>({ camera_id: '', display_name: '', node_id: '', source_type: 'rtsp', source_uri: '' })
 const editForm = reactive<CameraForm>({ camera_id: '', display_name: '', node_id: '', source_type: 'rtsp', source_uri: '' })
 const nodeForm = reactive({ node_id: '', display_name: '', control_url: '', capacity: 8 })
 
-async function load() { loading.value = true; try { [nodes.value, cameras.value] = await Promise.all([fetchCvNodes(), fetchManagedCameras()]); dataLoaded.value = true } catch { ElMessage.error('无法获取 CV 节点或摄像头配置，请检查服务连接。') } finally { loading.value = false } }
+async function load() { loading.value = true; try { [nodes.value, cameras.value] = await Promise.all([fetchCvNodes(), fetchManagedCameras()]); dataLoaded.value = true } catch { ElMessage.error(t('cameras.fetchError')) } finally { loading.value = false } }
 function clearFileSource(target: CameraForm) { target.source_uri = '' }
-async function createCamera() { if (!form.camera_id || !form.display_name || !form.node_id || !form.source_uri) return ElMessage.warning('请完整填写摄像头配置'); creating.value = true; try { await createManagedCamera({ ...form }); ElMessage.success('摄像头已保存，视频源已脱敏保存。'); form.camera_id = ''; form.display_name = ''; form.source_uri = ''; cameraDialogVisible.value = false; await load() } catch { /* Axios interceptor already reports the error. */ } finally { creating.value = false } }
+async function createCamera() { if (!form.camera_id || !form.display_name || !form.node_id || !form.source_uri) return ElMessage.warning(t('cameras.incompleteCameraWarning')); creating.value = true; try { await createManagedCamera({ ...form }); ElMessage.success(t('cameras.cameraCreatedSuccess')); form.camera_id = ''; form.display_name = ''; form.source_uri = ''; cameraDialogVisible.value = false; await load() } catch { /* Axios interceptor already reports the error. */ } finally { creating.value = false } }
 function openEdit(camera: ManagedCameraResponse) { editingCamera.value = camera; Object.assign(editForm, { camera_id: camera.camera_id, display_name: camera.display_name, node_id: camera.node_id, source_type: camera.source_type, source_uri: '', source_uri_masked: camera.source_uri_masked }); editDialogVisible.value = true }
 async function saveEdit() {
-  if (!editingCamera.value || !editForm.display_name || !editForm.node_id) return ElMessage.warning('请完整填写摄像头配置')
+  if (!editingCamera.value || !editForm.display_name || !editForm.node_id) return ElMessage.warning(t('cameras.incompleteCameraWarning'))
   const targetChanged = editForm.node_id !== editingCamera.value.node_id || editForm.source_type !== editingCamera.value.source_type
-  if (targetChanged && !editForm.source_uri) return ElMessage.warning('变更 CV 节点或视频源类型时，请重新选择视频源')
+  if (targetChanged && !editForm.source_uri) return ElMessage.warning(t('cameras.sourceChangeWarning'))
   savingEdit.value = true
   try {
     if (editingCamera.value.desired_state === 'RUNNING') {
-      await ElMessageBox.confirm('保存前会停止正在运行的监控，保存后请手动重新启动。是否继续？', '修改运行中摄像头', { type: 'warning' })
+      await ElMessageBox.confirm(t('cameras.runningEditConfirm'), t('cameras.runningEditTitle'), { type: 'warning' })
       await setMonitoring(editingCamera.value.camera_id, 'stop')
     }
     await updateManagedCamera(editForm.camera_id, { display_name: editForm.display_name, node_id: editForm.node_id, source_type: editForm.source_type, ...(editForm.source_uri ? { source_uri: editForm.source_uri } : {}) })
-    ElMessage.success('摄像头配置已更新'); editDialogVisible.value = false; await load()
+    ElMessage.success(t('cameras.cameraUpdatedSuccess')); editDialogVisible.value = false; await load()
   } catch { /* Axios interceptor already reports the error. */ } finally { savingEdit.value = false }
 }
-async function createNode() { if (!nodeForm.node_id || !nodeForm.display_name || !nodeForm.control_url) return ElMessage.warning('请完整填写节点配置'); creatingNode.value = true; try { const node = await createCvNode({ ...nodeForm }); nodeDialogVisible.value = false; await ElMessageBox.alert(`请立即复制并仅保存一次：\n\nCV_NODE_ID=${node.node_id}\nCV_NODE_TOKEN=${node.control_token}`, 'CV 节点专属令牌', { confirmButtonText: '已安全保存', closeOnClickModal: false }); await load() } catch { /* Axios interceptor already reports the error. */ } finally { creatingNode.value = false } }
-async function control(cameraId: string, action: 'start'|'stop') { try { await setMonitoring(cameraId, action); ElMessage.success(action === 'start' ? '已提交启动请求' : '已提交停止请求'); await load() } catch { /* Axios interceptor already reports the error. */ } }
+async function createNode() { if (!nodeForm.node_id || !nodeForm.display_name || !nodeForm.control_url) return ElMessage.warning(t('cameras.incompleteNodeWarning')); creatingNode.value = true; try { const node = await createCvNode({ ...nodeForm }); nodeDialogVisible.value = false; await ElMessageBox.alert(t('cameras.nodeTokenBody', { nodeId: node.node_id, token: node.control_token }), t('cameras.nodeTokenTitle'), { confirmButtonText: t('cameras.nodeTokenSaved'), closeOnClickModal: false }); await load() } catch { /* Axios interceptor already reports the error. */ } finally { creatingNode.value = false } }
+async function control(cameraId: string, action: 'start'|'stop') { try { await setMonitoring(cameraId, action); ElMessage.success(action === 'start' ? t('cameras.startRequested') : t('cameras.stopRequested')); await load() } catch { /* Axios interceptor already reports the error. */ } }
 function openPreview(cameraId: string) { previewCameraId.value = cameraId; previewVisible.value = true }
-async function openMediaBrowser(target: 'create' | 'edit') { const current = target === 'create' ? form : editForm; if (!current.node_id) return ElMessage.warning('请先选择 CV 节点'); mediaTarget.value = target; mediaNodeId.value = current.node_id; mediaBrowserVisible.value = true; await browseMedia() }
+async function openMediaBrowser(target: 'create' | 'edit') { const current = target === 'create' ? form : editForm; if (!current.node_id) return ElMessage.warning(t('cameras.selectNodeFirst')); mediaTarget.value = target; mediaNodeId.value = current.node_id; mediaBrowserVisible.value = true; await browseMedia() }
 async function browseMedia(directory?: string) { browsingMedia.value = true; try { mediaDirectory.value = await fetchNodeMediaFiles(mediaNodeId.value, directory) } catch { /* Axios interceptor already reports the error. */ } finally { browsingMedia.value = false } }
 function selectMediaFile(path: string) { const target = mediaTarget.value === 'create' ? form : editForm; target.source_uri = path; mediaBrowserVisible.value = false }
 onMounted(load)

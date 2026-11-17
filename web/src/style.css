@@ -12,6 +12,9 @@
   font-family: var(--el-font-family); color: var(--text-main); font-synthesis: none;
   -webkit-font-smoothing: antialiased;
 }
+:root[lang='zh-HK'] {
+  --el-font-family: 'Segoe UI', 'PingFang HK', 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans HK', sans-serif;
+}
 * { box-sizing: border-box; }
 html, body, #app { margin: 0; width: 100%; min-height: 100%; }
 body { background: var(--bg-color); }

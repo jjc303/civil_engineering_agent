@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Query, Request
 
+from agent.i18n import SupportedLocale, resolve_request_locale
 from agent.services.agent_write_actions import AgentWriteActionService
 from agent.services.camera_management import CameraManagementService
 from agent.services.chat_service import ChatService
@@ -40,3 +41,11 @@ def get_learning_service(request: Request) -> LearningService:
 
 def get_rectification_task_service(request: Request) -> RectificationTaskService:
     return request.app.state.rectification_task_service
+
+
+def get_request_locale(
+    request: Request,
+    lang: str | None = Query(default=None, max_length=16),
+) -> SupportedLocale:
+    """Resolve client locale from query override or Accept-Language header."""
+    return resolve_request_locale(request.headers.get("accept-language"), lang)

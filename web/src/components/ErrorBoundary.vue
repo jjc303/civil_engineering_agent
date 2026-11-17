@@ -2,9 +2,9 @@
   <div v-if="hasError" class="error-boundary-fallback">
     <div class="error-boundary-content">
       <el-icon :size="32"><WarningFilled /></el-icon>
-      <h3>页面组件异常</h3>
-      <p>安全助手界面遇到临时问题，请刷新页面重试。</p>
-      <el-button type="primary" @click="reset">刷新组件</el-button>
+      <h3>{{ t('copilot.errorBoundaryTitle') }}</h3>
+      <p>{{ t('copilot.errorBoundaryDesc') }}</p>
+      <el-button type="primary" @click="reset">{{ t('copilot.errorBoundaryAction') }}</el-button>
     </div>
   </div>
   <div v-else class="error-boundary-wrapper">
@@ -15,7 +15,9 @@
 <script setup lang="ts">
 import { ref, onErrorCaptured } from 'vue'
 import { WarningFilled } from '@element-plus/icons-vue'
+import { useAppI18n } from '@/i18n/useAppI18n'
 
+const { t } = useAppI18n()
 const hasError = ref(false)
 
 onErrorCaptured((err: Error, instance, info) => {

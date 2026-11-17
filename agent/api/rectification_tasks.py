@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from agent.api.dependencies import get_rectification_task_service as _service
+from agent.api.dependencies import get_rectification_task_service as _service, get_request_locale
 from agent.contracts.rectification import (
     RectificationPendingActionResponse,
     RectificationTaskCreateRequest,
@@ -11,6 +11,7 @@ from agent.contracts.rectification import (
     RectificationTaskRecord,
     RectificationTaskUpdateRequest,
 )
+from agent.i18n import SupportedLocale, localize_response
 from agent.services.agent_write_actions import AgentWriteActionError
 
 router = APIRouter(prefix="/api/v1/rectification-tasks", tags=["rectification-tasks"])
@@ -20,14 +21,22 @@ router = APIRouter(prefix="/api/v1/rectification-tasks", tags=["rectification-ta
 def list_tasks(
     request: Request, status: str | None = None, owner: str | None = None, overdue: bool | None = None,
     limit: int = Query(default=20, ge=1, le=100), offset: int = Query(default=0, ge=0),
+    locale: SupportedLocale = Depends(get_request_locale),
 ) -> RectificationTaskPageResponse:
-    return _service(request).list_tasks(status=status, owner=owner, overdue=overdue, limit=limit, offset=offset)
+    return localize_response(
+        _service(request).list_tasks(status=status, owner=owner, overdue=overdue, limit=limit, offset=offset),
+        locale,
+    )
 
 
 @router.post("", response_model=RectificationTaskRecord)
-def create_task(payload: RectificationTaskCreateRequest, request: Request) -> RectificationTaskRecord:
+def create_task(
+    payload: RectificationTaskCreateRequest,
+    request: Request,
+    locale: SupportedLocale = Depends(get_request_locale),
+) -> RectificationTaskRecord:
     try:
-        return _service(request).create_task(payload)
+        return localize_response(_service(request).create_task(payload), locale)
     except AgentWriteActionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
@@ -35,17 +44,26 @@ def create_task(payload: RectificationTaskCreateRequest, request: Request) -> Re
 
 
 @router.get("/{task_id}", response_model=RectificationTaskDetail)
-def get_task(task_id: str, request: Request) -> RectificationTaskDetail:
+def get_task(
+    task_id: str,
+    request: Request,
+    locale: SupportedLocale = Depends(get_request_locale),
+) -> RectificationTaskDetail:
     try:
-        return _service(request).get_task(task_id)
+        return localize_response(_service(request).get_task(task_id), locale)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="rectification task not found") from exc
 
 
 @router.patch("/{task_id}", response_model=RectificationTaskRecord)
-def update_task(task_id: str, payload: RectificationTaskUpdateRequest, request: Request) -> RectificationTaskRecord:
+def update_task(
+    task_id: str,
+    payload: RectificationTaskUpdateRequest,
+    request: Request,
+    locale: SupportedLocale = Depends(get_request_locale),
+) -> RectificationTaskRecord:
     try:
-        return _service(request).update_task(task_id, payload)
+        return localize_response(_service(request).update_task(task_id, payload), locale)
     except AgentWriteActionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except KeyError as exc:
@@ -55,16 +73,25 @@ def update_task(task_id: str, payload: RectificationTaskUpdateRequest, request: 
 
 
 @router.post("/pending-create", response_model=RectificationPendingActionResponse)
-def pending_create(payload: RectificationTaskCreateRequest, request: Request) -> RectificationPendingActionResponse:
+def pending_create(
+    payload: RectificationTaskCreateRequest,
+    request: Request,
+    locale: SupportedLocale = Depends(get_request_locale),
+) -> RectificationPendingActionResponse:
     try:
-        return RectificationPendingActionResponse(pending_action=_service(request).propose_create(payload))
+        return localize_response(RectificationPendingActionResponse(pending_action=_service(request).propose_create(payload)), locale)
     except AgentWriteActionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/{task_id}/pending-update", response_model=RectificationPendingActionResponse)
-def pending_update(task_id: str, payload: RectificationTaskUpdateRequest, request: Request) -> RectificationPendingActionResponse:
+def pending_update(
+    task_id: str,
+    payload: RectificationTaskUpdateRequest,
+    request: Request,
+    locale: SupportedLocale = Depends(get_request_locale),
+) -> RectificationPendingActionResponse:
     try:
-        return RectificationPendingActionResponse(pending_action=_service(request).propose_update(task_id, payload))
+        return localize_response(RectificationPendingActionResponse(pending_action=_service(request).propose_update(task_id, payload)), locale)
     except AgentWriteActionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

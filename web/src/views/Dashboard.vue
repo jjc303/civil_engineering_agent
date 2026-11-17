@@ -1,74 +1,74 @@
 <template>
   <div class="monitor-dashboard" :class="{ 'focus-mode': focusMode }">
     <header class="page-heading">
-      <div><p class="eyebrow">LIVE MONITORING</p><h1>现场监控</h1><p class="subtitle">查看监控画面，关注现场风险，及时跟进安全事件。</p></div>
-      <div class="heading-actions"><label class="auto-refresh"><input v-model="autoRefresh" type="checkbox">实时推送<span v-if="autoRefresh && streamStateLabel" class="stream-badge" :class="streamState">{{ streamStateLabel }}</span></label><button class="monitor-button" :disabled="loading" @click="refreshAll"><el-icon><Refresh /></el-icon>{{ loading ? '更新中' : '刷新数据' }}</button></div>
+      <div><p class="eyebrow">LIVE MONITORING</p><h1>{{ t('dashboard.title') }}</h1><p class="subtitle">{{ t('dashboard.subtitle') }}</p></div>
+      <div class="heading-actions"><label class="auto-refresh"><input v-model="autoRefresh" type="checkbox">{{ t('dashboard.realtimePush') }}<span v-if="autoRefresh && streamStateLabel" class="stream-badge" :class="streamState">{{ streamStateLabel }}</span></label><button class="monitor-button" :disabled="loading" @click="refreshAll"><el-icon><Refresh /></el-icon>{{ loading ? t('dashboard.updating') : t('dashboard.refreshData') }}</button></div>
     </header>
-    <div v-if="isMockEnabled" class="notice">演示模式 · 使用仓库样例数据；视频与证据不连接现场，统计口径以样例为准。</div>
-    <div v-if="errorLabels.length" class="notice error" role="alert">{{ errorLabels.join('、') }}读取失败。{{ hasAnyData ? '保留上次成功数据，请注意更新时间。' : '尚未取得现场数据，请检查服务连接。' }}<button :disabled="loading" @click="refreshAll">重新加载 ↗</button></div>
-    <nav class="quick-actions" aria-label="常用操作"><router-link to="/cameras"><el-icon><VideoCamera /></el-icon>设备管理<span>↗</span></router-link><router-link to="/violations"><el-icon><Warning /></el-icon>违规事件<span>↗</span></router-link><router-link to="/copilot"><el-icon><ChatDotRound /></el-icon>智能助手<span>↗</span></router-link><router-link to="/learning"><el-icon><CircleCheck /></el-icon>学习中心<span>↗</span></router-link></nav>
-    <section class="metrics" aria-label="监控指标">
-      <div><p>摄像头在线 <small>最近上报状态</small></p><strong>{{ cameraLoaded ? onlineCamerasCount : '—' }}<em>/ {{ cameraLoaded ? cameras.length : '—' }}</em></strong><span :class="{ stale: errors.cameras }">{{ sourceTime('cameras') }}</span></div>
-      <div><p>今日违规 <small>{{ dayLabel }}</small></p><strong>{{ stats?.total_violations ?? '—' }}<em>起</em></strong><span :class="{ stale: errors.stats }">{{ sourceTime('stats') }}</span></div>
-      <div><p>今日严重告警 <small>含已解除事件</small></p><strong class="critical-number">{{ stats ? stats.by_severity.CRITICAL ?? 0 : '—' }}<em>起</em></strong><span :class="{ stale: errors.stats }">{{ sourceTime('stats') }}</span></div>
+    <div v-if="isMockEnabled" class="notice">{{ t('dashboard.mockNotice') }}</div>
+    <div v-if="errorLabels.length" class="notice error" role="alert">{{ t('dashboard.readFailed', { labels: errorLabels.join('、') }) }}{{ hasAnyData ? t('dashboard.keepLastData') : t('dashboard.noSiteData') }}<button :disabled="loading" @click="refreshAll">{{ t('dashboard.reload') }}</button></div>
+    <nav class="quick-actions" :aria-label="t('dashboard.quickActionsAria')"><router-link to="/cameras"><el-icon><VideoCamera /></el-icon>{{ t('dashboard.quickDevice') }}<span>↗</span></router-link><router-link to="/violations"><el-icon><Warning /></el-icon>{{ t('dashboard.quickViolations') }}<span>↗</span></router-link><router-link to="/copilot"><el-icon><ChatDotRound /></el-icon>{{ t('dashboard.quickCopilot') }}<span>↗</span></router-link><router-link to="/learning"><el-icon><CircleCheck /></el-icon>{{ t('dashboard.quickLearning') }}<span>↗</span></router-link></nav>
+    <section class="metrics" :aria-label="t('dashboard.metricsAria')">
+      <div><p>{{ t('dashboard.metricCamerasOnline') }} <small>{{ t('dashboard.metricCamerasHint') }}</small></p><strong>{{ cameraLoaded ? onlineCamerasCount : '—' }}<em>/ {{ cameraLoaded ? cameras.length : '—' }}</em></strong><span :class="{ stale: errors.cameras }">{{ sourceTime('cameras') }}</span></div>
+      <div><p>{{ t('dashboard.metricTodayViolations') }} <small>{{ dayLabel }}</small></p><strong>{{ stats?.total_violations ?? '—' }}<em>{{ t('common.unitCount') }}</em></strong><span :class="{ stale: errors.stats }">{{ sourceTime('stats') }}</span></div>
+      <div><p>{{ t('dashboard.metricTodayCritical') }} <small>{{ t('dashboard.metricCriticalHint') }}</small></p><strong class="critical-number">{{ stats ? stats.by_severity.CRITICAL ?? 0 : '—' }}<em>{{ t('common.unitCount') }}</em></strong><span :class="{ stale: errors.stats }">{{ sourceTime('stats') }}</span></div>
 
     </section>
     <div class="workspace-grid">
-      <section ref="videoPanel" tabindex="-1" class="video-panel" aria-label="现场视频墙">
-        <div class="section-heading"><div><h2>现场视频</h2><p>选中画面放大查看，或直接进入区域标定</p></div><div class="view-controls"><button class="focus-toggle" :aria-pressed="focusMode" @click="focusMode = !focusMode">{{ focusMode ? '退出专注' : '专注看视频' }}</button><div class="layout-switch" role="group" aria-label="视频分屏"><button v-for="n in [1,4,6]" :key="n" :aria-pressed="layout === n" @click="setLayout(n)">{{ n === 1 ? '单屏' : n === 4 ? '四屏' : '六屏' }}</button></div><button class="icon-button" :aria-label="fullscreen ? '退出视频墙全屏' : '视频墙全屏'" @click="toggleFullscreen"><el-icon><FullScreen /></el-icon></button></div></div>
-        <div class="camera-filters"><label class="camera-search"><el-icon><Search /></el-icon><input v-model="cameraQuery" type="search" placeholder="搜索摄像头" aria-label="搜索摄像头名称或编号" /></label><div class="status-filter" role="group" aria-label="设备状态筛选"><button v-for="option in statusOptions" :key="option.value" :aria-pressed="cameraStatus === option.value" @click="cameraStatus = option.value">{{ option.label }}</button></div></div>
-        <div class="camera-toolbar"><label v-if="layout === 1">当前通道 <select v-model="selectedCameraId" aria-label="选择单屏摄像头" :disabled="!filteredCameras.length"><option v-for="camera in filteredCameras" :key="camera.camera_id" :value="camera.camera_id">{{ camera.camera_id }}</option></select></label><span v-else>{{ cameraLoaded ? filteredCameras.length : '—' }} 路匹配 · 共 {{ cameras.length }} 路</span><button v-if="cameraQuery || cameraStatus !== 'all'" class="clear-filter" @click="clearFilters">清除筛选</button></div>
-        <div v-if="!cameraLoaded" class="section-empty"><el-icon><VideoCamera /></el-icon><h3>{{ loading ? '正在获取摄像头' : '摄像头数据不可用' }}</h3><p>连接成功后，已上报的摄像头会出现在这里。</p></div>
-        <div v-else-if="!cameras.length" class="section-empty"><el-icon><VideoCamera /></el-icon><h3>尚无摄像头上报状态</h3><p>登记视频来源并启动监控后，可在此查看。</p><router-link to="/cameras">前往设备管理 ↗</router-link></div>
-        <div v-else-if="!filteredCameras.length" class="section-empty"><el-icon><Search /></el-icon><h3>没有匹配的摄像头</h3><p>试试其他名称，或切换设备状态。</p><button class="monitor-button" @click="clearFilters">清除筛选</button></div>
+      <section ref="videoPanel" tabindex="-1" class="video-panel" :aria-label="t('dashboard.videoWallAria')">
+        <div class="section-heading"><div><h2>{{ t('dashboard.videoSectionTitle') }}</h2><p>{{ t('dashboard.videoSectionDesc') }}</p></div><div class="view-controls"><button class="focus-toggle" :aria-pressed="focusMode" @click="focusMode = !focusMode">{{ focusMode ? t('dashboard.exitFocus') : t('dashboard.enterFocus') }}</button><div class="layout-switch" role="group" :aria-label="t('dashboard.layoutAria')"><button v-for="n in [1,4,6]" :key="n" :aria-pressed="layout === n" @click="setLayout(n)">{{ n === 1 ? t('dashboard.layout1') : n === 4 ? t('dashboard.layout4') : t('dashboard.layout6') }}</button></div><button class="icon-button" :aria-label="fullscreen ? t('dashboard.exitFullscreenAria') : t('dashboard.enterFullscreenAria')" @click="toggleFullscreen"><el-icon><FullScreen /></el-icon></button></div></div>
+        <div class="camera-filters"><label class="camera-search"><el-icon><Search /></el-icon><input v-model="cameraQuery" type="search" :placeholder="t('dashboard.searchCameraPlaceholder')" :aria-label="t('dashboard.searchCameraAria')" /></label><div class="status-filter" role="group" :aria-label="t('dashboard.statusFilterAria')"><button v-for="option in statusOptions" :key="option.value" :aria-pressed="cameraStatus === option.value" @click="cameraStatus = option.value">{{ option.label }}</button></div></div>
+        <div class="camera-toolbar"><label v-if="layout === 1">{{ t('dashboard.currentChannel') }} <select v-model="selectedCameraId" :aria-label="t('dashboard.selectChannelAria')" :disabled="!filteredCameras.length"><option v-for="camera in filteredCameras" :key="camera.camera_id" :value="camera.camera_id">{{ camera.camera_id }}</option></select></label><span v-else>{{ t('dashboard.channelSummary', { matched: cameraLoaded ? filteredCameras.length : '—', total: cameras.length }) }}</span><button v-if="cameraQuery || cameraStatus !== 'all'" class="clear-filter" @click="clearFilters">{{ t('dashboard.clearFilter') }}</button></div>
+        <div v-if="!cameraLoaded" class="section-empty"><el-icon><VideoCamera /></el-icon><h3>{{ loading ? t('dashboard.fetchingCameras') : t('dashboard.camerasUnavailable') }}</h3><p>{{ t('dashboard.camerasConnectHint') }}</p></div>
+        <div v-else-if="!cameras.length" class="section-empty"><el-icon><VideoCamera /></el-icon><h3>{{ t('dashboard.noCamerasTitle') }}</h3><p>{{ t('dashboard.noCamerasDesc') }}</p><router-link to="/cameras">{{ t('dashboard.goDeviceMgmt') }}</router-link></div>
+        <div v-else-if="!filteredCameras.length" class="section-empty"><el-icon><Search /></el-icon><h3>{{ t('dashboard.noMatchedCameras') }}</h3><p>{{ t('dashboard.noMatchedCamerasDesc') }}</p><button class="monitor-button" @click="clearFilters">{{ t('dashboard.clearFilter') }}</button></div>
         <div v-else class="video-grid" :class="`grid-${layout}`"><MonitorCamera v-for="camera in displayedCameras" :key="camera.camera_id" :camera="camera" :index="cameras.findIndex(c => c.camera_id === camera.camera_id)" :active-event-count="events.filter(e => e.camera_id === camera.camera_id).length" :stale="Boolean(errors.cameras)" :preview-allowed="pageVisible" @focus="focusCamera" /></div>
-        <div v-if="layout > 1 && filteredCameras.length" class="page-controls"><span>第 {{ cameraPageNumber }} / {{ pageCount }} 页 · {{ filteredCameras.length }} 路匹配</span><div><button class="icon-button" aria-label="上一页摄像头" :disabled="cameraPageNumber <= 1" @click="cameraPageNumber--">←</button><button class="icon-button" aria-label="下一页摄像头" :disabled="cameraPageNumber >= pageCount" @click="cameraPageNumber++">→</button></div></div>
+        <div v-if="layout > 1 && filteredCameras.length" class="page-controls"><span>{{ t('dashboard.pageControls', { page: cameraPageNumber, total: pageCount, count: filteredCameras.length }) }}</span><div><button class="icon-button" :aria-label="t('dashboard.prevPageAria')" :disabled="cameraPageNumber <= 1" @click="cameraPageNumber--">←</button><button class="icon-button" :aria-label="t('dashboard.nextPageAria')" :disabled="cameraPageNumber >= pageCount" @click="cameraPageNumber++">→</button></div></div>
       </section>
       <aside class="event-column">
-        <section class="events-panel"><div class="section-heading"><div><h2>需要你关注 <span class="event-total">{{ eventLoaded ? eventTotal : '—' }}</span></h2><p>活动事件 · 不限发生日期</p></div><router-link class="quiet-link" to="/violations">全部 ↗</router-link></div>
-          <div v-if="!eventLoaded || !events.length" class="section-empty compact"><el-icon><CircleCheck v-if="eventLoaded" /><Warning v-else /></el-icon><h3>{{ eventLoaded ? '当前没有活动违规' : loading ? '正在读取事件' : '事件数据不可用' }}</h3><p>{{ eventLoaded ? '继续关注现场，处理记录可在事件中心查看。' : '数据恢复后可查看证据与发生时间。' }}</p></div>
-          <div v-else class="event-list"><button v-for="(event, index) in events" :key="event.event_uuid" class="event-item" :class="{ critical: event.severity === 'CRITICAL', featured: index === 0 }" @click="openEvidence(event)"><span class="event-rank">{{ String(index + 1).padStart(2, '0') }}</span><div class="event-body"><div class="event-topline"><b>{{ violationLabel(event.violation_type) }}</b><span class="severity-tag" :class="event.severity.toLowerCase()">{{ severityLabel(event.severity) }}</span></div><span class="event-location">{{ event.camera_id }}</span><div class="event-bottomline"><time>{{ formatTime(event.occurred_at_utc, true) }}</time><span>查看证据 ↗</span></div><p v-if="index === 0" class="event-detail">持续 {{ event.duration_seconds.toFixed(1) }} 秒<span v-if="event.zone_name"> · {{ event.zone_name }}</span></p></div></button></div>
-          <div class="events-footer">{{ sourceTime('events') }}<span v-if="eventTotal > events.length"> · 展示最近 {{ events.length }} 条</span></div>
+        <section class="events-panel"><div class="section-heading"><div><h2>{{ t('dashboard.attentionTitle') }} <span class="event-total">{{ eventLoaded ? eventTotal : '—' }}</span></h2><p>{{ t('dashboard.attentionDesc') }}</p></div><router-link class="quiet-link" to="/violations">{{ t('dashboard.viewAll') }}</router-link></div>
+          <div v-if="!eventLoaded || !events.length" class="section-empty compact"><el-icon><CircleCheck v-if="eventLoaded" /><Warning v-else /></el-icon><h3>{{ eventLoaded ? t('dashboard.noActiveViolations') : loading ? t('dashboard.readingEvents') : t('dashboard.eventsUnavailable') }}</h3><p>{{ eventLoaded ? t('dashboard.noActiveEventsDesc') : t('dashboard.eventsUnavailableDesc') }}</p></div>
+          <div v-else class="event-list"><button v-for="(event, index) in events" :key="event.event_uuid" class="event-item" :class="{ critical: event.severity === 'CRITICAL', featured: index === 0 }" @click="openEvidence(event)"><span class="event-rank">{{ String(index + 1).padStart(2, '0') }}</span><div class="event-body"><div class="event-topline"><b>{{ violationLabel(event.violation_type) }}</b><span class="severity-tag" :class="event.severity.toLowerCase()">{{ severityLabel(event.severity) }}</span></div><span class="event-location">{{ event.camera_id }}</span><div class="event-bottomline"><time>{{ formatEventTime(event.occurred_at_utc, true) }}</time><span>{{ t('dashboard.viewEvidence') }}</span></div><p v-if="index === 0" class="event-detail">{{ t('dashboard.durationSeconds', { seconds: event.duration_seconds.toFixed(1) }) }}<span v-if="event.zone_name"> · {{ event.zone_name }}</span></p></div></button></div>
+          <div class="events-footer">{{ sourceTime('events') }}<span v-if="eventTotal > events.length">{{ t('dashboard.showingRecent', { count: events.length }) }}</span></div>
         </section>
-        <router-link to="/copilot" class="assistant-card"><div class="assistant-icon"><el-icon><ChatDotRound /></el-icon></div><div><h3>安全智能助手</h3><p>从现场数据，找到下一步。</p><span>询问现场情况 <i>↗</i></span></div></router-link>
+        <router-link to="/copilot" class="assistant-card"><div class="assistant-icon"><el-icon><ChatDotRound /></el-icon></div><div><h3>{{ t('dashboard.copilotTitle') }}</h3><p>{{ t('dashboard.copilotDesc') }}</p><span>{{ t('dashboard.copilotAsk') }} <i>↗</i></span></div></router-link>
       </aside>
     </div>
-    <section class="statistics-panel visible-statistics" aria-label="今日违规统计">
-      <div class="section-heading"><div><h2>今日违规统计</h2><p>{{ dayLabel }} · 本机时区 · 包含已解除事件</p></div><router-link class="statistics-link" to="/violations">查看事件明细 ↗</router-link></div>
-      <p v-if="errors.stats" class="statistics-warning" role="status">统计更新失败{{ stats ? '，下方保留上次成功数据。' : '，请稍后重试。' }}</p>
+    <section class="statistics-panel visible-statistics" :aria-label="t('dashboard.todayStatsTitle')">
+      <div class="section-heading"><div><h2>{{ t('dashboard.todayStatsTitle') }}</h2><p>{{ t('dashboard.todayStatsDesc', { day: dayLabel }) }}</p></div><router-link class="statistics-link" to="/violations">{{ t('dashboard.viewEventDetails') }}</router-link></div>
+      <p v-if="errors.stats" class="statistics-warning" role="status">{{ t('dashboard.statsWarning', { detail: stats ? t('dashboard.statsWarningKeep') : t('dashboard.statsWarningRetry') }) }}</p>
       <div v-if="stats" class="charts-grid">
-        <div class="chart"><h3>违规类型分布 <span>共 {{ stats.total_violations }} 起</span></h3><v-chart :option="typePieOption" autoresize aria-label="今日违规类型分布" /><p v-if="stats.total_violations === 0" class="zero-chart-note">今日暂无违规记录</p><ul class="chart-values" aria-label="违规类型统计明细"><li v-for="(label, type) in typeNames" :key="type"><span>{{ label }}</span><b>{{ stats.by_type[type] ?? 0 }}</b></li></ul></div>
-        <div class="chart"><h3>告警严重程度 <span>单位：起</span></h3><v-chart :option="severityBarOption" autoresize aria-label="今日违规严重程度" /><ul class="chart-values" aria-label="严重程度统计明细"><li v-for="severity in severityKeys" :key="severity"><span>{{ severityLabel(severity) }}</span><b>{{ stats.by_severity[severity] ?? 0 }}</b></li></ul></div>
+        <div class="chart"><h3>{{ t('dashboard.typeDistTitle') }} <span>{{ t('dashboard.totalCountLabel', { count: stats.total_violations }) }}</span></h3><v-chart :option="typePieOption" autoresize :aria-label="t('dashboard.typeDistTitle')" /><p v-if="stats.total_violations === 0" class="zero-chart-note">{{ t('dashboard.zeroChartNote') }}</p><ul class="chart-values" :aria-label="t('dashboard.typeDistTitle')"><li v-for="(label, type) in typeNames" :key="type"><span>{{ label }}</span><b>{{ stats.by_type[type] ?? 0 }}</b></li></ul></div>
+        <div class="chart"><h3>{{ t('dashboard.severityDistTitle') }} <span>{{ t('dashboard.severityUnit') }}</span></h3><v-chart :option="severityBarOption" autoresize :aria-label="t('dashboard.severityDistTitle')" /><ul class="chart-values" :aria-label="t('dashboard.severityDistTitle')"><li v-for="severity in severityKeys" :key="severity"><span>{{ severityLabel(severity) }}</span><b>{{ stats.by_severity[severity] ?? 0 }}</b></li></ul></div>
       </div>
-      <div v-else class="chart-empty">{{ loading ? '正在加载统计图…' : '尚未取得统计数据' }}<button v-if="!loading" class="clear-filter" @click="refreshAll">重新加载</button></div>
-      <p class="statistics-updated">{{ sourceTime('stats') }} · 与页面数据同步刷新</p>
+      <div v-else class="chart-empty">{{ loading ? t('dashboard.loadingCharts') : t('dashboard.chartsEmpty') }}<button v-if="!loading" class="clear-filter" @click="refreshAll">{{ t('dashboard.reloadPlain') }}</button></div>
+      <p class="statistics-updated">{{ t('dashboard.chartsUpdated', { source: sourceTime('stats') }) }}</p>
     </section>
 
-    <section v-if="heatmap" class="risk-heatmap-section" aria-label="风险热力分析">
+    <section v-if="heatmap" class="risk-heatmap-section" :aria-label="t('dashboard.heatmapAria')">
       <div class="section-heading">
         <div>
-          <h2>风险趋势分析</h2>
-          <p>近 {{ heatmap.lookback_days }} 天违规分布 · 时段热力与每日趋势</p>
+          <h2>{{ t('dashboard.heatmapTitle') }}</h2>
+          <p>{{ t('dashboard.heatmapDesc', { days: heatmap.lookback_days }) }}</p>
         </div>
         <span class="heatmap-summary">{{ heatmap.summary }}</span>
       </div>
       <div class="heatmap-grid">
         <div class="chart heatmap-chart">
-          <h3>时段热力分布 <span>24小时高发时段（本机时区）</span></h3>
-          <v-chart :option="heatmapChartOption" autoresize aria-label="违规时段热力图" />
+          <h3>{{ t('dashboard.hourlyTitle') }} <span>{{ t('dashboard.hourlyDesc') }}</span></h3>
+          <v-chart :option="heatmapChartOption" autoresize :aria-label="t('dashboard.hourlyTitle')" />
         </div>
         <div class="chart daily-chart">
-          <h3>每日违规趋势 <span>近 {{ heatmap.lookback_days }} 天违规走势</span></h3>
-          <v-chart :option="dailyBarOption" autoresize aria-label="每日违规趋势" />
+          <h3>{{ t('dashboard.dailyTitle') }} <span>{{ t('dashboard.dailyDesc', { days: heatmap.lookback_days }) }}</span></h3>
+          <v-chart :option="dailyBarOption" autoresize :aria-label="t('dashboard.dailyTitle')" />
         </div>
       </div>
       <div v-if="heatmap.zone_risks.length" class="zone-risk-list">
-        <h3>区域风险排行</h3>
+        <h3>{{ t('dashboard.zoneRiskRanking') }}</h3>
         <div class="zone-risk-items">
           <div v-for="(zone, i) in heatmap.zone_risks.slice(0, 5)" :key="i" class="zone-risk-item">
             <span class="zone-rank">{{ i + 1 }}</span>
             <div class="zone-info"><strong>{{ zone.zone_name }}</strong><small>{{ zone.camera_id }}</small></div>
-            <div class="zone-count"><b>{{ zone.total }}</b><span>起</span></div>
+            <div class="zone-count"><b>{{ zone.total }}</b><span>{{ t('common.unitCount') }}</span></div>
             <div class="risk-bar"><div class="risk-fill" :style="{ width: (zone.risk_score * 100) + '%', background: zone.risk_score > 0.6 ? '#e4a58c' : zone.risk_score > 0.3 ? '#e0c48c' : '#85b5b2' }"></div></div>
           </div>
         </div>
@@ -89,11 +89,17 @@ import { isMockEnabled } from '@/api/client'
 import type { CameraStatusResponse, ViolationRecord, ViolationStatistics, ViolationType, ViolationSeverity } from '@/types/contract'
 import MonitorCamera from '@/components/MonitorCamera.vue'
 import EvidenceModal from '@/components/EvidenceModal.vue'
+import { useAppI18n, useLocaleRefresh } from '@/i18n/useAppI18n'
 import { useDictionariesStore } from '@/stores/dictionaries'
-import { todayWindow, cameraPage, cameraSelection, utcDate, filterCameras, applyRealtimeCameraStatus, applyRealtimeViolationEvent } from '@/utils/monitoring'
+import { todayWindow, cameraPage, cameraSelection, filterCameras, applyRealtimeCameraStatus, applyRealtimeViolationEvent } from '@/utils/monitoring'
+const { t, formatDate, formatTime: formatLocaleTime, formatDateTime } = useAppI18n()
 const cameras = ref<CameraStatusResponse[]>([])
 const cameraQuery = ref(''), cameraStatus = ref<'all' | 'online' | 'offline'>('all'), focusMode = ref(false)
-const statusOptions = [{ value: 'all', label: '全部' }, { value: 'online', label: '在线' }, { value: 'offline', label: '离线' }] as const
+const statusOptions = computed(() => [
+  { value: 'all', label: t('dashboard.statusAll') },
+  { value: 'online', label: t('dashboard.statusOnline') },
+  { value: 'offline', label: t('dashboard.statusOffline') },
+] as const)
 const filteredCameras = computed(() => filterCameras(cameras.value, cameraQuery.value, cameraStatus.value))
 function clearFilters() { cameraQuery.value = ''; cameraStatus.value = 'all' }
 const stats = ref<ViolationStatistics | null>(null)
@@ -104,12 +110,17 @@ const cameraLoaded = ref(false), eventLoaded = ref(false), loading = ref(false),
 const pageVisible = ref(!document.hidden)
 const errors = reactive({ cameras: false, stats: false, events: false })
 const updatedAt = reactive<Record<'cameras' | 'stats' | 'events', Date | null>>({ cameras: null, stats: null, events: null })
-const dayLabel = ref(new Date().toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }))
+const statsDayRef = ref(new Date())
+const dayLabel = computed(() => formatDate(statsDayRef.value, { month: '2-digit', day: '2-digit' }))
 const selectedCameraId = ref(''), cameraPageNumber = ref(1), layout = ref(4)
 const videoPanel = ref<HTMLElement | null>(null), fullscreen = ref(false)
 const evidenceVisible = ref(false), selectedEvent = ref<ViolationRecord | null>(null)
-const labels = { cameras: '摄像头状态', stats: '今日统计', events: '活动事件' }
-const errorLabels = computed(() => (Object.keys(errors) as (keyof typeof errors)[]).filter(k => errors[k]).map(k => labels[k]))
+const labels = computed(() => ({
+  cameras: t('dashboard.sourceCameras'),
+  stats: t('dashboard.sourceStats'),
+  events: t('dashboard.sourceEvents'),
+}))
+const errorLabels = computed(() => (Object.keys(errors) as (keyof typeof errors)[]).filter(k => errors[k]).map(k => labels.value[k]))
 const hasAnyData = computed(() => cameraLoaded.value || eventLoaded.value || stats.value !== null)
 const onlineCamerasCount = computed(() => cameras.value.filter(c => c.is_online).length)
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredCameras.value.length / layout.value)))
@@ -123,8 +134,16 @@ dictionaries.ensureLoaded()
 const typeNames = computed<Record<ViolationType, string>>(() => dictionaries.violationLabels)
 function violationLabel(type: ViolationType) { return dictionaries.violationLabel(type) }
 function severityLabel(severity: ViolationSeverity) { return dictionaries.severityLabel(severity) }
-function formatTime(value: string | Date, date = false) { return utcDate(value).toLocaleString('zh-CN', { ...(date ? { month: '2-digit', day: '2-digit' } as const : {}), hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) }
-function sourceTime(key: keyof typeof errors) { return updatedAt[key] ? `${errors[key] ? '上次成功' : '更新于'} ${formatTime(updatedAt[key]!)}` : '尚未取得数据' }
+function formatEventTime(value: string | Date, date = false) {
+  return date
+    ? formatDateTime(value, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+    : formatLocaleTime(value)
+}
+function sourceTime(key: keyof typeof errors) {
+  if (!updatedAt[key]) return t('dashboard.noDataYet')
+  const formatted = formatEventTime(updatedAt[key]!)
+  return errors[key] ? t('dashboard.lastSuccessAt', { time: formatted }) : t('dashboard.updatedAt', { time: formatted })
+}
 function setLayout(count: number) { layout.value = count; cameraPageNumber.value = 1 }
 function focusCamera(id: string) { selectedCameraId.value = id; layout.value = 1 }
 function openEvidence(event: ViolationRecord) { selectedEvent.value = event; evidenceVisible.value = true }
@@ -135,9 +154,9 @@ let streamHandle: SafetyEventStreamHandle | undefined
 let lastFullRefreshAt = 0
 const streamState = ref<RealtimeConnectionState>('closed')
 const streamStateLabel = computed(() => {
-  if (streamState.value === 'connected') return '已连接'
-  if (streamState.value === 'connecting') return '连接中'
-  if (streamState.value === 'reconnecting') return '重连中'
+  if (streamState.value === 'connected') return t('dashboard.streamConnected')
+  if (streamState.value === 'connecting') return t('dashboard.streamConnecting')
+  if (streamState.value === 'reconnecting') return t('dashboard.streamReconnecting')
   return ''
 })
 
@@ -149,7 +168,7 @@ async function refreshStatsAndHeatmap() {
     stats.value = statsResult
     errors.stats = false
     updatedAt.stats = new Date()
-    dayLabel.value = now.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+    statsDayRef.value = now
   } catch {
     if (alive) errors.stats = true
   }
@@ -223,13 +242,17 @@ async function refreshAll() {
       selectedCameraId.value = cameraSelection(filteredCameras.value, selectedCameraId.value)
       cameraPageNumber.value = Math.min(cameraPageNumber.value, pageCount.value)
     }
-    if (statsResult.status === 'fulfilled') { stats.value = statsResult.value; updatedAt.stats = new Date(); dayLabel.value = now.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) }
+    if (statsResult.status === 'fulfilled') { stats.value = statsResult.value; updatedAt.stats = new Date(); statsDayRef.value = now }
     if (eventResult.status === 'fulfilled') { events.value = eventResult.value.items.filter(e => e.status === 'ACTIVE').slice(0, 6); eventTotal.value = eventResult.value.total; eventLoaded.value = true; updatedAt.events = new Date() }
   } finally { if (alive) loading.value = false }
 }
-async function toggleFullscreen() { try { if (document.fullscreenElement) await document.exitFullscreen(); else await videoPanel.value?.requestFullscreen() } catch { ElMessage.info('当前浏览器不支持全屏，可以使用单屏放大查看') } }
+async function toggleFullscreen() { try { if (document.fullscreenElement) await document.exitFullscreen(); else await videoPanel.value?.requestFullscreen() } catch { ElMessage.info(t('dashboard.fullscreenUnsupported')) } }
 function syncFullscreen() { fullscreen.value = document.fullscreenElement === videoPanel.value }
 function onVisibility() { pageVisible.value = !document.hidden; if (pageVisible.value && autoRefresh.value) void refreshAll() }
+useLocaleRefresh(() => {
+  if (autoRefresh.value) startEventStream()
+  void refreshAll()
+})
 onMounted(() => {
   void refreshAll()
   startEventStream()
@@ -254,17 +277,17 @@ onUnmounted(() => {
 const typePieOption = computed(() => ({
   animation: chartAnimation, animationDuration: 400,
   color: ['#9181ea', '#e4a58c', '#85b5b2'],
-  title: { text: String(stats.value?.total_violations ?? 0), subtext: '今日事件', left: '28%', top: '36%', textAlign: 'center', textStyle: { color: '#625775', fontSize: 30, fontWeight: 500 }, subtextStyle: { color: '#8d869b', fontSize: 11 } },
-  tooltip: { trigger: 'item', valueFormatter: (value: unknown) => `${value} 起` },
+  title: { text: String(stats.value?.total_violations ?? 0), subtext: t('dashboard.chartTodayEvents'), left: '28%', top: '36%', textAlign: 'center', textStyle: { color: '#625775', fontSize: 30, fontWeight: 500 }, subtextStyle: { color: '#8d869b', fontSize: 11 } },
+  tooltip: { trigger: 'item', valueFormatter: (value: unknown) => t('dashboard.chartUnitSuffix', { value: String(value ?? 0) }) },
   legend: { data: Object.values(dictionaries.violationLabels), orient: 'vertical', right: '1%', top: 'middle', icon: 'circle', itemWidth: 8, itemHeight: 8, selectedMode: false, textStyle: { color: '#72798b', fontSize: 11 } },
   series: [{ type: 'pie', radius: ['55%', '73%'], center: ['28%', '50%'], label: { show: false }, stillShowZeroSum: false, showEmptyCircle: true, emptyCircleStyle: { color: '#eeebf6' }, itemStyle: { borderWidth: 3, borderColor: '#f9f9fd', borderRadius: 5 }, data: stats.value?.total_violations ? Object.entries(dictionaries.violationLabels).map(([key, name]) => ({ name, value: stats.value?.by_type[key as ViolationType] ?? 0 })) : [] }],
 }))
 const severityBarOption = computed(() => ({
   animation: chartAnimation, animationDuration: 400,
-  tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: (value: unknown) => `${value} 起` },
+  tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: (value: unknown) => t('dashboard.chartUnitSuffix', { value: String(value ?? 0) }) },
   grid: { top: 22, bottom: 22, left: 48, right: 35 },
   xAxis: { type: 'value', minInterval: 1, max: stats.value?.total_violations === 0 ? 1 : undefined, splitLine: { lineStyle: { color: '#ececf4', type: 'dashed' } }, axisLabel: { color: '#8a8fa0' } },
-  yAxis: { type: 'category', data: ['提示', '警告', '严重'], axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#72798b', fontSize: 12 } },
+  yAxis: { type: 'category', data: severityKeys.map(code => severityLabel(code)), axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#72798b', fontSize: 12 } },
   series: [{ type: 'bar', barWidth: 14, label: { show: true, position: 'right', color: '#817590' }, itemStyle: { borderRadius: [0, 5, 5, 0] }, data: [{ value: stats.value?.by_severity.INFO ?? 0, itemStyle: { color: '#85b5b2' } }, { value: stats.value?.by_severity.WARNING ?? 0, itemStyle: { color: '#b2a1e5' } }, { value: stats.value?.by_severity.CRITICAL ?? 0, itemStyle: { color: '#e4a58c' } }] }],
 }))
 
@@ -287,13 +310,13 @@ const heatmapChartOption = computed(() => {
         const count = Number(raw[2])
         const nextHour = (hour + 1) % 24
         const timeRange = `${String(hour).padStart(2, '0')}:00 - ${String(nextHour).padStart(2, '0')}:00`
-        const riskLevel = count === 0 ? '安全' : count >= (maxCount * 0.6) ? '极高风险' : count >= (maxCount * 0.25) ? '较高风险' : '一般风险'
+        const riskLevel = count === 0 ? t('dashboard.riskSafe') : count >= (maxCount * 0.6) ? t('dashboard.riskExtreme') : count >= (maxCount * 0.25) ? t('dashboard.riskHigh') : t('dashboard.riskNormal')
         const riskColor = count === 0 ? '#85b5b2' : count >= (maxCount * 0.6) ? '#ce7666' : count >= (maxCount * 0.25) ? '#caa266' : '#7969d0'
         return `
           <div style="font-size:12px; line-height:1.6;">
             <div style="font-weight:600; color:#343b51; margin-bottom:2px;">${timeRange}</div>
-            <div>违规频次：<b style="color:${count > 0 ? '#645383' : '#888'}; font-size:13px;">${count}</b> 起</div>
-            <div style="font-size:11px; margin-top:2px;">风险评估：<span style="color:${riskColor}; font-weight:600;">${riskLevel}</span></div>
+            <div>${t('dashboard.tooltipFreq')}<b style="color:${count > 0 ? '#645383' : '#888'}; font-size:13px;">${count}</b> ${t('common.unitCount')}</div>
+            <div style="font-size:11px; margin-top:2px;">${t('dashboard.tooltipRisk')}<span style="color:${riskColor}; font-weight:600;">${riskLevel}</span></div>
           </div>
         `
       }
@@ -328,7 +351,7 @@ const heatmapChartOption = computed(() => {
       inRange: {
         color: ['#f4f3f9', '#ded6f7', '#bcabec', '#8f70db', '#6245b7']
       },
-      text: ['高风险', '无违规'],
+      text: [t('dashboard.legendHighRisk'), t('dashboard.legendNoViolation')],
       textGap: 8,
       textStyle: { color: '#959caa', fontSize: 10 }
     },
@@ -368,7 +391,7 @@ const dailyBarOption = computed(() => ({
       return `
         <div style="font-size:12px; line-height:1.6;">
           <div style="font-weight:600; color:#343b51; margin-bottom:2px;">${item?.name}</div>
-          <div>违规频次：<b style="color:${count > 0 ? '#645383' : '#888'}; font-size:13px;">${count}</b> 起</div>
+          <div>${t('dashboard.tooltipFreq')}<b style="color:${count > 0 ? '#645383' : '#888'}; font-size:13px;">${count}</b> ${t('common.unitCount')}</div>
         </div>
       `
     }

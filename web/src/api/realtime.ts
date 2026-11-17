@@ -1,5 +1,6 @@
 import { apiBaseUrl } from '@/utils/deployment'
 import { isMockEnabled } from './client'
+import { LOCALE_STORAGE_KEY, detectInitialLocale, isSupportedLocale } from '@/i18n/strategies'
 import type { CameraStatusResponse, ViolationRecord } from '@/types/contract'
 
 export type RealtimeConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'closed' | 'disabled'
@@ -20,7 +21,18 @@ export interface SafetyEventStreamHandle {
 }
 
 export function resolveSafetyEventsStreamUrl(): string {
-  return `${apiBaseUrl}/api/v1/safety/events/stream`
+  let lang = detectInitialLocale()
+  if (typeof document !== 'undefined' && isSupportedLocale(document.documentElement.lang)) {
+    lang = document.documentElement.lang
+  } else if (typeof window !== 'undefined') {
+    try {
+      const saved = window.localStorage.getItem(LOCALE_STORAGE_KEY)
+      if (isSupportedLocale(saved)) lang = saved
+    } catch {
+      // Ignore storage access errors
+    }
+  }
+  return `${apiBaseUrl}/api/v1/safety/events/stream?lang=${encodeURIComponent(lang)}`
 }
 
 export function createSafetyEventStream(callbacks: SafetyEventStreamCallbacks): SafetyEventStreamHandle {

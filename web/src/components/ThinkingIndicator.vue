@@ -8,9 +8,9 @@
       <div class="agent-bubble thinking-bubble">
         <el-icon class="is-loading"><Loading /></el-icon>
         <div>
-          <strong>{{ waitSeconds >= 20 ? '回答仍在准备中，请稍候' : '正在查询并整理回答' }}</strong>
+          <strong>{{ waitSeconds >= 20 ? t('copilot.thinkingLongWait') : t('copilot.thinkingNormal') }}</strong>
           <small>
-            已等待 {{ waitSeconds }} 秒{{ waitSeconds >= 20 ? ' · 模型和工具查询可能需要一些时间，请勿重复提交。' : ' · 完成后会显示在这里。' }}
+            {{ t('copilot.thinkingWaited', { seconds: waitSeconds }) }}{{ waitSeconds >= 20 ? t('copilot.thinkingLongHint') : t('copilot.thinkingShortHint') }}
           </small>
         </div>
       </div>
@@ -20,6 +20,9 @@
 
 <script setup lang="ts">
 import { Service, Loading } from '@element-plus/icons-vue'
+import { useAppI18n } from '@/i18n/useAppI18n'
+
+const { t } = useAppI18n()
 
 defineProps<{
   waitSeconds: number

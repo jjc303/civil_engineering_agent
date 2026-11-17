@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="`违规证据审查 - ${record?.camera_id || ''}`"
+    :title="t('evidence.title', { camera: record?.camera_id || '' })"
     width="860px"
     destroy-on-close
     class="evidence-dialog"
@@ -9,18 +9,18 @@
     <div v-if="record" class="evidence-container">
       <div class="meta-bar">
         <el-tag :type="severityTagType(record.severity)" effect="dark" size="small">
-          {{ record.severity }}
+          {{ dictionaries.severityLabel(record.severity) }}
         </el-tag>
         <span class="type-name">{{ formatViolationType(record.violation_type) }}</span>
-        <span class="time-str">时间：{{ formatUtc(record.occurred_at_utc) }}</span>
-        <span class="duration-str">持续：{{ record.duration_seconds.toFixed(1) }}s</span>
+        <span class="time-str">{{ t('evidence.timePrefix') }}{{ formatUtc(record.occurred_at_utc) }}</span>
+        <span class="duration-str">{{ t('evidence.durationPrefix') }}{{ record.duration_seconds.toFixed(1) }}s</span>
       </div>
 
       <div class="image-wrapper" ref="imageWrapperRef">
         <img
           ref="imgRef"
           :src="mediaUrl"
-          alt="违规抓拍"
+          :alt="t('evidence.snapshotAlt')"
           class="evidence-img"
           @load="onImageLoaded"
           @error="onImageError"
@@ -28,20 +28,20 @@
         <canvas ref="canvasRef" class="overlay-canvas"></canvas>
         <div v-if="imgFailed" class="fallback-placeholder">
           <el-icon :size="48"><PictureFilled /></el-icon>
-          <p>快照媒体加载失败或不存在 ({{ record.snapshot_uri }})</p>
+          <p>{{ t('evidence.loadFailed', { uri: record.snapshot_uri || '' }) }}</p>
         </div>
       </div>
 
       <div class="details-panel">
-        <div class="detail-item"><strong>事件 UUID：</strong><code>{{ record.event_uuid }}</code></div>
-        <div class="detail-item"><strong>监控会话：</strong>{{ record.monitor_session_id }}</div>
-        <div class="detail-item" v-if="record.zone_name"><strong>关联危险区：</strong>{{ record.zone_name }}</div>
+        <div class="detail-item"><strong>{{ t('evidence.eventUuid') }}</strong><code>{{ record.event_uuid }}</code></div>
+        <div class="detail-item"><strong>{{ t('evidence.session') }}</strong>{{ record.monitor_session_id }}</div>
+        <div class="detail-item" v-if="record.zone_name"><strong>{{ t('evidence.zone') }}</strong>{{ record.zone_name }}</div>
         <div class="detail-item" v-if="record.extra_details?.bbox">
-          <strong>目标检测框 (原分辨率)：</strong>
+          <strong>{{ t('evidence.bbox') }}</strong>
           <code>[{{ record.extra_details.bbox.join(', ') }}]</code>
         </div>
         <div class="detail-item" v-if="record.extra_details?.feet_point">
-          <strong>脚底判定点：</strong>
+          <strong>{{ t('evidence.feetPoint') }}</strong>
           <code>[{{ record.extra_details.feet_point.join(', ') }}]</code>
         </div>
       </div>
@@ -53,9 +53,11 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import type { ViolationRecord, ViolationSeverity, ViolationType } from '@/types/contract'
 import { resolveMediaUrl } from '@/api/client'
+import { useAppI18n } from '@/i18n/useAppI18n'
 import { useDictionariesStore } from '@/stores/dictionaries'
 import { PictureFilled } from '@element-plus/icons-vue'
 
+const { t, locale, formatDateTime } = useAppI18n()
 const dictionaries = useDictionariesStore()
 dictionaries.ensureLoaded()
 
@@ -83,15 +85,12 @@ const mediaUrl = computed(() => {
   return resolveMediaUrl(props.record.snapshot_uri)
 })
 
-watch(
-  () => props.record,
-  () => {
-    imgFailed.value = false
-    nextTick(() => {
-      drawAnnotations()
-    })
-  }
-)
+watch([() => props.record, locale], () => {
+  imgFailed.value = false
+  nextTick(() => {
+    drawAnnotations()
+  })
+})
 
 function onImageLoaded() {
   imgFailed.value = false
@@ -145,7 +144,7 @@ function drawAnnotations() {
     // 标签背景
     ctx.fillStyle = '#ef4444'
     ctx.font = 'bold 12px sans-serif'
-    const label = `${record.violation_type} #${record.track_id}`
+    const label = `${formatViolationType(record.violation_type)} #${record.track_id}`
     const textWidth = ctx.measureText(label).width
     ctx.fillRect(dx, dy - 20 > 0 ? dy - 20 : 0, textWidth + 8, 20)
     ctx.fillStyle = '#ffffff'
@@ -180,8 +179,7 @@ function formatViolationType(t: ViolationType): string {
 
 function formatUtc(utcStr: string): string {
   if (!utcStr) return '-'
-  const d = new Date(utcStr)
-  return d.toLocaleString()
+  return formatDateTime(utcStr)
 }
 </script>
 

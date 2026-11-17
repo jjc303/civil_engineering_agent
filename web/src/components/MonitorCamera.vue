@@ -1,20 +1,20 @@
 <template>
-  <article class="camera-tile" :class="{ 'has-event': activeEventCount > 0 }" :aria-label="`摄像头 ${camera.camera_id}`">
+  <article class="camera-tile" :class="{ 'has-event': activeEventCount > 0 }" :aria-label="t('monitorCamera.ariaLabel', { id: camera.camera_id })">
     <div class="frame">
-      <img v-if="canPreview && !failed" :key="`${camera.monitor_session_id}-${retry}`" :src="previewUrl(camera.camera_id)" :alt="`${camera.camera_id} 监控预览`" @error="failed = true" />
+      <img v-if="canPreview && !failed" :key="`${camera.monitor_session_id}-${retry}`" :src="previewUrl(camera.camera_id)" :alt="t('monitorCamera.previewAlt', { id: camera.camera_id })" @error="failed = true" />
       <div v-else class="frame-empty">
         <span class="channel-watermark">{{ String(index + 1).padStart(2, '0') }}</span>
         <el-icon><VideoCamera /></el-icon>
-        <strong>{{ isMockEnabled ? '演示通道' : !camera.is_online ? '摄像头离线' : !previewAllowed ? '预览已暂停' : '视频暂不可用' }}</strong>
-        <span>{{ isMockEnabled ? '样例数据不包含实时画面' : !camera.is_online ? '等待设备上报新的状态' : !previewAllowed ? '返回可见页面后恢复' : '请检查监控会话或重试预览' }}</span>
-        <button v-if="failed && canPreview" class="retry-button" @click="retryPreview">重新连接画面</button>
+        <strong>{{ isMockEnabled ? t('monitorCamera.mockChannel') : !camera.is_online ? t('monitorCamera.offlineTitle') : !previewAllowed ? t('monitorCamera.pausedTitle') : t('monitorCamera.unavailableTitle') }}</strong>
+        <span>{{ isMockEnabled ? t('monitorCamera.mockDesc') : !camera.is_online ? t('monitorCamera.offlineDesc') : !previewAllowed ? t('monitorCamera.pausedDesc') : t('monitorCamera.unavailableDesc') }}</span>
+        <button v-if="failed && canPreview" class="retry-button" @click="retryPreview">{{ t('monitorCamera.reconnect') }}</button>
       </div>
-      <div class="frame-top"><span class="channel-id">CAM / {{ String(index + 1).padStart(2, '0') }}</span><span v-if="activeEventCount" class="event-count">{{ activeEventCount }} 条列表内活动事件</span></div>
-      <div class="frame-bottom"><span><i :class="{ online: camera.is_online && !stale }" />{{ stale ? '状态待更新' : camera.is_online ? '在线' : '离线' }}</span><button :aria-label="`放大 ${camera.camera_id}`" title="放大此路画面" @click="$emit('focus', camera.camera_id)"><el-icon><FullScreen /></el-icon></button></div>
+      <div class="frame-top"><span class="channel-id">CAM / {{ String(index + 1).padStart(2, '0') }}</span><span v-if="activeEventCount" class="event-count">{{ t('monitorCamera.activeEventsCount', { count: activeEventCount }) }}</span></div>
+      <div class="frame-bottom"><span><i :class="{ online: camera.is_online && !stale }" />{{ stale ? t('monitorCamera.statusStale') : camera.is_online ? t('monitorCamera.online') : t('monitorCamera.offline') }}</span><button :aria-label="t('monitorCamera.zoomAria', { id: camera.camera_id })" :title="t('monitorCamera.zoomTitle')" @click="$emit('focus', camera.camera_id)"><el-icon><FullScreen /></el-icon></button></div>
     </div>
-    <div class="camera-info"><div class="identity"><b :title="camera.camera_id">{{ locationLabel }}</b><small>{{ camera.camera_id }}</small></div><span class="people-chip">{{ camera.active_workers_count }} 人在画面中</span></div>
-    <details class="technical-details"><summary>运行详情 <span>帧率 / 模型 / 上报时间</span></summary><dl class="camera-meta"><div><dt>检测人数</dt><dd>{{ camera.active_workers_count }} <small>人</small></dd></div><div><dt>已处理帧</dt><dd>{{ camera.processed_frame_id.toLocaleString() }}</dd></div><div><dt>最近上报</dt><dd>{{ timeLabel }}</dd></div></dl><p class="model-detail">模型：{{ camera.model_name || '未上报' }} · {{ camera.fps.toFixed(1) }} FPS</p></details>
-    <div class="camera-footer"><div><router-link :to="{ path: '/zones', query: { camera_id: camera.camera_id } }">标定区域 ↗</router-link><router-link :to="{ path: '/violations', query: { camera_id: camera.camera_id } }">查看违规 ↗</router-link></div></div>
+    <div class="camera-info"><div class="identity"><b :title="camera.camera_id">{{ locationLabel }}</b><small>{{ camera.camera_id }}</small></div><span class="people-chip">{{ t('monitorCamera.workersInFrame', { count: camera.active_workers_count }) }}</span></div>
+    <details class="technical-details"><summary>{{ t('monitorCamera.techDetails') }} <span>{{ t('monitorCamera.techDetailsSub') }}</span></summary><dl class="camera-meta"><div><dt>{{ t('monitorCamera.detectedWorkers') }}</dt><dd>{{ camera.active_workers_count }} <small>{{ t('common.unitPeople') }}</small></dd></div><div><dt>{{ t('monitorCamera.processedFrames') }}</dt><dd>{{ camera.processed_frame_id.toLocaleString() }}</dd></div><div><dt>{{ t('monitorCamera.lastReported') }}</dt><dd>{{ timeLabel }}</dd></div></dl><p class="model-detail">{{ t('monitorCamera.modelLabel', { name: camera.model_name || t('monitorCamera.modelUnknown'), fps: camera.fps.toFixed(1) }) }}</p></details>
+    <div class="camera-footer"><div><router-link :to="{ path: '/zones', query: { camera_id: camera.camera_id } }">{{ t('monitorCamera.calibrateZone') }}</router-link><router-link :to="{ path: '/violations', query: { camera_id: camera.camera_id } }">{{ t('monitorCamera.viewViolations') }}</router-link></div></div>
   </article>
 </template>
 
@@ -23,16 +23,17 @@ import { computed, ref, watch } from 'vue'
 import { VideoCamera, FullScreen } from '@element-plus/icons-vue'
 import { previewUrl } from '@/api/cameraManagement'
 import { isMockEnabled } from '@/api/client'
-import { utcDate } from '@/utils/monitoring'
+import { useAppI18n } from '@/i18n/useAppI18n'
 import type { CameraStatusResponse } from '@/types/contract'
 
 const props = defineProps<{ camera: CameraStatusResponse; index: number; activeEventCount: number; stale: boolean; previewAllowed: boolean }>()
 defineEmits<{ focus: [cameraId: string] }>()
+const { t, formatTime } = useAppI18n()
 const failed = ref(false)
 const retry = ref(0)
 const canPreview = computed(() => !isMockEnabled && props.camera.is_online && props.previewAllowed)
 const locationLabel = computed(() => typeof props.camera.extra_details.location === 'string' ? props.camera.extra_details.location : props.camera.camera_id)
-const timeLabel = computed(() => utcDate(props.camera.reported_at_utc).toLocaleTimeString('zh-CN', { hour12: false }))
+const timeLabel = computed(() => formatTime(props.camera.reported_at_utc))
 function retryPreview() { retry.value++; failed.value = false }
 watch([() => props.camera.monitor_session_id, () => props.camera.is_online], retryPreview)
 </script>

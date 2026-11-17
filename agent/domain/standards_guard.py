@@ -4,25 +4,29 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
+from agent.i18n import to_simplified_text
+
 # Shared patterns for Chinese engineering standards, regulations, and clauses
 _STANDARD_CODE_EXPR = (
     r"(?<![A-Za-z0-9])(?:GB/T|GB|JGJ/T|JGJ|JTG|CJJ|JG/T|DL/T|DL|SL|DB\d{0,2}(?:/T)?)"
     r"\s*(?:/T\s*)?\d{2,6}(?:[.-]\d+)*(?:-\d{4})?(?![A-Za-z0-9])"
 )
-_DECIMAL_CLAUSE_EXPR = r"第?\d+(?:\.\d+)+条"
-_CHINESE_OR_INT_CLAUSE_EXPR = r"第[一二三四五六七八九十百千零〇\d]+条"
+_DECIMAL_CLAUSE_EXPR = r"第?\d+(?:\.\d+)+[条條]"
+_CHINESE_OR_INT_CLAUSE_EXPR = r"第[一二三四五六七八九十百千零〇\d]+[条條]"
 _CLAUSE_EXPR = f"{_DECIMAL_CLAUSE_EXPR}|{_CHINESE_OR_INT_CLAUSE_EXPR}"
 _STRICT_BOOK_TITLE_EXPR = r"《[^》]{2,100}》"
-_STANDARD_BOOK_TITLE_EXPR = r"《[^》\n]{0,80}(?:规范|标准|规程|导则|图集|条例|规定|办法)[^》\n]{0,80}》"
+_STANDARD_BOOK_TITLE_EXPR = (
+    r"《[^》\n]{0,80}(?:规范|規範|标准|標準|规程|規程|导则|導則|图集|圖集|条例|條例|规定|規定|办法|辦法)[^》\n]{0,80}》"
+)
 
 _LIST_OR_DATA_SUFFIX_RE = re.compile(
-    r"^\s*(?:[，,：:、；;。.\s]|(?:建议|措施|违规|记录|数据|任务|事件|告警|隐患|问题|原因|要求是|内容|情况|通知|消息))"
+    r"^\s*(?:[，,：:、；;。.\s]|(?:建议|建議|措施|违规|違規|记录|記錄|数据|數據|任务|任務|事件|告警|隐患|隱患|问题|問題|原因|要求是|内容|內容|情况|情況|通知|消息))"
 )
 _CITATION_PREFIX_RE = re.compile(
-    r"(?:依据|根据|按照|参照|遵照|违反|符合|引用|规定|条款|》|[A-Za-z0-9])\s*$"
+    r"(?:依据|依據|根据|根據|按照|参照|參照|遵照|违反|違反|符合|引用|规定|規定|条款|條款|》|[A-Za-z0-9])\s*$"
 )
 _CITATION_SUFFIX_RE = re.compile(
-    r"^\s*(?:规定|要求|明确|指出|提出|执行|办理|处罚)"
+    r"^\s*(?:规定|規定|要求|明确|明確|指出|提出|执行|執行|办理|辦理|处罚|處罰)"
 )
 
 STRICT_STANDARD_REFERENCE_RE = re.compile(
@@ -39,7 +43,7 @@ CHAT_STANDARD_REFERENCE_RE = re.compile(
 def _is_clause_citation(match: re.Match[str], text: str) -> bool:
     """Distinguish actual engineering standard clause citations from ordinal list/data items."""
     raw = match.group()
-    if "." in raw or re.match(r"^\d+(?:\.\d+)+条$", raw):
+    if "." in raw or re.match(r"^\d+(?:\.\d+)+[条條]$", raw):
         return True
 
     start, end = match.start(), match.end()
@@ -59,8 +63,8 @@ def _is_clause_citation(match: re.Match[str], text: str) -> bool:
 
 
 def normalize_evidence_text(text: str) -> str:
-    """Strip whitespace and casefold for robust substring matching."""
-    return re.sub(r"\s+", "", text).casefold()
+    """Normalize Chinese script, strip whitespace, and casefold for robust substring matching."""
+    return re.sub(r"\s+", "", to_simplified_text(text)).casefold()
 
 
 def find_unsupported_standard_references(

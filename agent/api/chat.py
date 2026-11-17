@@ -1,20 +1,25 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from agent.api.dependencies import get_chat_service, get_write_action_service
+from agent.api.dependencies import get_chat_service, get_request_locale, get_write_action_service
 from agent.contracts.actions import ActionConfirmationRequest, ActionExecutionResponse, PendingActionResponse
 from agent.contracts.chat import ChatRequest, ChatResponse, ToolDecision
 from agent.contracts.learning import TrainingCreate
+from agent.i18n import SupportedLocale, localize_response
 from agent.services.agent_write_actions import AgentWriteActionError
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent-chat"])
 
 
 @router.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest, http_request: Request) -> ChatResponse:
-    return get_chat_service(http_request).answer(request)
+def chat(
+    request: ChatRequest,
+    http_request: Request,
+    locale: SupportedLocale = Depends(get_request_locale),
+) -> ChatResponse:
+    return get_chat_service(http_request).answer(request, locale=locale)
 
 
 class TrainingActionProposal(BaseModel):
@@ -23,7 +28,11 @@ class TrainingActionProposal(BaseModel):
 
 
 @router.post("/learning/training/propose", response_model=PendingActionResponse)
-def propose_training(request: TrainingActionProposal, http_request: Request) -> PendingActionResponse:
+def propose_training(
+    request: TrainingActionProposal,
+    http_request: Request,
+    locale: SupportedLocale = Depends(get_request_locale),
+) -> PendingActionResponse:
     training = request.training
     decision = ToolDecision(
         tool_name="create_training_task",
@@ -36,22 +45,41 @@ def propose_training(request: TrainingActionProposal, http_request: Request) -> 
         training_pass_score=training.pass_score,
     )
     try:
-        return get_write_action_service(http_request).propose(request.conversation_id, decision)
+        return localize_response(
+            get_write_action_service(http_request).propose(request.conversation_id, decision),
+            locale,
+        )
     except AgentWriteActionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/actions/{confirmation_id}/confirm", response_model=ActionExecutionResponse)
-def confirm_action(confirmation_id: str, request: ActionConfirmationRequest, http_request: Request) -> ActionExecutionResponse:
+def confirm_action(
+    confirmation_id: str,
+    request: ActionConfirmationRequest,
+    http_request: Request,
+    locale: SupportedLocale = Depends(get_request_locale),
+) -> ActionExecutionResponse:
     try:
-        return get_write_action_service(http_request).confirm(confirmation_id, request.conversation_id)
+        return localize_response(
+            get_write_action_service(http_request).confirm(confirmation_id, request.conversation_id),
+            locale,
+        )
     except AgentWriteActionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/actions/{confirmation_id}/cancel", response_model=ActionExecutionResponse)
-def cancel_action(confirmation_id: str, request: ActionConfirmationRequest, http_request: Request) -> ActionExecutionResponse:
+def cancel_action(
+    confirmation_id: str,
+    request: ActionConfirmationRequest,
+    http_request: Request,
+    locale: SupportedLocale = Depends(get_request_locale),
+) -> ActionExecutionResponse:
     try:
-        return get_write_action_service(http_request).cancel(confirmation_id, request.conversation_id)
+        return localize_response(
+            get_write_action_service(http_request).cancel(confirmation_id, request.conversation_id),
+            locale,
+        )
     except AgentWriteActionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

@@ -7,6 +7,7 @@ from typing import Any
 
 from agent.contracts.chat import ToolDecision, ToolResult
 from agent.contracts.query import ViolationQuery
+from agent.i18n import to_simplified_text
 from agent.tools.weather import extract_weather_location
 from .protocol import ChatModelPort
 
@@ -17,6 +18,7 @@ class FakeChatModel(ChatModelPort):
     model_name = "fake-safety-chat-v1"
 
     def decide(self, question: str, previous_results: Sequence[ToolResult], memory_context: str = "", tool_catalog: Sequence[dict[str, str]] = ()) -> ToolDecision | None:
+        question = to_simplified_text(question)
         normalized = question.lower()
         camera_id = self._camera_id(question)
         if previous_results:
@@ -82,7 +84,9 @@ class FakeChatModel(ChatModelPort):
         memory_context: str = "",
         tool_catalog: Sequence[dict[str, str]] = (),
         capability_status: dict[str, Any] | None = None,
+        response_locale: str = "zh-CN",
     ) -> str:
+        question = to_simplified_text(question)
         if not results:
             if (tool_catalog or capability_status) and self._asks_for_capabilities(question):
                 return self._format_capability_answer(tool_catalog, capability_status)
@@ -128,7 +132,12 @@ class FakeChatModel(ChatModelPort):
                     fragments.append("未查询到该地点的天气信息。")
         return "".join(fragments)
 
-    def generate_structured(self, instruction: str, context: dict[str, Any]) -> dict[str, Any]:
+    def generate_structured(
+        self,
+        instruction: str,
+        context: dict[str, Any],
+        response_locale: str = "zh-CN",
+    ) -> dict[str, Any]:
         if "文档摘要" in instruction:
             excerpts = context.get("excerpts") or []
             text = " ".join(str(item.get("text", "")) for item in excerpts if isinstance(item, dict))

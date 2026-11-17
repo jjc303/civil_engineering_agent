@@ -29,6 +29,7 @@ from agent.db.base import Database
 from agent.db.models import SafetyReportModel, TrainingSubmissionModel, TrainingTaskModel
 from agent.domain.standards_guard import guard_standard_references as _guard_standard_references
 from agent.domain.violation_catalog import VIOLATION_RETRIEVAL_TERMS
+from agent.i18n import to_simplified_text
 from agent.llm.protocol import ChatModelPort
 from agent.notifications.protocol import LearningNotificationPort
 from agent.prompts import load_prompt
@@ -387,20 +388,25 @@ class LearningService:
             )
         rows = [row for row in rows if row.document_type != "STANDARD" or row.validity_status != "SUPERSEDED"]
         if risk_type:
-            rows = [row for row in rows if risk_type in (row.risk_tags or [])]
+            normalized_risk = to_simplified_text(risk_type).casefold()
+            rows = [
+                row for row in rows
+                if any(to_simplified_text(tag).casefold() == normalized_risk for tag in (row.risk_tags or []))
+            ]
         scores: dict[str, float] = {}
-        if query.strip() and self.knowledge.rag_manager:
+        normalized_query = to_simplified_text(query.strip())
+        if normalized_query and self.knowledge.rag_manager:
             for kind in ([document_type] if document_type else ["ACCIDENT_REPORT", "STANDARD"]):
-                _, hits = self.knowledge._search_type(kind, query.strip(), self.knowledge.top_k_max)
+                _, hits = self.knowledge._search_type(kind, normalized_query, self.knowledge.top_k_max)
                 for hit in hits:
                     scores[hit.document_id] = max(scores.get(hit.document_id, 0), hit.relevance_score)
-        if query.strip():
-            term = query.strip().casefold()
+        if normalized_query:
+            term = normalized_query.casefold()
             rows = [
                 row
                 for row in rows
-                if term in row.title.casefold()
-                or term in (row.summary or "").casefold()
+                if term in to_simplified_text(row.title).casefold()
+                or term in to_simplified_text(row.summary or "").casefold()
                 or row.document_id in scores
             ]
             rows.sort(key=lambda row: (scores.get(row.document_id, 0), row.created_at_utc), reverse=True)

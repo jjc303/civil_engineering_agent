@@ -1,10 +1,7 @@
 import type { CameraStatusResponse, ViolationRecord } from '../types/contract'
+import { utcDate } from './datetime'
 
-// SQLite responses may omit the offset even though these contract fields are UTC.
-export function utcDate(value: string | Date) {
-  if (value instanceof Date) return value
-  return new Date(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value) ? value : `${value}Z`)
-}
+export { utcDate }
 
 // Convert the browser's local calendar day to UTC for the existing API contract.
 export function todayWindow(now = new Date()) {

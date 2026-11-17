@@ -20,8 +20,14 @@ class ChatModelPort(Protocol):
         memory_context: str = "",
         tool_catalog: Sequence[dict[str, str]] = (),
         capability_status: dict[str, Any] | None = None,
+        response_locale: str = "zh-CN",
     ) -> str:
         """Create a user-facing answer from validated tool results and runtime capability status."""
 
-    def generate_structured(self, instruction: str, context: dict[str, Any]) -> dict[str, Any]:
+    def generate_structured(
+        self,
+        instruction: str,
+        context: dict[str, Any],
+        response_locale: str = "zh-CN",
+    ) -> dict[str, Any]:
         """Generate a JSON object from bounded, server supplied evidence."""

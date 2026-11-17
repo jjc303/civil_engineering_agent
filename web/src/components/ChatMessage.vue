@@ -7,7 +7,7 @@
 
     <!-- Message content -->
     <div class="message-content">
-      <div class="sender-name">{{ msg.role === 'user' ? '用户' : assistantName }}</div>
+      <div class="sender-name">{{ msg.role === 'user' ? t('copilot.userSender') : assistantName }}</div>
 
       <!-- User bubble -->
       <div v-if="msg.role === 'user'" class="user-bubble">
@@ -28,37 +28,37 @@
 
         <!-- Markdown rendered answer -->
         <div class="markdown-body" v-html="renderMarkdown(msg.text)"></div>
-        <button v-if="msg.retryQuestion" class="retry-question" :disabled="thinking" @click="$emit('selectPrompt', msg.retryQuestion!)">重新提问 ↗</button>
+        <button v-if="msg.retryQuestion" class="retry-question" :disabled="thinking" @click="$emit('selectPrompt', msg.retryQuestion!)">{{ t('copilot.retryQuestion') }}</button>
 
         <!-- Report previews -->
-        <section v-if="msg.reportPreviews?.length" class="report-previews" aria-label="安全报告预览">
-          <div class="report-previews-heading"><strong>安全报告预览</strong><span>共 {{ msg.reportCount ?? msg.reportPreviews.length }} 份</span></div>
+        <section v-if="msg.reportPreviews?.length" class="report-previews" :aria-label="t('copilot.reportPreviewsAria')">
+          <div class="report-previews-heading"><strong>{{ t('copilot.reportPreviewsTitle') }}</strong><span>{{ t('copilot.totalItemsCount', { count: msg.reportCount ?? msg.reportPreviews.length }) }}</span></div>
           <article v-for="report in msg.reportPreviews" :key="report.report_id" class="report-preview-card">
-            <div class="report-preview-top"><strong>{{ reportDate(report.period_start_utc) }} — {{ reportDate(report.period_end_utc, true) }} 安全报告</strong><el-tag size="small" :type="report.status === 'CONFIRMED' ? 'success' : 'warning'">{{ report.status === 'CONFIRMED' ? '已确认' : '草稿' }}</el-tag></div>
-            <div class="report-preview-meta">{{ report.event_count }} 条有效违规事件</div>
-            <p>{{ report.summary || '暂无报告摘要' }}</p>
-            <div class="report-preview-actions"><el-button link type="primary" @click="$emit('openReportDetail', report.report_id)">查看报告详情</el-button><el-button v-if="report.pdf_url" link type="primary" @click="$emit('previewReportPdf', report.report_id)">预览 PDF</el-button><el-button v-if="report.pdf_url" link @click="$emit('downloadReportPdf', report.report_id)">下载 PDF</el-button></div>
+            <div class="report-preview-top"><strong>{{ t('copilot.safetyReportTitle', { range: `${reportDate(report.period_start_utc)} — ${reportDate(report.period_end_utc, true)}` }) }}</strong><el-tag size="small" :type="report.status === 'CONFIRMED' ? 'success' : 'warning'">{{ report.status === 'CONFIRMED' ? t('enums.reportStatus.CONFIRMED') : t('enums.reportStatus.DRAFT') }}</el-tag></div>
+            <div class="report-preview-meta">{{ t('copilot.reportEventCount', { count: report.event_count }) }}</div>
+            <p>{{ report.summary || t('copilot.noReportSummary') }}</p>
+            <div class="report-preview-actions"><el-button link type="primary" @click="$emit('openReportDetail', report.report_id)">{{ t('copilot.viewReportDetail') }}</el-button><el-button v-if="report.pdf_url" link type="primary" @click="$emit('previewReportPdf', report.report_id)">{{ t('copilot.previewPdf') }}</el-button><el-button v-if="report.pdf_url" link @click="$emit('downloadReportPdf', report.report_id)">{{ t('copilot.downloadPdf') }}</el-button></div>
           </article>
-          <router-link v-if="(msg.reportCount ?? 0) > msg.reportPreviews.length" to="/learning" class="report-more">前往学习中心查看全部报告 →</router-link>
+          <router-link v-if="(msg.reportCount ?? 0) > msg.reportPreviews.length" to="/learning" class="report-more">{{ t('copilot.viewAllReports') }}</router-link>
         </section>
 
         <!-- Training previews -->
-        <section v-if="msg.trainingPreviews?.length" class="report-previews" aria-label="培训任务预览">
-          <div class="report-previews-heading"><strong>培训任务预览</strong><span>共 {{ msg.trainingCount ?? msg.trainingPreviews.length }} 项</span></div>
+        <section v-if="msg.trainingPreviews?.length" class="report-previews" :aria-label="t('copilot.trainingPreviewsAria')">
+          <div class="report-previews-heading"><strong>{{ t('copilot.trainingPreviewsTitle') }}</strong><span>{{ t('copilot.totalTasksCount', { count: msg.trainingCount ?? msg.trainingPreviews.length }) }}</span></div>
           <article v-for="training in msg.trainingPreviews" :key="training.training_id" class="report-preview-card">
-            <div class="report-preview-top"><strong>{{ training.title }}</strong><el-tag size="small" :type="training.status === 'PUBLISHED' ? 'success' : 'warning'">{{ training.status === 'PUBLISHED' ? '已发布' : '草稿' }}</el-tag></div>
-            <div class="report-preview-meta">目标 {{ training.target_count }} 人 · {{ training.question_count }} 道题</div>
-            <p>{{ training.material_preview || '暂无学习材料摘要' }}</p>
-            <div class="report-preview-actions"><el-button link type="primary" @click="$emit('openTrainingDetail', training.training_id)">查看培训详情</el-button><a v-if="training.public_url && learningPathValue(training.public_url)" class="training-link" :href="learningPathValue(training.public_url)" target="_blank" rel="noopener">打开学习页 ↗</a></div>
+            <div class="report-preview-top"><strong>{{ training.title }}</strong><el-tag size="small" :type="training.status === 'PUBLISHED' ? 'success' : 'warning'">{{ training.status === 'PUBLISHED' ? t('enums.trainingStatus.PUBLISHED') : t('enums.trainingStatus.DRAFT') }}</el-tag></div>
+            <div class="report-preview-meta">{{ t('copilot.trainingPreviewMeta', { target: training.target_count, questions: training.question_count }) }}</div>
+            <p>{{ training.material_preview || t('copilot.noMaterialSummary') }}</p>
+            <div class="report-preview-actions"><el-button link type="primary" @click="$emit('openTrainingDetail', training.training_id)">{{ t('copilot.viewTrainingDetail') }}</el-button><a v-if="training.public_url && learningPathValue(training.public_url)" class="training-link" :href="learningPathValue(training.public_url)" target="_blank" rel="noopener">{{ t('copilot.openStudyPage') }}</a></div>
           </article>
-          <router-link v-if="(msg.trainingCount ?? 0) > msg.trainingPreviews.length" to="/learning" class="report-more">前往学习中心查看全部培训 →</router-link>
+          <router-link v-if="(msg.trainingCount ?? 0) > msg.trainingPreviews.length" to="/learning" class="report-more">{{ t('copilot.viewAllTraining') }}</router-link>
         </section>
 
         <!-- Evidence cards -->
         <div v-if="showEvidence && msg.evidence && msg.evidence.length > 0" class="evidence-section">
           <div class="evidence-header">
             <el-icon><Picture /></el-icon>
-            <span>关联证据快照 ({{ msg.evidence.length }} 项):</span>
+            <span>{{ t('copilot.evidenceHeader', { count: msg.evidence.length }) }}</span>
           </div>
           <div class="evidence-grid">
             <div
@@ -73,11 +73,11 @@
                 preview-teleported
                 fit="cover"
                 class="thumb-img"
-                alt="证据快照，点击预览"
+                :alt="t('copilot.evidenceAlt')"
                 @click.stop
               />
               <div class="evidence-info">
-                <span class="ev-time">{{ formatTime(ev.occurred_at_utc) }}</span>
+                <span class="ev-time">{{ formatMsgTime(ev.occurred_at_utc) }}</span>
                 <span class="ev-uuid font-mono">{{ ev.event_uuid.substring(0, 8) }}...</span>
               </div>
             </div>
@@ -86,16 +86,16 @@
 
         <!-- Knowledge citations -->
         <div v-if="msg.knowledgeCitations && msg.knowledgeCitations.length > 0" class="evidence-section">
-          <div class="evidence-header"><el-icon><Document /></el-icon><span>知识资料引用 ({{ msg.knowledgeCitations.length }} 项):</span></div>
+          <div class="evidence-header"><el-icon><Document /></el-icon><span>{{ t('copilot.citationsHeader', { count: msg.knowledgeCitations.length }) }}</span></div>
           <div v-for="citation in msg.knowledgeCitations" :key="citation.chunk_id" class="tool-item">
-            <span>{{ citation.document_type === 'STANDARD' ? '规范' : '事故报告' }}：{{ citation.title }}（v{{ citation.version_no }}，{{ citation.page_or_section }}）<small v-if="citation.source_label"> · {{ citation.source_label }}</small></span>
-            <el-tag size="small" type="info">相关度 {{ citation.relevance_score.toFixed(2) }}</el-tag>
+            <span>{{ citation.document_type === 'STANDARD' ? t('enums.documentType.STANDARD_SHORT') : t('enums.documentType.ACCIDENT_REPORT') }}：{{ citation.title }}（v{{ citation.version_no }}，{{ citation.page_or_section }}）<small v-if="citation.source_label"> · {{ citation.source_label }}</small></span>
+            <el-tag size="small" type="info">{{ t('copilot.relevanceScore', { score: citation.relevance_score.toFixed(2) }) }}</el-tag>
           </div>
         </div>
 
         <!-- Guided selection -->
         <div v-if="msg.guidedSelection" class="guided-selection">
-          <div class="guided-selection-title">请选择操作目标</div>
+          <div class="guided-selection-title">{{ t('copilot.guidedTitle') }}</div>
           <div class="guided-selection-prompt">{{ msg.guidedSelection.prompt }}</div>
           <div v-if="msg.guidedSelection.options.length" class="guided-selection-options">
             <el-button
@@ -107,24 +107,24 @@
               <span>{{ option.label }}</span><small>{{ option.description }}</small>
             </el-button>
           </div>
-          <el-button v-else-if="msg.guidedSelection.kind === 'TRAINING_REPORT'" type="primary" plain size="small" @click="$emit('selectPrompt', '生成本周安全报告')">生成本周安全报告</el-button>
+          <el-button v-else-if="msg.guidedSelection.kind === 'TRAINING_REPORT'" type="primary" plain size="small" @click="$emit('selectPrompt', t('copilot.generateWeeklyReport'))">{{ t('copilot.generateWeeklyReport') }}</el-button>
         </div>
 
         <!-- Pending action -->
         <div v-if="msg.pendingAction" class="pending-action">
-          <div class="pending-action-title">请确认后执行</div>
+          <div class="pending-action-title">{{ t('copilot.pendingConfirmTitle') }}</div>
           <div class="pending-action-summary">{{ msg.pendingAction.summary }}</div>
           <div class="pending-action-meta">
             <el-tag :type="actionTagType(msg.pendingAction.status)" size="small">{{ actionStatusText(msg.pendingAction.status) }}</el-tag>
-            <span v-if="msg.pendingAction.status === 'PENDING'">有效期至 {{ formatDateTime(msg.pendingAction.expires_at_utc) }}</span>
+            <span v-if="msg.pendingAction.status === 'PENDING'">{{ t('copilot.validUntil', { time: formatMsgDateTime(msg.pendingAction.expires_at_utc) }) }}</span>
           </div>
           <div v-if="msg.pendingAction.status === 'PENDING'" class="pending-action-buttons">
-            <el-button size="small" type="primary" :loading="msg.actionBusy" @click="$emit('confirmAction', msg)">确认执行</el-button>
-            <el-button size="small" :disabled="msg.actionBusy" @click="$emit('cancelAction', msg)">取消</el-button>
+            <el-button size="small" type="primary" :loading="msg.actionBusy" @click="$emit('confirmAction', msg)">{{ t('tasks.confirmExecute') }}</el-button>
+            <el-button size="small" :disabled="msg.actionBusy" @click="$emit('cancelAction', msg)">{{ t('common.cancel') }}</el-button>
           </div>
           <div v-if="msg.actionResult" class="pending-action-result">{{ msg.actionResult }}</div>
-          <div v-if="msg.actionReportId" class="report-preview-actions"><el-button link type="primary" @click="$emit('openReportDetail', msg.actionReportId)">查看报告详情</el-button><el-button v-if="msg.actionReportPdf" link type="primary" @click="$emit('previewReportPdf', msg.actionReportId)">预览 PDF</el-button><el-button v-if="msg.actionReportPdf" link @click="$emit('downloadReportPdf', msg.actionReportId)">下载 PDF</el-button></div>
-          <div v-if="msg.actionTrainingId" class="report-preview-actions"><el-button link type="primary" @click="$emit('openTrainingDetail', msg.actionTrainingId)">查看培训详情</el-button><a v-if="msg.actionTrainingUrl && trainingLinkPath(msg.actionTrainingUrl)" class="training-link" :href="trainingLinkPath(msg.actionTrainingUrl)" target="_blank" rel="noopener">打开学习页 ↗</a></div>
+          <div v-if="msg.actionReportId" class="report-preview-actions"><el-button link type="primary" @click="$emit('openReportDetail', msg.actionReportId)">{{ t('copilot.viewReportDetail') }}</el-button><el-button v-if="msg.actionReportPdf" link type="primary" @click="$emit('previewReportPdf', msg.actionReportId)">{{ t('copilot.previewPdf') }}</el-button><el-button v-if="msg.actionReportPdf" link @click="$emit('downloadReportPdf', msg.actionReportId)">{{ t('copilot.downloadPdf') }}</el-button></div>
+          <div v-if="msg.actionTrainingId" class="report-preview-actions"><el-button link type="primary" @click="$emit('openTrainingDetail', msg.actionTrainingId)">{{ t('copilot.viewTrainingDetail') }}</el-button><a v-if="msg.actionTrainingUrl && trainingLinkPath(msg.actionTrainingUrl)" class="training-link" :href="trainingLinkPath(msg.actionTrainingUrl)" target="_blank" rel="noopener">{{ t('copilot.openStudyPage') }}</a></div>
         </div>
 
         <!-- Tool trace -->
@@ -134,7 +134,7 @@
               <template #title>
                 <div class="trace-title">
                   <el-icon><Operation /></el-icon>
-                  <span>查看查询过程 · {{ msg.toolTrace.length }} 次工具调用</span>
+                  <span>{{ t('copilot.toolTraceHeader', { count: msg.toolTrace.length }) }}</span>
                 </div>
               </template>
               <el-timeline style="padding-left: 8px; margin-top: 8px">
@@ -163,8 +163,12 @@
 import { UserFilled, Service, Picture, Document, Operation } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import { resolveMediaUrl } from '@/api/client'
+import { useAppI18n } from '@/i18n/useAppI18n'
+import { getLearningTimezone, utcDate } from '@/utils/datetime'
 import { learningPath as learningPathValue } from '@/utils/deployment'
 import type { ChatEvidence, GuidedSelection, GuidedSelectionOption, PendingAction, PendingActionStatus, ReportPreview, TrainingPreview, ToolTraceItem } from '@/types/contract'
+
+const { t, formatTime: formatLocaleTime, formatDateTime: formatLocaleDateTime, formatDate: formatLocaleDate } = useAppI18n()
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -219,32 +223,34 @@ function renderMarkdown(content: string): string {
   return md.render(content || '')
 }
 
+const DEGRADED_TITLE_KEYS: Record<string, string> = {
+  REQUEST_TIMEOUT: 'copilot.degradedTimeout',
+  REQUEST_SERVER_ERROR: 'copilot.degradedServer',
+  REQUEST_FAILED: 'copilot.degradedNetwork',
+  UNSUPPORTED_STANDARD_REFERENCE: 'copilot.degradedUnsupported',
+  STANDARDS_RETRIEVAL_FAILED: 'copilot.degradedRetrieval',
+}
+
 function degradedTitle(code?: string | null): string {
-  if (code === 'REQUEST_TIMEOUT') return '回答等待超时'
-  if (code === 'REQUEST_SERVER_ERROR') return '服务暂时无法完成请求'
-  if (code === 'REQUEST_FAILED') return '暂时无法连接服务'
-  if (code === 'UNSUPPORTED_STANDARD_REFERENCE') return '规范依据不足，请核对原文'
-  if (code === 'STANDARDS_RETRIEVAL_FAILED') return '规范资料暂时无法检索'
-  return '回答未完整完成，请核对依据'
+  return t((code && DEGRADED_TITLE_KEYS[code]) || 'copilot.degradedDefault')
 }
 
-function formatTime(utcStr: string): string {
+function formatMsgTime(utcStr: string): string {
   if (!utcStr) return '-'
-  return new Date(utcStr).toLocaleTimeString()
+  return formatLocaleTime(utcStr)
 }
 
-function formatDateTime(utcStr: string): string {
-  return new Date(utcStr).toLocaleString()
+function formatMsgDateTime(utcStr: string): string {
+  return formatLocaleDateTime(utcStr)
 }
 
 function reportDate(value: string, exclusiveEnd = false): string {
-  const utcValue = /(?:Z|[+-]\d\d:\d\d)$/.test(value) ? value : `${value}Z`
-  const date = new Date(new Date(utcValue).getTime() - (exclusiveEnd ? 1 : 0))
-  return date.toLocaleDateString('zh-CN', { timeZone: import.meta.env.VITE_LEARNING_TIMEZONE || 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' })
+  const date = new Date(utcDate(value).getTime() - (exclusiveEnd ? 1 : 0))
+  return formatLocaleDate(date, { timeZone: getLearningTimezone(), year: 'numeric', month: '2-digit', day: '2-digit' })
 }
 
 function actionStatusText(status: PendingActionStatus): string {
-  return ({ PENDING: '等待确认', EXECUTING: '执行中', EXECUTED: '已执行', CANCELLED: '已取消', EXPIRED: '已过期', FAILED: '执行失败' } as Record<PendingActionStatus, string>)[status]
+  return t(`enums.pendingActionStatus.${status}`)
 }
 
 function actionTagType(status: PendingActionStatus): 'primary' | 'success' | 'warning' | 'info' | 'danger' {

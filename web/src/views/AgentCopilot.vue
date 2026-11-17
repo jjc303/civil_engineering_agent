@@ -4,19 +4,19 @@
       <header class="header-section">
         <div class="title-area">
           <span class="eyebrow">SAFETY COPILOT</span>
-          <h2>{{ uiConfig?.assistant_name || '智能助手' }}</h2>
-          <p class="subtitle">查询现场风险，核对安全依据，衔接报告与培训。</p>
+          <h2>{{ uiConfig?.assistant_name || t('copilot.defaultAssistantName') }}</h2>
+          <p class="subtitle">{{ t('copilot.subtitle') }}</p>
         </div>
-        <router-link to="/learning" class="learning-entry"><el-icon><Document /></el-icon>进入学习中心 ↗</router-link>
+        <router-link to="/learning" class="learning-entry"><el-icon><Document /></el-icon>{{ t('copilot.enterLearning') }}</router-link>
       </header>
 
       <!-- 问答主体区 -->
       <div class="copilot-layout">
       <div class="chat-container">
-        <div class="chat-heading"><div><span class="assistant-dot" /><strong>安全咨询</strong><span class="chat-heading-note">现场 · 规范 · 教育</span></div><span class="session-label">{{ thinking ? '正在处理' : '当前会话' }}</span></div>
+        <div class="chat-heading"><div><span class="assistant-dot" /><strong>{{ t('copilot.chatTitle') }}</strong><span class="chat-heading-note">{{ t('copilot.chatSubtitle') }}</span></div><span class="session-label">{{ thinking ? t('copilot.sessionThinking') : t('copilot.sessionCurrent') }}</span></div>
 
         <!-- 消息列表 -->
-        <div class="messages-scroll" ref="scrollRef" role="log" aria-label="安全助手对话" :aria-busy="thinking">
+        <div class="messages-scroll" ref="scrollRef" role="log" :aria-label="t('copilot.chatLogAria')" :aria-busy="thinking">
           <WelcomePanel v-if="!hasUserMessages" :thinking="thinking" @select-prompt="selectPrompt" />
 
           <ChatMessage
@@ -25,7 +25,7 @@
             :msg="msg"
             :thinking="thinking"
             :show-evidence="uiConfig?.show_evidence !== false"
-            :assistant-name="uiConfig?.assistant_name || '智能助手'"
+            :assistant-name="uiConfig?.assistant_name || t('copilot.defaultAssistantName')"
             @select-prompt="selectPrompt"
             @view-evidence="viewEvidence"
             @select-guided-target="selectGuidedTarget"
@@ -37,12 +37,12 @@
             @open-training-detail="openTrainingDetail"
           />
 
-          <ThinkingIndicator v-if="thinking" :wait-seconds="waitSeconds" :assistant-name="uiConfig?.assistant_name || '智能助手'" />
+          <ThinkingIndicator v-if="thinking" :wait-seconds="waitSeconds" :assistant-name="uiConfig?.assistant_name || t('copilot.defaultAssistantName')" />
         </div>
 
         <!-- 快捷提问推荐 -->
         <div class="quick-prompts">
-          <span v-if="quickQuestions.length" class="prompt-hint">快捷提问：</span>
+          <span v-if="quickQuestions.length" class="prompt-hint">{{ t('copilot.quickPromptsLabel') }}</span>
           <button
             v-for="(q, qIdx) in quickQuestions"
             :key="qIdx"
@@ -58,22 +58,22 @@
         <div class="input-area">
           <el-input
             v-model="inputQuestion"
-            :placeholder="uiConfig?.input_placeholder || '例如：查看本周安全报告，或查询长沙当前天气'"
+            :placeholder="uiConfig?.input_placeholder || t('copilot.defaultInputPlaceholder')"
             type="textarea"
             :autosize="{ minRows: 2, maxRows: 5 }"
-            aria-label="输入安全问题"
+            :aria-label="t('copilot.inputAria')"
             :disabled="thinking"
             @keydown.enter="handleComposerEnter"
           />
-          <div class="composer-footer"><span>Enter 发送 · Shift + Enter 换行</span><el-button type="primary" :loading="thinking" :disabled="!inputQuestion.trim() && !thinking" @click="handleSend">{{ thinking ? '正在处理' : '发送提问' }} <span v-if="!thinking" aria-hidden="true">↗</span></el-button></div>
+          <div class="composer-footer"><span>{{ t('copilot.composerHint') }}</span><el-button type="primary" :loading="thinking" :disabled="!inputQuestion.trim() && !thinking" @click="handleSend">{{ thinking ? t('copilot.sessionThinking') : t('copilot.sendButton') }} <span v-if="!thinking" aria-hidden="true">↗</span></el-button></div>
         </div>
       </div>
 
       <!-- 侧边栏 -->
-      <aside class="copilot-aside" aria-label="安全教育工作流">
-        <section class="education-guide"><span class="guide-icon"><el-icon><Document /></el-icon></span><span class="section-kicker">连接学习中心</span><h3>让风险有跟进，<br />让学习有依据。</h3><p>将现场问题带入安全报告，再通过案例与规范组织培训。</p><router-link to="/learning">打开安全教育工作台 <span>↗</span></router-link></section>
-        <section class="workflow-card"><span class="section-kicker">建议工作顺序</span><h3>把问题落到行动</h3><ol><li><b>01</b><div><strong>了解现场风险</strong><span>查询事件、摄像头与当前天气</span></div></li><li><b>02</b><div><strong>核对证据和资料</strong><span>查看快照与已检索的规范引用</span></div></li><li><b>03</b><div><strong>衔接报告与培训</strong><span>确认方案后，跟进学习任务</span></div></li></ol><router-link to="/violations">查看违规事件 →</router-link></section>
-        <p class="aside-note">天气查询提供当前状况；全天预报和预警需另行核实。规范依据以回答中的文档引用为准。</p>
+      <aside class="copilot-aside" :aria-label="t('copilot.asideAria')">
+        <section class="education-guide"><span class="guide-icon"><el-icon><Document /></el-icon></span><span class="section-kicker">{{ t('copilot.asideConnect') }}</span><h3>{{ t('copilot.asideHeadline1') }}<br />{{ t('copilot.asideHeadline2') }}</h3><p>{{ t('copilot.asideDesc') }}</p><router-link to="/learning">{{ t('copilot.openLearningWorkbench') }} <span>↗</span></router-link></section>
+        <section class="workflow-card"><span class="section-kicker">{{ t('copilot.workflowKicker') }}</span><h3>{{ t('copilot.workflowTitle') }}</h3><ol><li><b>01</b><div><strong>{{ t('copilot.workflowStep1Title') }}</strong><span>{{ t('copilot.workflowStep1Desc') }}</span></div></li><li><b>02</b><div><strong>{{ t('copilot.workflowStep2Title') }}</strong><span>{{ t('copilot.workflowStep2Desc') }}</span></div></li><li><b>03</b><div><strong>{{ t('copilot.workflowStep3Title') }}</strong><span>{{ t('copilot.workflowStep3Desc') }}</span></div></li></ol><router-link to="/violations">{{ t('copilot.viewViolationsLink') }}</router-link></section>
+        <p class="aside-note">{{ t('copilot.asideNote') }}</p>
       </aside>
       </div>
 
@@ -81,82 +81,82 @@
       <EvidenceModal v-model="modalVisible" :record="selectedViolation" />
 
       <!-- 报告详情对话框 -->
-      <el-dialog v-model="reportDetailOpen" title="安全报告详情" width="800px" destroy-on-close>
+      <el-dialog v-model="reportDetailOpen" :title="t('copilot.reportDetailTitle')" width="800px" destroy-on-close>
         <div v-loading="reportLoading">
           <template v-if="selectedReport">
-            <div class="report-detail-head"><strong>{{ reportDate(selectedReport.period_start_utc) }} — {{ reportDate(selectedReport.period_end_utc, true) }}</strong><el-tag :type="selectedReport.status === 'CONFIRMED' ? 'success' : 'warning'">{{ selectedReport.status === 'CONFIRMED' ? '已确认' : '草稿' }}</el-tag></div>
-            <p>有效违规 {{ selectedReport.statistics.total }} 条 · 重复出现 {{ selectedReport.statistics.repeat_occurrences }} 次</p>
-            <h4>总结</h4><p class="report-detail-text">{{ selectedReport.content.summary }}</p>
-            <h4>风险分析</h4><p class="report-detail-text">{{ selectedReport.content.risk_analysis }}</p>
-            <h4>整改建议</h4><p class="report-detail-text">{{ selectedReport.content.remediation }}</p>
-            <template v-if="selectedReport.citations.length"><h4>规范引用</h4><p v-for="citation in selectedReport.citations" :key="citation.chunk_id" class="report-citation">{{ citation.title }} · {{ citation.page_or_section }}</p></template>
+            <div class="report-detail-head"><strong>{{ reportDate(selectedReport.period_start_utc) }} — {{ reportDate(selectedReport.period_end_utc, true) }}</strong><el-tag :type="selectedReport.status === 'CONFIRMED' ? 'success' : 'warning'">{{ selectedReport.status === 'CONFIRMED' ? t('enums.reportStatus.CONFIRMED') : t('enums.reportStatus.DRAFT') }}</el-tag></div>
+            <p>{{ t('copilot.validViolationsMeta', { total: selectedReport.statistics.total, repeat: selectedReport.statistics.repeat_occurrences }) }}</p>
+            <h4>{{ t('copilot.reportSummary') }}</h4><p class="report-detail-text">{{ selectedReport.content.summary }}</p>
+            <h4>{{ t('copilot.reportRiskAnalysis') }}</h4><p class="report-detail-text">{{ selectedReport.content.risk_analysis }}</p>
+            <h4>{{ t('copilot.reportRemediation') }}</h4><p class="report-detail-text">{{ selectedReport.content.remediation }}</p>
+            <template v-if="selectedReport.citations.length"><h4>{{ t('copilot.citationsTitle') }}</h4><p v-for="citation in selectedReport.citations" :key="citation.chunk_id" class="report-citation">{{ citation.title }} · {{ citation.page_or_section }}</p></template>
           </template>
         </div>
-        <template #footer><el-button @click="reportDetailOpen = false">关闭</el-button><el-button v-if="selectedReport?.pdf_url" type="primary" @click="previewReportPdf(selectedReport.report_id)">预览 PDF</el-button></template>
+        <template #footer><el-button @click="reportDetailOpen = false">{{ t('common.close') }}</el-button><el-button v-if="selectedReport?.pdf_url" type="primary" @click="previewReportPdf(selectedReport.report_id)">{{ t('copilot.previewPdf') }}</el-button></template>
       </el-dialog>
 
       <!-- 培训详情对话框 -->
-      <el-dialog v-model="trainingDetailOpen" title="培训任务详情" width="800px" destroy-on-close @closed="clearTrainingQr">
+      <el-dialog v-model="trainingDetailOpen" :title="t('copilot.trainingDetailTitle')" width="800px" destroy-on-close @closed="clearTrainingQr">
         <div v-loading="trainingLoading">
           <template v-if="selectedTraining">
-            <div class="report-detail-head"><strong>{{ selectedTraining.title }}</strong><el-tag :type="selectedTraining.status === 'PUBLISHED' ? 'success' : 'warning'">{{ selectedTraining.status === 'PUBLISHED' ? '已发布' : '草稿' }}</el-tag></div>
-            <p>目标 {{ selectedTraining.target_count }} 人 · {{ selectedTraining.question_count }} 道题 · 及格分 {{ selectedTraining.pass_score }}</p>
-            <div v-if="trainingStats" class="training-detail-stats">已完成 {{ trainingStats.completed_count }}/{{ trainingStats.target_count }} 人 · 完成率 {{ trainingStats.completion_rate }}% · 平均分 {{ trainingStats.average_score }}</div>
-            <h4>学习材料</h4><p class="report-detail-text">{{ selectedTraining.material }}</p>
-            <h4>选择题</h4><div v-for="(question, index) in selectedTraining.questions" :key="index" class="training-question"><strong>{{ index + 1 }}. {{ question.stem }}</strong><p v-for="(option, optionIndex) in question.options" :key="optionIndex" :class="{ 'correct-option': optionIndex === question.answer }">{{ String.fromCharCode(65 + optionIndex) }}. {{ option }}</p><small v-if="question.evidence">出题依据：{{ question.evidence }}</small></div>
-            <div v-if="selectedTraining.public_url" class="training-access"><img v-if="trainingQrUrl" :src="trainingQrUrl" alt="培训任务二维码" /><a v-if="learningPath(selectedTraining.public_url)" :href="learningPath(selectedTraining.public_url)" target="_blank" rel="noopener">打开工人学习页 ↗</a></div>
+            <div class="report-detail-head"><strong>{{ selectedTraining.title }}</strong><el-tag :type="selectedTraining.status === 'PUBLISHED' ? 'success' : 'warning'">{{ selectedTraining.status === 'PUBLISHED' ? t('enums.trainingStatus.PUBLISHED') : t('enums.trainingStatus.DRAFT') }}</el-tag></div>
+            <p>{{ t('copilot.trainingMeta', { target: selectedTraining.target_count, questions: selectedTraining.question_count, passScore: selectedTraining.pass_score }) }}</p>
+            <div v-if="trainingStats" class="training-detail-stats">{{ t('copilot.trainingStatsSummary', { completed: trainingStats.completed_count, target: trainingStats.target_count, rate: trainingStats.completion_rate, avg: trainingStats.average_score }) }}</div>
+            <h4>{{ t('copilot.studyMaterial') }}</h4><p class="report-detail-text">{{ selectedTraining.material }}</p>
+            <h4>{{ t('copilot.multipleChoice') }}</h4><div v-for="(question, index) in selectedTraining.questions" :key="index" class="training-question"><strong>{{ index + 1 }}. {{ question.stem }}</strong><p v-for="(option, optionIndex) in question.options" :key="optionIndex" :class="{ 'correct-option': optionIndex === question.answer }">{{ String.fromCharCode(65 + optionIndex) }}. {{ option }}</p><small v-if="question.evidence">{{ t('copilot.questionEvidence', { evidence: question.evidence }) }}</small></div>
+            <div v-if="selectedTraining.public_url" class="training-access"><img v-if="trainingQrUrl" :src="trainingQrUrl" :alt="t('copilot.qrAlt')" /><a v-if="learningPath(selectedTraining.public_url)" :href="learningPath(selectedTraining.public_url)" target="_blank" rel="noopener">{{ t('copilot.openWorkerPage') }}</a></div>
           </template>
         </div>
-        <template #footer><el-button @click="trainingDetailOpen = false">关闭</el-button><router-link to="/learning" class="training-link" @click="trainingDetailOpen = false">前往学习中心管理 →</router-link></template>
+        <template #footer><el-button @click="trainingDetailOpen = false">{{ t('common.close') }}</el-button><router-link to="/learning" class="training-link" @click="trainingDetailOpen = false">{{ t('copilot.manageInLearning') }}</router-link></template>
       </el-dialog>
 
       <!-- 整改对话框 -->
-      <el-dialog v-model="rectificationDialogVisible" title="创建整改任务" width="520px" destroy-on-close>
+      <el-dialog v-model="rectificationDialogVisible" :title="t('copilot.createTaskTitle')" width="520px" destroy-on-close>
         <el-form label-position="top">
-          <el-form-item label="已选违规">
+          <el-form-item :label="t('copilot.selectedViolation')">
             <el-input :model-value="selectedRectificationTarget?.label || ''" disabled />
           </el-form-item>
-          <el-form-item label="整改要求" required>
-            <el-input v-model="rectificationForm.title" placeholder="例如：立即补发并佩戴安全帽" />
+          <el-form-item :label="t('tasks.fieldRequirement')" required>
+            <el-input v-model="rectificationForm.title" :placeholder="t('copilot.rectificationTitlePlaceholder')" />
           </el-form-item>
-          <el-form-item label="负责人" required>
-            <el-input v-model="rectificationForm.owner" placeholder="例如：张三" />
+          <el-form-item :label="t('tasks.ownerLabel')" required>
+            <el-input v-model="rectificationForm.owner" :placeholder="t('copilot.rectificationOwnerPlaceholder')" />
           </el-form-item>
-          <el-form-item label="截止时间" required>
-            <el-date-picker v-model="rectificationForm.dueAt" type="datetime" placeholder="选择截止时间" style="width: 100%" />
+          <el-form-item :label="t('tasks.fieldDueAt')" required>
+            <el-date-picker v-model="rectificationForm.dueAt" type="datetime" :placeholder="t('copilot.dueAtPlaceholder')" style="width: 100%" />
           </el-form-item>
-          <el-form-item label="补充说明">
+          <el-form-item :label="t('tasks.fieldDescription')">
             <el-input v-model="rectificationForm.description" type="textarea" :rows="3" />
           </el-form-item>
         </el-form>
         <template #footer>
-          <el-button @click="rectificationDialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="submitRectification">生成待确认操作</el-button>
+          <el-button @click="rectificationDialogVisible = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" @click="submitRectification">{{ t('tasks.proposeAction') }}</el-button>
         </template>
       </el-dialog>
 
       <!-- 培训设置对话框 -->
-      <el-dialog v-model="trainingSetupDialogVisible" title="生成培训任务" width="520px" destroy-on-close>
+      <el-dialog v-model="trainingSetupDialogVisible" :title="t('copilot.createTrainingTitle')" width="520px" destroy-on-close>
         <el-form label-position="top">
-          <el-form-item label="依据报告">
+          <el-form-item :label="t('copilot.sourceReport')">
             <el-input :model-value="selectedTrainingReport?.label || ''" disabled />
           </el-form-item>
-          <el-form-item label="培训主题" required>
-            <el-input v-model="trainingSetupForm.title" maxlength="255" show-word-limit placeholder="例如：本周施工安全教育" />
+          <el-form-item :label="t('copilot.trainingTopic')" required>
+            <el-input v-model="trainingSetupForm.title" maxlength="255" show-word-limit :placeholder="t('copilot.trainingTopicPlaceholder')" />
           </el-form-item>
-          <el-form-item label="目标人数" required>
+          <el-form-item :label="t('copilot.targetCount')" required>
             <el-input-number v-model="trainingSetupForm.targetCount" :min="1" :step="1" controls-position="right" style="width: 100%" />
           </el-form-item>
-          <el-form-item label="题目数量">
+          <el-form-item :label="t('copilot.questionCount')">
             <el-input-number v-model="trainingSetupForm.questionCount" :min="1" :max="20" :step="1" controls-position="right" style="width: 100%" />
           </el-form-item>
-          <el-form-item label="及格分">
+          <el-form-item :label="t('copilot.passScore')">
             <el-input-number v-model="trainingSetupForm.passScore" :min="0" :max="100" :step="1" controls-position="right" style="width: 100%" />
           </el-form-item>
         </el-form>
         <template #footer>
-          <el-button @click="trainingSetupDialogVisible = false">取消</el-button>
-          <el-button type="primary" :loading="trainingSetupBusy" @click="submitTrainingSetup">生成待确认操作</el-button>
+          <el-button @click="trainingSetupDialogVisible = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :loading="trainingSetupBusy" @click="submitTrainingSetup">{{ t('tasks.proposeAction') }}</el-button>
         </template>
       </el-dialog>
     </ErrorBoundary>
@@ -170,6 +170,8 @@ import { Document } from '@element-plus/icons-vue'
 import { cancelPendingAction, confirmPendingAction, getAgentConversationId, proposeTrainingAction, sendChatMessage } from '@/api/chat'
 import * as learningApi from '@/api/learning'
 import { fetchAssistantUiConfig } from '@/api/uiConfig'
+import { useAppI18n, useLocaleRefresh } from '@/i18n/useAppI18n'
+import { getLearningTimezone, utcDate } from '@/utils/datetime'
 import { learningPath } from '@/utils/deployment'
 import type { AssistantUiConfig, ChatEvidence, GuidedSelection, GuidedSelectionOption, PendingAction, ReportPreview, TrainingPreview, ToolTraceItem, ViolationRecord } from '@/types/contract'
 import ChatMessage from '@/components/ChatMessage.vue'
@@ -177,6 +179,8 @@ import WelcomePanel from '@/components/WelcomePanel.vue'
 import ThinkingIndicator from '@/components/ThinkingIndicator.vue'
 import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import EvidenceModal from '@/components/EvidenceModal.vue'
+
+const { t, formatDate } = useAppI18n()
 
 interface ChatMessageItem {
   role: 'user' | 'assistant'
@@ -291,7 +295,7 @@ async function handleSend() {
     const serverFailed = err.response?.status >= 500
     messages.push({
       role: 'assistant',
-      text: timedOut ? '等待回答超过 3 分钟。服务可能仍在处理，请稍后重新提问。涉及执行的操作，请先查看已有待确认卡片。' : serverFailed ? '后台暂时未能完成请求，请稍后再试。如果持续出现，请检查服务日志及磁盘剩余空间。' : '未能连接到助手服务，请检查网络和后台运行状态后重新提问。',
+      text: timedOut ? t('copilot.timeoutErrorText') : serverFailed ? t('copilot.serverErrorText') : t('copilot.networkErrorText'),
       degraded: true,
       errorCode: timedOut ? 'REQUEST_TIMEOUT' : serverFailed ? 'REQUEST_SERVER_ERROR' : 'REQUEST_FAILED',
       retryQuestion: q,
@@ -312,7 +316,7 @@ function selectGuidedTarget(msg: ChatMessageItem, option: GuidedSelectionOption)
   }
   if (msg.guidedSelection?.kind === 'TRAINING_REPORT') {
     selectedTrainingReport.value = option
-    trainingSetupForm.title = '本期施工安全教育'
+    trainingSetupForm.title = t('copilot.defaultTrainingTopic')
     trainingSetupForm.targetCount = undefined
     trainingSetupForm.questionCount = 5
     trainingSetupForm.passScore = 80
@@ -332,7 +336,7 @@ async function submitTrainingSetup() {
   const title = trainingSetupForm.title.trim()
   const targetCount = trainingSetupForm.targetCount
   if (!report || !title || !targetCount || !Number.isInteger(targetCount) || targetCount < 1) {
-    ElMessage.warning('请填写培训主题和目标人数')
+    ElMessage.warning(t('copilot.trainingValidation'))
     return
   }
   trainingSetupBusy.value = true
@@ -346,11 +350,11 @@ async function submitTrainingSetup() {
       pass_score: trainingSetupForm.passScore,
     })
     trainingSetupDialogVisible.value = false
-    messages.push({ role: 'assistant', text: '已根据选定报告生成培训待确认操作。请确认后生成草稿。', pendingAction: pending })
+    messages.push({ role: 'assistant', text: t('copilot.trainingPendingCreated'), pendingAction: pending })
     saveMessages()
     scrollToBottom()
   } catch (err: any) {
-    ElMessage.error(err?.response?.data?.detail || err?.message || '培训操作创建失败')
+    ElMessage.error(err?.response?.data?.detail || err?.message || t('copilot.trainingProposeFailed'))
   } finally {
     trainingSetupBusy.value = false
   }
@@ -359,11 +363,19 @@ async function submitTrainingSetup() {
 function submitRectification() {
   const target = selectedRectificationTarget.value
   if (!target || !rectificationForm.title.trim() || !rectificationForm.owner.trim() || !rectificationForm.dueAt) {
-    ElMessage.warning('请填写整改要求、负责人和截止时间')
+    ElMessage.warning(t('copilot.rectificationValidation'))
     return
   }
-  const description = rectificationForm.description.trim() ? `，补充说明：${rectificationForm.description.trim()}` : ''
-  inputQuestion.value = `创建整改任务：关联违规 ${target.option_id}，整改内容为 ${rectificationForm.title.trim()}，负责人 ${rectificationForm.owner.trim()}，截止 ${rectificationForm.dueAt.toISOString()}${description}`
+  const descPart = rectificationForm.description.trim()
+    ? t('copilot.rectificationDescPart', { desc: rectificationForm.description.trim() })
+    : ''
+  inputQuestion.value = t('copilot.rectificationPrompt', {
+    optionId: target.option_id,
+    title: rectificationForm.title.trim(),
+    owner: rectificationForm.owner.trim(),
+    dueAt: rectificationForm.dueAt.toISOString(),
+    descPart,
+  })
   rectificationDialogVisible.value = false
   handleSend()
 }
@@ -371,8 +383,8 @@ function submitRectification() {
 async function confirmAction(msg: ChatMessageItem) {
   if (!msg.pendingAction || msg.actionBusy) return
   try {
-    await ElMessageBox.confirm(`将执行：${msg.pendingAction.summary}`, '确认执行写操作', {
-      confirmButtonText: '确认执行', cancelButtonText: '返回', type: 'warning',
+    await ElMessageBox.confirm(t('copilot.confirmWriteBody', { summary: msg.pendingAction.summary }), t('copilot.confirmWriteTitle'), {
+      confirmButtonText: t('copilot.confirmWriteOk'), cancelButtonText: t('copilot.confirmWriteCancel'), type: 'warning',
     })
   } catch {
     return
@@ -390,9 +402,9 @@ async function confirmAction(msg: ChatMessageItem) {
       msg.actionTrainingId = result.result.training_id
       msg.actionTrainingUrl = result.result.public_url || undefined
     }
-    ElMessage.success('操作已执行')
+    ElMessage.success(t('copilot.actionExecuted'))
   } catch (err: any) {
-    ElMessage.error(err?.response?.data?.detail || err?.message || '操作未完成')
+    ElMessage.error(err?.response?.data?.detail || err?.message || t('copilot.actionIncomplete'))
   } finally {
     msg.actionBusy = false
     saveMessages()
@@ -405,9 +417,9 @@ async function cancelAction(msg: ChatMessageItem) {
   try {
     const result = await cancelPendingAction(msg.pendingAction.confirmation_id, getConversationId())
     msg.pendingAction.status = result.status
-    msg.actionResult = '已取消，未执行任何写操作。'
+    msg.actionResult = t('copilot.actionCancelledText')
   } catch (err: any) {
-    ElMessage.error(err?.response?.data?.detail || err?.message || '取消失败')
+    ElMessage.error(err?.response?.data?.detail || err?.message || t('copilot.cancelFailed'))
   } finally {
     msg.actionBusy = false
     saveMessages()
@@ -415,11 +427,11 @@ async function cancelAction(msg: ChatMessageItem) {
 }
 
 function actionResultText(result: import('@/types/contract').ActionExecutionResponse): string {
-  if (result.result.report_id) return `已执行：安全报告 ${result.result.report_id}，状态 ${result.result.status || '-'}。`
-  if (result.result.training_id) return `已执行：培训任务 ${result.result.training_id}，状态 ${result.result.status || '-'}。`
-  if (result.result.task_id) return `已执行：整改任务 ${result.result.task_id}，当前状态 ${result.result.status || '-'}。`
-  if (result.result.camera_id) return `已执行：摄像头 ${result.result.camera_id} 当前为 ${result.result.desired_state || '-'}。`
-  return result.idempotent ? '该操作此前已执行。' : '操作已执行。'
+  if (result.result.report_id) return t('copilot.resultReport', { id: result.result.report_id, status: result.result.status || '-' })
+  if (result.result.training_id) return t('copilot.resultTraining', { id: result.result.training_id, status: result.result.status || '-' })
+  if (result.result.task_id) return t('copilot.resultTask', { id: result.result.task_id, status: result.result.status || '-' })
+  if (result.result.camera_id) return t('copilot.resultCamera', { id: result.result.camera_id, state: result.result.desired_state || '-' })
+  return result.idempotent ? t('copilot.resultIdempotent') : t('copilot.resultDone')
 }
 
 function getConversationId(): string {
@@ -446,7 +458,7 @@ function restoreMessages() {
 function viewEvidence(ev: ChatEvidence) {
   selectedViolation.value = {
     event_uuid: ev.event_uuid,
-    camera_id: '证据快照',
+    camera_id: t('copilot.evidenceSnapshotLabel'),
     monitor_session_id: '-',
     track_id: 0,
     violation_type: 'NO_HELMET',
@@ -466,9 +478,8 @@ function viewEvidence(ev: ChatEvidence) {
 }
 
 function reportDate(value: string, exclusiveEnd = false): string {
-  const utcValue = /(?:Z|[+-]\d\d:\d\d)$/.test(value) ? value : `${value}Z`
-  const date = new Date(new Date(utcValue).getTime() - (exclusiveEnd ? 1 : 0))
-  return date.toLocaleDateString('zh-CN', { timeZone: import.meta.env.VITE_LEARNING_TIMEZONE || 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' })
+  const date = new Date(utcDate(value).getTime() - (exclusiveEnd ? 1 : 0))
+  return formatDate(date, { timeZone: getLearningTimezone(), year: 'numeric', month: '2-digit', day: '2-digit' })
 }
 
 async function openReportDetail(id: string) {
@@ -478,7 +489,7 @@ async function openReportDetail(id: string) {
   try {
     selectedReport.value = await learningApi.getReport(id)
   } catch {
-    ElMessage.error('报告详情加载失败')
+    ElMessage.error(t('copilot.reportDetailLoadFailed'))
   } finally {
     reportLoading.value = false
   }
@@ -486,14 +497,14 @@ async function openReportDetail(id: string) {
 
 async function previewReportPdf(id: string) {
   const tab = window.open('', '_blank')
-  if (!tab) return ElMessage.warning('浏览器阻止了新标签页，请使用下载 PDF')
+  if (!tab) return ElMessage.warning(t('copilot.popupBlockedWarning'))
   try {
     const url = URL.createObjectURL(await learningApi.downloadReport(id))
     tab.location.href = url
     window.setTimeout(() => URL.revokeObjectURL(url), 300000)
   } catch {
     tab.close()
-    ElMessage.error('PDF 预览失败')
+    ElMessage.error(t('copilot.pdfPreviewFailed'))
   }
 }
 
@@ -506,7 +517,7 @@ async function downloadReportPdf(id: string) {
     link.click()
     window.setTimeout(() => URL.revokeObjectURL(url), 60000)
   } catch {
-    ElMessage.error('PDF 下载失败')
+    ElMessage.error(t('copilot.pdfDownloadFailed'))
   }
 }
 
@@ -532,7 +543,7 @@ async function openTrainingDetail(id: string) {
       if (qr.status === 'fulfilled') trainingQrUrl.value = URL.createObjectURL(qr.value)
     }
   } catch {
-    ElMessage.error('培训详情加载失败')
+    ElMessage.error(t('copilot.trainingDetailLoadFailed'))
   } finally {
     trainingLoading.value = false
   }
@@ -546,13 +557,19 @@ function scrollToBottom() {
   })
 }
 
-onMounted(() => {
-  getConversationId()
-  restoreMessages()
+function loadUiConfig() {
   fetchAssistantUiConfig().then((config) => {
     uiConfig.value = config
     quickQuestions.value = config.quick_questions
   }).catch(() => undefined)
+}
+
+useLocaleRefresh(loadUiConfig)
+
+onMounted(() => {
+  getConversationId()
+  restoreMessages()
+  loadUiConfig()
   if (hasUserMessages.value) scrollToBottom()
 })
 onUnmounted(() => { clearTrainingQr(); stopWaitTimer() })

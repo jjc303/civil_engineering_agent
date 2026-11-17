@@ -1,9 +1,9 @@
 <template>
   <section class="welcome-panel">
     <span class="welcome-icon"><el-icon><Service /></el-icon></span>
-    <span class="section-kicker">你的施工安全助手</span>
-    <h3>从现场风险，到安全教育</h3>
-    <p>从一个问题开始，查看现场数据、报告与培训任务。<br />涉及执行的操作，会先请你确认。</p>
+    <span class="section-kicker">{{ t('copilot.welcomeKicker') }}</span>
+    <h3>{{ t('copilot.welcomeTitle') }}</h3>
+    <p>{{ t('copilot.welcomeDescLine1') }}<br />{{ t('copilot.welcomeDescLine2') }}</p>
     <div class="starter-grid">
       <button
         v-for="starter in starters"
@@ -21,7 +21,9 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { Service, Picture, Document, Operation } from '@element-plus/icons-vue'
+import { useAppI18n } from '@/i18n/useAppI18n'
 
 defineProps<{
   thinking: boolean
@@ -31,11 +33,13 @@ defineEmits<{
   selectPrompt: [question: string]
 }>()
 
-const starters = [
-  { title: '现场状态', description: '查看摄像头运行情况', question: '查看所有摄像头状态', icon: Picture },
-  { title: '安全报告', description: '查阅已有风险总结', question: '查看安全报告', icon: Document },
-  { title: '培训任务', description: '跟进安全教育安排', question: '查看培训任务', icon: Operation },
-]
+const { t } = useAppI18n()
+
+const starters = computed(() => [
+  { title: t('copilot.starter1Title'), description: t('copilot.starter1Desc'), question: t('copilot.starter1Question'), icon: Picture },
+  { title: t('copilot.starter2Title'), description: t('copilot.starter2Desc'), question: t('copilot.starter2Question'), icon: Document },
+  { title: t('copilot.starter3Title'), description: t('copilot.starter3Desc'), question: t('copilot.starter3Question'), icon: Operation },
+])
 </script>
 
 <style scoped>

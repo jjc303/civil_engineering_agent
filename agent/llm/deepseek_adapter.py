@@ -95,6 +95,7 @@ class DeepSeekChatModel(ChatModelPort):
         memory_context: str = "",
         tool_catalog: Sequence[dict[str, str]] = (),
         capability_status: dict[str, Any] | None = None,
+        response_locale: str = "zh-CN",
     ) -> str:
         safe_results = [result.model_dump(mode="json") for result in results]
         capability_section = ""
@@ -110,8 +111,9 @@ class DeepSeekChatModel(ChatModelPort):
                 "\n\n当前系统可用工具目录与能力状态（仅供如实说明已启用/未启用能力；未执行的工具不代表已执行）："
                 + json.dumps(capability_payload, ensure_ascii=False)
             )
+        system_prompt = _RESPONSE_PROMPT + _locale_response_instruction(response_locale)
         message = self._answer_client.invoke([
-            SystemMessage(content=_RESPONSE_PROMPT),
+            SystemMessage(content=system_prompt),
             HumanMessage(
                 content=(
                     f"用户问题：{question}\n\n"
@@ -126,15 +128,33 @@ class DeepSeekChatModel(ChatModelPort):
             raise ValueError("DeepSeek returned an empty answer")
         return answer
 
-    def generate_structured(self, instruction: str, context: dict[str, Any]) -> dict[str, Any]:
+    def generate_structured(
+        self,
+        instruction: str,
+        context: dict[str, Any],
+        response_locale: str = "zh-CN",
+    ) -> dict[str, Any]:
+        system_prompt = _STRUCTURED_SYSTEM_PROMPT + instruction + _locale_structured_instruction(response_locale)
         message = self._client.invoke([
-            SystemMessage(content=_STRUCTURED_SYSTEM_PROMPT + instruction),
+            SystemMessage(content=system_prompt),
             HumanMessage(content=json.dumps(context, ensure_ascii=False, default=str)),
         ])
         payload = json.loads(_content_to_text(message.content))
         if not isinstance(payload, dict):
             raise ValueError("model must return a JSON object")
         return payload
+
+
+def _locale_response_instruction(response_locale: str) -> str:
+    if response_locale == "zh-HK":
+        return "\n输出语言要求：请严格使用规范繁体中文（Traditional Chinese）作答，保持原有工程专业术语与标点习惯，不要夹杂简体字。"
+    return ""
+
+
+def _locale_structured_instruction(response_locale: str) -> str:
+    if response_locale == "zh-HK":
+        return "\n输出语言要求：面向用户展示的 JSON 文本字段请使用规范繁体中文，JSON 键名和枚举代码保持不变。"
+    return ""
 
 
 def _content_to_text(content: Any) -> str:

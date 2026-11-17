@@ -1,12 +1,14 @@
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { apiClient, isMockEnabled } from '../api/client'
+import { translateAppMessage } from '../i18n'
+import type { SupportedLocale } from '../i18n/types'
+import { useLocaleStore } from './locale'
 import type { EventStatus, ViolationSeverity, ViolationType } from '../types/contract'
 import {
   DEFAULT_SEVERITY_LABELS,
   DEFAULT_STATUS_LABELS,
   DEFAULT_VIOLATION_LABELS,
-  VIOLATION_TYPE_OPTIONS,
 } from '../constants/dictionaries'
 
 interface DictionariesPayload {
@@ -16,37 +18,106 @@ interface DictionariesPayload {
   status_labels?: Record<string, string>
 }
 
-export const useDictionariesStore = defineStore('dictionaries', () => {
-  const violationLabels = ref<Record<string, string>>({ ...DEFAULT_VIOLATION_LABELS })
-  const severityLabels = ref<Record<string, string>>({ ...DEFAULT_SEVERITY_LABELS })
-  const statusLabels = ref<Record<string, string>>({ ...DEFAULT_STATUS_LABELS })
-  const violationOptions = ref([...VIOLATION_TYPE_OPTIONS])
-  const loaded = ref(false)
+const VIOLATION_CODES: ReadonlyArray<ViolationType> = ['NO_HELMET', 'DANGER_ZONE_INTRUSION', 'DWELL_TIMEOUT']
+const SEVERITY_CODES: ReadonlyArray<ViolationSeverity> = ['CRITICAL', 'WARNING', 'INFO']
+const STATUS_CODES: ReadonlyArray<EventStatus> = ['ACTIVE', 'RESOLVED', 'FALSE_ALARM']
 
-  async function ensureLoaded(): Promise<void> {
-    if (loaded.value || isMockEnabled) {
-      loaded.value = true
+export const useDictionariesStore = defineStore('dictionaries', () => {
+  const localeStore = useLocaleStore()
+  const remoteByLocale = ref<Partial<Record<SupportedLocale, DictionariesPayload>>>({})
+  const loadedLocale = ref<SupportedLocale | null>(null)
+  let inFlightLocale: SupportedLocale | null = null
+
+  function localizedFallbackViolationLabels(): Record<string, string> {
+    return Object.fromEntries(
+      VIOLATION_CODES.map((code) => [code, translateAppMessage(`enums.violation.${code}`)]),
+    )
+  }
+
+  function localizedFallbackSeverityLabels(): Record<string, string> {
+    return Object.fromEntries(
+      SEVERITY_CODES.map((code) => [code, translateAppMessage(`enums.severity.${code}`)]),
+    )
+  }
+
+  function localizedFallbackStatusLabels(): Record<string, string> {
+    return Object.fromEntries(
+      STATUS_CODES.map((code) => [code, translateAppMessage(`enums.eventStatus.${code}`)]),
+    )
+  }
+
+  const activeRemote = computed(() => remoteByLocale.value[localeStore.locale])
+
+  const violationLabels = computed<Record<string, string>>(() => ({
+    ...localizedFallbackViolationLabels(),
+    ...(activeRemote.value?.violation_labels || {}),
+  }))
+
+  const severityLabels = computed<Record<string, string>>(() => ({
+    ...localizedFallbackSeverityLabels(),
+    ...(activeRemote.value?.severity_labels || {}),
+  }))
+
+  const statusLabels = computed<Record<string, string>>(() => ({
+    ...localizedFallbackStatusLabels(),
+    ...(activeRemote.value?.status_labels || {}),
+  }))
+
+  const violationOptions = computed<Array<{ code: ViolationType; label: string }>>(() => {
+    const remote = activeRemote.value?.violation_types
+    if (Array.isArray(remote) && remote.length > 0) return remote
+    return VIOLATION_CODES.map((code) => ({
+      code,
+      label: violationLabels.value[code] || DEFAULT_VIOLATION_LABELS[code] || code,
+    }))
+  })
+
+  const severityOptions = computed<Array<{ code: ViolationSeverity; label: string }>>(() =>
+    SEVERITY_CODES.map((code) => ({
+      code,
+      label: severityLabels.value[code] || DEFAULT_SEVERITY_LABELS[code] || code,
+    })),
+  )
+
+  const statusOptions = computed<Array<{ code: EventStatus; label: string }>>(() =>
+    STATUS_CODES.map((code) => ({
+      code,
+      label: statusLabels.value[code] || DEFAULT_STATUS_LABELS[code] || code,
+    })),
+  )
+
+  const loaded = computed(() => loadedLocale.value === localeStore.locale)
+
+  async function ensureLoaded(force = false): Promise<void> {
+    const targetLocale = localeStore.locale
+    if (!force && (remoteByLocale.value[targetLocale] || isMockEnabled)) {
+      loadedLocale.value = targetLocale
       return
     }
+    if (inFlightLocale === targetLocale) return
+    inFlightLocale = targetLocale
     try {
       const { data } = await apiClient.get<DictionariesPayload>('/api/v1/meta/dictionaries')
-      if (data.violation_labels) {
-        violationLabels.value = { ...DEFAULT_VIOLATION_LABELS, ...data.violation_labels }
+      remoteByLocale.value = {
+        ...remoteByLocale.value,
+        [targetLocale]: data,
       }
-      if (data.severity_labels) {
-        severityLabels.value = { ...DEFAULT_SEVERITY_LABELS, ...data.severity_labels }
-      }
-      if (data.status_labels) {
-        statusLabels.value = { ...DEFAULT_STATUS_LABELS, ...data.status_labels }
-      }
-      if (Array.isArray(data.violation_types) && data.violation_types.length > 0) {
-        violationOptions.value = data.violation_types
-      }
-      loaded.value = true
+      loadedLocale.value = targetLocale
     } catch {
-      // Keep local fallback constants if metadata endpoint is unreachable
+      // Keep localized frontend fallback constants if metadata endpoint is unreachable
+    } finally {
+      if (inFlightLocale === targetLocale) {
+        inFlightLocale = null
+      }
     }
   }
+
+  watch(
+    () => localeStore.locale,
+    () => {
+      void ensureLoaded()
+    },
+  )
 
   function violationLabel(type: ViolationType): string {
     return violationLabels.value[type] || DEFAULT_VIOLATION_LABELS[type] || type
@@ -65,6 +136,8 @@ export const useDictionariesStore = defineStore('dictionaries', () => {
     severityLabels,
     statusLabels,
     violationOptions,
+    severityOptions,
+    statusOptions,
     loaded,
     ensureLoaded,
     violationLabel,

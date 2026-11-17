@@ -1,8 +1,8 @@
 <template>
   <div class="zone-editor-page operations-workbench">
-    <WorkspaceIntro eyebrow="SAFETY ZONES" title="危险区域标定" description="在监控画面上绘制区域边界，设置停留阈值与报警规则。">
+    <WorkspaceIntro eyebrow="SAFETY ZONES" :title="t('zones.title')" :description="t('zones.description')">
       <div class="camera-picker">
-        <span class="label">摄像头</span>
+        <span class="label">{{ t('zones.cameraLabel') }}</span>
         <el-select v-model="selectedCameraId" style="width: 200px" @change="handleCameraChange">
           <el-option
             v-for="cam in cameras"
@@ -12,31 +12,31 @@
           />
         </el-select>
         <el-tag :type="currentVersion > 0 ? 'success' : 'info'" effect="light">
-          {{ currentVersion > 0 ? `配置 v${currentVersion}` : '尚未标定' }}
+          {{ currentVersion > 0 ? t('zones.configVersion', { version: currentVersion }) : t('zones.notCalibrated') }}
         </el-tag>
       </div>
     </WorkspaceIntro>
-    <section class="zone-workflow" aria-label="标定操作步骤"><div><b>01</b><span><strong>选择监控画面</strong><small>{{ selectedCameraId || '先选择摄像头' }}</small></span></div><div><b>02</b><span><strong>绘制区域边界</strong><small>当前区域 {{ polygonPoints.length }} 个顶点</small></span></div><div :class="{ unsaved: dirty }"><b>03</b><span><strong>保存并下发</strong><small>{{ dirty ? '有尚未保存的修改' : currentVersion > 0 ? `已加载配置 v${currentVersion}` : '等待首次保存' }}</small></span></div></section>
+    <section class="zone-workflow" :aria-label="t('zones.workflowAria')"><div><b>01</b><span><strong>{{ t('zones.step1Title') }}</strong><small>{{ selectedCameraId || t('zones.step1Empty') }}</small></span></div><div><b>02</b><span><strong>{{ t('zones.step2Title') }}</strong><small>{{ t('zones.step2Points', { count: polygonPoints.length }) }}</small></span></div><div :class="{ unsaved: dirty }"><b>03</b><span><strong>{{ t('zones.step3Title') }}</strong><small>{{ dirty ? t('zones.step3Unsaved') : currentVersion > 0 ? t('zones.step3Loaded', { version: currentVersion }) : t('zones.step3Waiting') }}</small></span></div></section>
 
     <div class="workspace-grid">
       <!-- 画布标定操作区 -->
       <el-card shadow="never" class="canvas-card">
         <template #header>
           <div class="canvas-toolbar">
-            <div class="canvas-title"><strong>区域绘制画布</strong><small>标定坐标系 {{ sourceResolution.width }} × {{ sourceResolution.height }} 像素</small></div>
+            <div class="canvas-title"><strong>{{ t('zones.canvasTitle') }}</strong><small>{{ t('zones.canvasResolution', { width: sourceResolution.width, height: sourceResolution.height }) }}</small></div>
             <div class="tool-btns">
               <el-tag size="small" :type="previewState === 'live' ? 'success' : previewState === 'paused' ? 'warning' : 'info'">{{ previewLabel }}</el-tag>
-              <el-button size="small" :disabled="!selectedCameraId" @click="pausePreview">{{ previewState === 'paused' ? '刷新帧' : '暂停画面' }}</el-button>
-              <el-button size="small" :disabled="!selectedCameraId || previewState === 'live'" @click="resumePreview">恢复实时</el-button>
-              <el-button size="small" type="primary" :icon="Plus" @click="addPoint">添加顶点</el-button>
-              <el-button size="small" :icon="RefreshRight" @click="resetToDefaultZone">重置默认形状</el-button>
-              <el-button size="small" type="danger" :icon="Delete" @click="clearPoints">清空顶点</el-button>
+              <el-button size="small" :disabled="!selectedCameraId" @click="pausePreview">{{ previewState === 'paused' ? t('zones.refreshFrame') : t('zones.pausePreview') }}</el-button>
+              <el-button size="small" :disabled="!selectedCameraId || previewState === 'live'" @click="resumePreview">{{ t('zones.resumePreview') }}</el-button>
+              <el-button size="small" type="primary" :icon="Plus" @click="addPoint">{{ t('zones.addPoint') }}</el-button>
+              <el-button size="small" :icon="RefreshRight" @click="resetToDefaultZone">{{ t('zones.resetDefault') }}</el-button>
+              <el-button size="small" type="danger" :icon="Delete" @click="clearPoints">{{ t('zones.clearPoints') }}</el-button>
             </div>
           </div>
         </template>
 
         <div class="canvas-container" ref="containerRef">
-          <img v-if="previewImageSrc" class="preview-background" :src="previewImageSrc" alt="监控画面" @load="onPreviewLoad" @error="onPreviewError" />
+          <img v-if="previewImageSrc" class="preview-background" :src="previewImageSrc" :alt="t('zones.previewAlt')" @load="onPreviewLoad" @error="onPreviewError" />
           <canvas
             ref="canvasRef"
             class="interactive-canvas"
@@ -47,36 +47,36 @@
         </div>
 
         <div class="canvas-hint">
-          <span>单击画布添加顶点，拖拽<strong>黄色圆点</strong>调整边界。{{ previewState === 'unavailable' ? '当前没有可用预览，使用网格绘制。' : '暂停画面后，可更准确地调整边界。' }}</span>
+          <span>{{ t('zones.canvasHintPrefix') }}<strong>{{ t('zones.canvasHintPoint') }}</strong>{{ t('zones.canvasHintMiddle') }}{{ previewState === 'unavailable' ? t('zones.canvasHintUnavailable') : t('zones.canvasHintAvailable') }}</span>
         </div>
       </el-card>
 
       <!-- 参数配置面板 -->
       <el-card shadow="never" class="settings-card">
         <template #header>
-          <div class="section-card-heading"><strong>区域与报警设置</strong><span>保存后生效</span></div>
+          <div class="section-card-heading"><strong>{{ t('zones.settingsTitle') }}</strong><span>{{ t('zones.settingsHint') }}</span></div>
         </template>
 
         <div class="zones-panel">
-          <div class="zones-toolbar"><span class="font-bold">危险区域 ({{ zones.length }})</span><div><el-button size="small" @click="duplicateZone">复制</el-button><el-button size="small" type="primary" @click="createZone">新增</el-button></div></div>
+          <div class="zones-toolbar"><span class="font-bold">{{ t('zones.dangerZonesCount', { count: zones.length }) }}</span><div><el-button size="small" @click="duplicateZone">{{ t('zones.duplicate') }}</el-button><el-button size="small" type="primary" @click="createZone">{{ t('zones.addZone') }}</el-button></div></div>
           <div class="zones-list">
             <button v-for="(zone, index) in displayZones" :key="zone.zone_id" class="zone-list-item" :class="{ active: index === selectedZoneIndex }" @click="selectZone(index)">
-              <span>{{ zone.zone_name || zone.zone_id }}</span><el-tag size="small" :type="zone.enabled ? 'success' : 'info'">{{ zone.enabled ? '启用' : '停用' }}</el-tag>
+              <span>{{ zone.zone_name || zone.zone_id }}</span><el-tag size="small" :type="zone.enabled ? 'success' : 'info'">{{ zone.enabled ? t('zones.zoneEnabled') : t('zones.zoneDisabled') }}</el-tag>
             </button>
           </div>
         </div>
         <el-form label-position="top" :model="form" class="config-form">
-          <el-form-item label="区域编号">
-            <el-input v-model="zoneConfig.zone_id" placeholder="如 zone-crane-01" />
+          <el-form-item :label="t('zones.fieldZoneId')">
+            <el-input v-model="zoneConfig.zone_id" :placeholder="t('zones.fieldZoneIdPlaceholder')" />
           </el-form-item>
 
-          <el-form-item label="区域名称">
-            <el-input v-model="zoneConfig.zone_name" placeholder="如 塔吊回转作业区" />
+          <el-form-item :label="t('zones.fieldZoneName')">
+            <el-input v-model="zoneConfig.zone_name" :placeholder="t('zones.fieldZoneNamePlaceholder')" />
           </el-form-item>
 
-          <el-button size="small" type="danger" plain :disabled="zones.length <= 1" @click="deleteSelectedZone">删除当前区域</el-button>
+          <el-button size="small" type="danger" plain :disabled="zones.length <= 1" @click="deleteSelectedZone">{{ t('zones.deleteZone') }}</el-button>
 
-          <el-form-item label="滞留报警阈值 (秒)">
+          <el-form-item :label="t('zones.fieldDwell')">
             <el-input-number
               v-model="zoneConfig.alarm_dwell_threshold_seconds"
               :min="0.5"
@@ -87,24 +87,24 @@
 
           <el-divider />
 
-          <el-form-item label="进入区域确认帧数">
+          <el-form-item :label="t('zones.fieldEnterDebounce')">
             <el-slider v-model="form.enter_debounce_frames" :min="1" :max="30" show-input />
           </el-form-item>
 
-          <el-form-item label="离开区域确认帧数">
+          <el-form-item :label="t('zones.fieldExitDebounce')">
             <el-slider v-model="form.exit_debounce_frames" :min="1" :max="30" show-input />
           </el-form-item>
 
-          <el-form-item label="安全帽状态平滑帧数">
+          <el-form-item :label="t('zones.fieldHelmetDebounce')">
             <el-slider v-model="form.helmet_debounce_frames" :min="1" :max="30" show-input />
           </el-form-item>
 
-          <el-form-item label="启用围栏布防">
-            <el-switch v-model="zoneConfig.enabled" active-text="启用实时布控" />
+          <el-form-item :label="t('zones.fieldEnableFence')">
+            <el-switch v-model="zoneConfig.enabled" :active-text="t('zones.switchActiveText')" />
           </el-form-item>
 
           <div class="polygon-points-preview">
-            <div class="preview-title">原始画面像素坐标 · {{ polygonPoints.length }} 个顶点</div>
+            <div class="preview-title">{{ t('zones.pointsTitle', { count: polygonPoints.length }) }}</div>
             <div class="points-chips">
               <el-tag
                 v-for="(p, idx) in polygonPoints"
@@ -128,7 +128,7 @@
               style="width: 100%"
               @click="saveConfiguration"
             >
-              保存并下发新版本配置
+              {{ t('zones.saveAndPublish') }}
             </el-button>
           </div>
         </el-form>
@@ -147,7 +147,9 @@ import { fetchCameraZones, updateCameraZones } from '@/api/zones'
 import { previewFrameUrl, previewUrl } from '@/api/cameraManagement'
 import type { CameraStatusResponse, DangerZoneConfig } from '@/types/contract'
 import WorkspaceIntro from '@/components/WorkspaceIntro.vue'
+import { useAppI18n } from '@/i18n/useAppI18n'
 
+const { t } = useAppI18n()
 const route = useRoute()
 
 const cameras = ref<CameraStatusResponse[]>([])
@@ -184,7 +186,7 @@ const draggingIndex = ref<number | null>(null)
 
 const zoneConfig = reactive<DangerZoneConfig>({
   zone_id: 'zone-crane-01',
-  zone_name: '塔吊禁行危险区',
+  zone_name: t('zones.defaultInitialZoneName'),
   polygon: [],
   enabled: true,
   alarm_dwell_threshold_seconds: 5.0,
@@ -193,17 +195,12 @@ const zoneConfig = reactive<DangerZoneConfig>({
 const displayZones = computed(() => zones.value.map((zone, index) => index === selectedZoneIndex.value
   ? { ...zoneConfig, polygon: polygonPoints.value }
   : zone))
-const previewLabel = computed(() => ({ live: '实时预览', paused: '已暂停标帧', unavailable: '预览不可用' }[previewState.value]))
+const previewLabel = computed(() => ({ live: t('zones.previewLive'), paused: t('zones.previewPaused'), unavailable: t('zones.previewUnavailable') }[previewState.value]))
 
 const form = reactive({
   enter_debounce_frames: 3,
   exit_debounce_frames: 5,
   helmet_debounce_frames: 5,
-})
-
-const scaleRatioText = computed(() => {
-  const sx = (canvasWidth.value / sourceResolution.value.width).toFixed(2)
-  return `${canvasWidth.value}x${canvasHeight.value} (比例: ${sx})`
 })
 
 async function init() {
@@ -219,18 +216,18 @@ async function init() {
     if (selectedCameraId.value) {
       await loadCameraConfig()
     } else {
-      ElMessage.info('暂无可用摄像头，请先启动 CV 会话或选择 Mock 模式。')
+      ElMessage.info(t('zones.noCamerasInfo'))
     }
   } catch {
     cameras.value = []
-    ElMessage.error('无法获取 Agent 摄像头列表；实时联调模式不会回退到 Mock 数据。')
+    ElMessage.error(t('zones.fetchCamerasFailed'))
   }
 }
 
 function defaultZone(index = 1): DangerZoneConfig {
   return {
     zone_id: `zone-${index}`,
-    zone_name: `危险区域 ${index}`,
+    zone_name: t('zones.defaultZoneName', { index }),
     polygon: [[400, 250], [900, 200], [950, 700], [500, 750]],
     enabled: true,
     alarm_dwell_threshold_seconds: 5.0,
@@ -259,7 +256,7 @@ function hydrateSelectedZone(index = selectedZoneIndex.value) {
 async function handleCameraChange(nextCameraId: string) {
   if (dirty.value && loadedCameraId.value && nextCameraId !== loadedCameraId.value) {
     try {
-      await ElMessageBox.confirm('当前围栏修改尚未保存，切换摄像头会丢失这些修改。是否继续？', '未保存修改', { type: 'warning' })
+      await ElMessageBox.confirm(t('zones.unsavedSwitchConfirm'), t('zones.unsavedSwitchTitle'), { type: 'warning' })
     } catch {
       selectedCameraId.value = loadedCameraId.value
       return
@@ -293,7 +290,7 @@ async function loadCameraConfig() {
     restoreDraft()
     resumePreview()
   } catch {
-    ElMessage.error('无法读取围栏配置，请检查 Agent 服务连接后重试。')
+    ElMessage.error(t('zones.loadConfigFailed'))
     return
   }
   nextTick(() => {
@@ -328,7 +325,7 @@ function addPoint() {
 
 function removePoint(idx: number) {
   if (polygonPoints.value.length <= 3) {
-    ElMessage.warning('多边形至少需要 3 个顶点')
+    ElMessage.warning(t('zones.minPointsWarning'))
     return
   }
   polygonPoints.value.splice(idx, 1)
@@ -356,7 +353,7 @@ function duplicateZone() {
   const source = zones.value[selectedZoneIndex.value]
   const copy = JSON.parse(JSON.stringify(source)) as DangerZoneConfig
   copy.zone_id = `${source.zone_id}-copy-${zones.value.length + 1}`.slice(0, 128)
-  copy.zone_name = `${source.zone_name}（副本）`
+  copy.zone_name = `${source.zone_name}${t('zones.copySuffix')}`
   zones.value.push(copy)
   selectedZoneIndex.value = zones.value.length - 1
   hydrateSelectedZone()
@@ -366,7 +363,7 @@ function duplicateZone() {
 async function deleteSelectedZone() {
   if (zones.value.length <= 1) return
   try {
-    await ElMessageBox.confirm('删除当前危险区域？该操作在保存前可通过取消页面离开恢复。', '删除危险区域', { type: 'warning' })
+    await ElMessageBox.confirm(t('zones.deleteZoneConfirm'), t('zones.deleteZoneTitle'), { type: 'warning' })
   } catch { return }
   zones.value.splice(selectedZoneIndex.value, 1)
   selectedZoneIndex.value = Math.max(0, selectedZoneIndex.value - 1)
@@ -585,11 +582,11 @@ async function saveConfiguration() {
   if (saving.value) return
   saveError.value = ''
   if (!selectedCameraId.value) {
-    ElMessage.warning('请先选择一个真实摄像头。')
+    ElMessage.warning(t('zones.selectCameraWarning'))
     return
   }
   if (loadedCameraId.value !== selectedCameraId.value) {
-    saveError.value = '配置尚未读取成功，请等待加载或刷新后重试。'
+    saveError.value = t('zones.configNotReady')
     ElMessage.warning(saveError.value)
     return
   }
@@ -598,13 +595,13 @@ async function saveConfiguration() {
   syncSelectedZone()
   const invalidZone = zones.value.find((zone) => !zone.zone_id.trim() || !zone.zone_name.trim() || zone.polygon.length < 3)
   if (invalidZone) {
-    saveError.value = '每个危险区域都必须填写 ID、名称并至少包含 3 个顶点'
-    ElMessage.error('每个危险区域都必须填写 ID、名称并至少包含 3 个顶点')
+    saveError.value = t('zones.zoneValidationError')
+    ElMessage.error(saveError.value)
     return
   }
   if (new Set(zones.value.map((zone) => zone.zone_id)).size !== zones.value.length) {
-    saveError.value = '危险区域标识不能重复'
-    ElMessage.error('危险区域标识不能重复')
+    saveError.value = t('zones.duplicateZoneIdError')
+    ElMessage.error(saveError.value)
     return
   }
 
@@ -624,15 +621,17 @@ async function saveConfiguration() {
     hydrateSelectedZone()
     dirty.value = false
     try { sessionStorage.removeItem(draftKey()) } catch { /* browser storage may be disabled */ }
-    ElMessage.success(`围栏配置已保存为 v${res.config_version}，运行中节点将轮询加载新版本。`)
+    ElMessage.success(t('zones.saveSuccess', { version: res.config_version }))
   } catch (err: any) {
     const detail = err.response?.data?.detail
-    saveError.value = typeof detail === 'string' ? `保存失败：${detail}` : `保存失败：${err.message || '请检查连接后重试'}`
+    saveError.value = t('zones.saveFailedPrefix', {
+      detail: typeof detail === 'string' ? detail : (err.message || t('zones.saveFailedDefault')),
+    })
     if (err.response?.status === 409) {
       void ElMessageBox.confirm(
-        '该摄像头配置已被其他客户端更新，当前版本已失效，是否立即重新拉取最新版本？',
-        '乐观并发冲突提示 (409)',
-        { confirmButtonText: '重新拉取', cancelButtonText: '取消', type: 'warning' }
+        t('zones.conflictMessage'),
+        t('zones.conflictTitle'),
+        { confirmButtonText: t('zones.conflictConfirm'), cancelButtonText: t('common.cancel'), type: 'warning' }
       ).then(() => {
         loadCameraConfig()
       }).catch(() => { /* retain the local edits until the user chooses to reload */ })
@@ -665,7 +664,7 @@ function restoreDraft() {
     Object.assign(form, draft.rules)
     hydrateSelectedZone()
     dirty.value = true
-    ElMessage.info('已恢复本标签页的未保存草稿；点击保存后才会下发。')
+    ElMessage.info(t('zones.draftRestored'))
   } catch { /* ignore obsolete or malformed browser drafts */ }
 }
 watch([zoneConfig, polygonPoints, zones, sourceResolution, form], saveDraft, { deep: true, flush: 'post' })

@@ -8,6 +8,7 @@ from agent.contracts.chat import ChatRequest, ChatResponse, KnowledgeCitation, R
 from agent.core.config import DEFAULT_RAG_TOP_K, DEFAULT_TOOL_MAX_CALLS
 from agent.db.base import Database
 from agent.graph.chat_graph import build_compiled_chat_graph
+from agent.i18n import DEFAULT_LOCALE, SupportedLocale, localize_response, to_simplified_text
 from agent.llm.protocol import ChatModelPort
 from agent.notifications.protocol import BriefingNotificationPort
 from agent.repositories.violations import ViolationRepository
@@ -66,7 +67,7 @@ class ChatService:
                 standards_error = "STANDARDS_RETRIEVAL_FAILED"
         return standards_context, standard_citations, standards_error
 
-    def answer(self, request: ChatRequest) -> ChatResponse:
+    def answer(self, request: ChatRequest, *, locale: SupportedLocale = DEFAULT_LOCALE) -> ChatResponse:
         request_id = str(uuid4())
         with self.database.session() as session:
             memory = ConversationMemory(session, self.memory_ttl_hours, self.memory_recent_turns)
@@ -94,6 +95,7 @@ class ChatService:
                     "request_id": request_id,
                     "question": request.question,
                     "conversation_id": request.conversation_id,
+                    "response_locale": locale,
                     "tool_results": [],
                     "tool_trace": [],
                     "evidence": [],
@@ -111,8 +113,8 @@ class ChatService:
                 try:
                     memory.persist(
                         request.conversation_id,
-                        request.question,
-                        output.get("answer", ""),
+                        to_simplified_text(request.question),
+                        to_simplified_text(output.get("answer", "")),
                         output.get("tool_results", []),
                         output.get("tool_trace", []),
                         output.get("knowledge_citations", []),
@@ -122,7 +124,7 @@ class ChatService:
                     output["error_code"] = output.get("error_code") or "MEMORY_PERSIST_FAILED"
         report_previews, report_count = _report_previews(output.get("tool_results", []))
         training_previews, training_count = _training_previews(output.get("tool_results", []))
-        return ChatResponse(
+        response = ChatResponse(
             request_id=request_id,
             answer=output.get("answer", "安全问答服务暂时不可用，请稍后重试。"),
             evidence=output.get("evidence", []),
@@ -137,6 +139,7 @@ class ChatService:
             degraded=output.get("degraded", False),
             error_code=output.get("error_code"),
         )
+        return localize_response(response, locale)
 
 
 def _report_previews(results: list[ToolResult]) -> tuple[list[ReportPreview], int]:

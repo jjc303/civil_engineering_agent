@@ -10,6 +10,7 @@ class ChatGraphState(TypedDict, total=False):
     request_id: str
     question: str
     conversation_id: str | None
+    response_locale: str
     decision: ToolDecision | None
     tool_results: list[ToolResult]
     tool_trace: list[ToolTraceItem]

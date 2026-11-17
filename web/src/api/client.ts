@@ -1,10 +1,27 @@
 import axios, { AxiosError } from 'axios'
 import { ElMessage } from 'element-plus'
+import { translateAppMessage } from '@/i18n'
+import { LOCALE_STORAGE_KEY, detectInitialLocale, isSupportedLocale } from '@/i18n/strategies'
 import { apiBaseUrl } from '@/utils/deployment'
 
 export const isMockEnabled = import.meta.env.VITE_USE_MOCK === 'true'
 export const CHAT_ENDPOINT = '/api/v1/agent/chat'
 export const API_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS) || 20000
+
+function currentClientLocale(): string {
+  if (typeof document !== 'undefined' && isSupportedLocale(document.documentElement.lang)) {
+    return document.documentElement.lang
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = window.localStorage.getItem(LOCALE_STORAGE_KEY)
+      if (isSupportedLocale(saved)) return saved
+    } catch {
+      // Ignore storage access errors
+    }
+  }
+  return detectInitialLocale()
+}
 
 export const apiClient = axios.create({
   baseURL: apiBaseUrl,
@@ -12,6 +29,12 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+})
+
+apiClient.interceptors.request.use((config) => {
+  config.headers = config.headers || {}
+  config.headers['Accept-Language'] = currentClientLocale()
+  return config
 })
 
 apiClient.interceptors.response.use(
@@ -29,16 +52,16 @@ apiClient.interceptors.response.use(
       }
 
       if (status === 409) {
-        ElMessage.error(`版本并发冲突: ${errorMsg}`)
+        ElMessage.error(translateAppMessage('errors.versionConflict', { msg: errorMsg }))
       } else if (status === 404) {
         // 让业务方自主处理 404
       } else if (status >= 500) {
-        ElMessage.error(`服务器错误 [${status}]: ${errorMsg}`)
+        ElMessage.error(translateAppMessage('errors.serverError', { status, msg: errorMsg }))
       } else if (status === 422) {
-        ElMessage.warning(`参数校验失败: ${errorMsg}`)
+        ElMessage.warning(translateAppMessage('errors.validationError', { msg: errorMsg }))
       }
     } else {
-      ElMessage.error(`网络连接异常: ${error.message}`)
+      ElMessage.error(translateAppMessage('errors.networkError', { msg: error.message }))
     }
     return Promise.reject(error)
   }

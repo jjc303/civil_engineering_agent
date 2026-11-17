@@ -1,18 +1,18 @@
 <template>
   <div class="violations-page operations-workbench">
-    <WorkspaceIntro eyebrow="SAFETY EVENTS" title="违规事件" description="找到需要关注的事件，查看现场证据，跟进后续整改。">
-      <router-link to="/rectification-tasks" class="related-workspace">前往整改任务 ↗</router-link>
-      <el-button :icon="Refresh" :loading="loading" @click="loadData">刷新事件</el-button>
+    <WorkspaceIntro eyebrow="SAFETY EVENTS" :title="t('violations.title')" :description="t('violations.description')">
+      <router-link to="/rectification-tasks" class="related-workspace">{{ t('violations.goTasks') }}</router-link>
+      <el-button :icon="Refresh" :loading="loading" @click="loadData">{{ t('violations.refreshEvents') }}</el-button>
     </WorkspaceIntro>
-    <WorkspaceSummary label="当前事件查询概览" :items="summaryItems" />
-    <el-alert v-if="loadError" class="workbench-error" title="事件查询未完成，请检查连接后重试；已有数据保留显示。" type="warning" :closable="false" show-icon />
+    <WorkspaceSummary :label="t('violations.summaryLabel')" :items="summaryItems" />
+    <el-alert v-if="loadError" class="workbench-error" :title="t('violations.loadError')" type="warning" :closable="false" show-icon />
 
     <!-- 筛选面板 -->
     <el-card shadow="never" class="filter-card">
-      <div class="filter-heading"><strong>筛选事件</strong><span>按摄像头、类型与处理状态查找</span></div>
+      <div class="filter-heading"><strong>{{ t('violations.filterTitle') }}</strong><span>{{ t('violations.filterDesc') }}</span></div>
       <el-form :inline="true" :model="filters" class="filter-form">
-        <el-form-item label="摄像头">
-          <el-select v-model="filters.camera_id" placeholder="全部相机" clearable style="width: 160px">
+        <el-form-item :label="t('violations.cameraLabel')">
+          <el-select v-model="filters.camera_id" :placeholder="t('violations.allCameras')" clearable style="width: 160px">
             <el-option
               v-for="cam in cameraList"
               :key="cam.camera_id"
@@ -22,8 +22,8 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="违规类型">
-          <el-select v-model="filters.violation_type" placeholder="全部类型" clearable style="width: 170px">
+        <el-form-item :label="t('violations.typeLabel')">
+          <el-select v-model="filters.violation_type" :placeholder="t('violations.allTypes')" clearable style="width: 170px">
             <el-option
               v-for="opt in dictionaries.violationOptions"
               :key="opt.code"
@@ -33,48 +33,54 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="严重级别">
-          <el-select v-model="filters.severity" placeholder="全部级别" clearable style="width: 140px">
-            <el-option label="严重" value="CRITICAL" />
-            <el-option label="告警" value="WARNING" />
-            <el-option label="提示" value="INFO" />
+        <el-form-item :label="t('violations.severityLabel')">
+          <el-select v-model="filters.severity" :placeholder="t('violations.allSeverities')" clearable style="width: 140px">
+            <el-option
+              v-for="opt in dictionaries.severityOptions"
+              :key="opt.code"
+              :label="opt.label"
+              :value="opt.code"
+            />
           </el-select>
         </el-form-item>
 
-        <el-form-item label="事件状态">
-          <el-select v-model="filters.status" placeholder="全部状态" clearable style="width: 140px">
-            <el-option label="待关注" value="ACTIVE" />
-            <el-option label="已解除" value="RESOLVED" />
-            <el-option label="误报" value="FALSE_ALARM" />
+        <el-form-item :label="t('violations.statusLabel')">
+          <el-select v-model="filters.status" :placeholder="t('violations.allStatuses')" clearable style="width: 140px">
+            <el-option
+              v-for="opt in dictionaries.statusOptions"
+              :key="opt.code"
+              :label="opt.label"
+              :value="opt.code"
+            />
           </el-select>
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" @click="handleSearch">检索</el-button>
-          <el-button @click="handleReset">重置</el-button>
+          <el-button type="primary" @click="handleSearch">{{ t('common.search') }}</el-button>
+          <el-button @click="handleReset">{{ t('common.reset') }}</el-button>
         </el-form-item>
       </el-form>
     </el-card>
 
     <!-- 事件数据表格 -->
     <el-card shadow="never" class="table-card">
-      <template #header><div class="section-card-heading"><strong>事件记录</strong><span>当前条件匹配 {{ dataLoaded ? total : '—' }} 条 · 按发生时间查看</span></div></template>
-      <el-table :data="tableData" v-loading="loading" style="width: 100%" empty-text="当前条件下暂无违规事件">
-        <el-table-column label="现场证据" width="106"><template #default="{ row }"><button class="evidence-thumbnail" :aria-label="`查看 ${row.camera_id} 的事件证据`" @click="openEvidence(row)"><el-image v-if="row.snapshot_uri" :src="resolveMediaUrl(row.snapshot_uri)" fit="cover" loading="lazy" alt="事件快照"><template #error><span>暂无快照</span></template></el-image><span v-else>暂无快照</span></button></template></el-table-column>
-        <el-table-column prop="camera_id" label="摄像头" width="130">
+      <template #header><div class="section-card-heading"><strong>{{ t('violations.tableTitle') }}</strong><span>{{ t('violations.tableSubtitle', { total: dataLoaded ? total : '—' }) }}</span></div></template>
+      <el-table :data="tableData" v-loading="loading" style="width: 100%" :empty-text="t('violations.emptyText')">
+        <el-table-column :label="t('violations.colEvidence')" width="106"><template #default="{ row }"><button class="evidence-thumbnail" :aria-label="t('violations.viewEvidenceAria', { camera: row.camera_id })" @click="openEvidence(row)"><el-image v-if="row.snapshot_uri" :src="resolveMediaUrl(row.snapshot_uri)" fit="cover" loading="lazy" :alt="t('violations.snapshotAlt')"><template #error><span>{{ t('violations.noSnapshot') }}</span></template></el-image><span v-else>{{ t('violations.noSnapshot') }}</span></button></template></el-table-column>
+        <el-table-column prop="camera_id" :label="t('violations.colCamera')" width="130">
           <template #default="{ row }">
             <el-tag size="small">{{ row.camera_id }}</el-tag>
           </template>
         </el-table-column>
 
-        <el-table-column prop="violation_type" label="违规类型" width="160">
+        <el-table-column prop="violation_type" :label="t('violations.colType')" width="160">
           <template #default="{ row }">
             {{ formatType(row.violation_type) }}
             <small class="event-number">{{ row.event_uuid.substring(0, 8) }}…</small>
           </template>
         </el-table-column>
 
-        <el-table-column prop="severity" label="严重级别" width="110">
+        <el-table-column prop="severity" :label="t('violations.colSeverity')" width="110">
           <template #default="{ row }">
             <el-tag :type="severityTag(row.severity)" size="small" effect="light">
               {{ severityLabel(row.severity) }}
@@ -82,7 +88,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="status" label="状态" width="110">
+        <el-table-column prop="status" :label="t('violations.colStatus')" width="110">
           <template #default="{ row }">
             <el-tag :type="row.status === 'ACTIVE' ? 'danger' : 'info'" size="small">
               {{ statusLabel(row.status) }}
@@ -90,19 +96,19 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="duration_seconds" label="持续时长" width="110">
+        <el-table-column prop="duration_seconds" :label="t('violations.colDuration')" width="110">
           <template #default="{ row }">
             {{ row.duration_seconds.toFixed(1) }} s
           </template>
         </el-table-column>
 
-        <el-table-column prop="occurred_at_utc" label="发生时间" min-width="170">
+        <el-table-column prop="occurred_at_utc" :label="t('violations.colTime')" min-width="170">
           <template #default="{ row }">
             {{ formatTime(row.occurred_at_utc) }}
           </template>
         </el-table-column>
 
-        <el-table-column label="抓拍证据" width="120" align="center">
+        <el-table-column :label="t('violations.colAction')" width="120" align="center">
           <template #default="{ row }">
             <el-button
               type="primary"
@@ -111,12 +117,12 @@
               :icon="View"
               @click="openEvidence(row)"
             >
-              审查证据
+              {{ t('violations.inspectEvidence') }}
             </el-button>
           </template>
         </el-table-column>
       </el-table>
-      <p class="table-scroll-hint">左右滑动表格，查看完整事件信息与证据操作。</p>
+      <p class="table-scroll-hint">{{ t('violations.scrollHint') }}</p>
 
       <div class="pagination-wrapper">
         <el-pagination
@@ -154,9 +160,11 @@ import EvidenceModal from '@/components/EvidenceModal.vue'
 import WorkspaceIntro from '@/components/WorkspaceIntro.vue'
 import WorkspaceSummary from '@/components/WorkspaceSummary.vue'
 import { resolveMediaUrl } from '@/api/client'
+import { useAppI18n, useLocaleRefresh } from '@/i18n/useAppI18n'
 import { useDictionariesStore } from '@/stores/dictionaries'
 
 const route = useRoute()
+const { t, formatDateTime } = useAppI18n()
 const dictionaries = useDictionariesStore()
 dictionaries.ensureLoaded()
 
@@ -168,9 +176,9 @@ const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
 const summaryItems = computed(() => [
-  { label: '匹配事件', value: dataLoaded.value ? total.value : '—', hint: '当前筛选条件 · 全部页' },
-  { label: '本页待关注', value: dataLoaded.value ? tableData.value.filter(item => item.status === 'ACTIVE').length : '—', hint: '本页活动事件', tone: 'warning' as const },
-  { label: '本页严重告警', value: dataLoaded.value ? tableData.value.filter(item => item.severity === 'CRITICAL').length : '—', hint: '本页严重级别事件', tone: 'warning' as const },
+  { label: t('violations.summaryTotal'), value: dataLoaded.value ? total.value : '—', hint: t('violations.summaryTotalHint') },
+  { label: t('violations.summaryActive'), value: dataLoaded.value ? tableData.value.filter(item => item.status === 'ACTIVE').length : '—', hint: t('violations.summaryActiveHint'), tone: 'warning' as const },
+  { label: t('violations.summaryCritical'), value: dataLoaded.value ? tableData.value.filter(item => item.severity === 'CRITICAL').length : '—', hint: t('violations.summaryCriticalHint'), tone: 'warning' as const },
 ])
 
 const modalVisible = ref(false)
@@ -249,8 +257,12 @@ function formatType(t: ViolationType): string {
 
 function formatTime(utcStr: string): string {
   if (!utcStr) return '-'
-  return new Date(utcStr).toLocaleString()
+  return formatDateTime(utcStr)
 }
+
+useLocaleRefresh(() => {
+  void loadData()
+})
 
 let streamHandle: SafetyEventStreamHandle | undefined
 let refreshDebounceTimer: ReturnType<typeof setTimeout> | undefined

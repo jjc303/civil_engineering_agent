@@ -10,17 +10,21 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from agent.api.dependencies import get_perception_service
+from agent.api.dependencies import get_perception_service, get_request_locale
 from agent.contracts.event_v1 import EventStatus, ViolationSeverity, ViolationType
 from agent.contracts.query import CameraStatusResponse, RiskHeatmapResponse, SafetyQueryRequest, SafetyQueryResponse, ViolationPageResponse, ViolationQuery, ViolationStatisticsResponse
+from agent.i18n import SupportedLocale, localize_response
 from agent.services.perception_service import PerceptionService
 
 router = APIRouter(prefix="/api/v1", tags=["safety"])
 
 
 @router.get("/cameras", response_model=list[CameraStatusResponse])
-def list_cameras(service: PerceptionService = Depends(get_perception_service)) -> list[CameraStatusResponse]:
-    return service.list_camera_statuses()
+def list_cameras(
+    service: PerceptionService = Depends(get_perception_service),
+    locale: SupportedLocale = Depends(get_request_locale),
+) -> list[CameraStatusResponse]:
+    return localize_response(service.list_camera_statuses(), locale)
 
 
 @router.get("/violations", response_model=ViolationPageResponse)
@@ -29,8 +33,12 @@ def list_violations(
     status: EventStatus | None = None, start_time_utc: datetime | None = None, end_time_utc: datetime | None = None,
     limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0),
     service: PerceptionService = Depends(get_perception_service),
+    locale: SupportedLocale = Depends(get_request_locale),
 ) -> ViolationPageResponse:
-    return service.query_violations_page(ViolationQuery(camera_id=camera_id, violation_type=violation_type, severity=severity, status=status, start_time_utc=start_time_utc, end_time_utc=end_time_utc, limit=limit, offset=offset))
+    return localize_response(
+        service.query_violations_page(ViolationQuery(camera_id=camera_id, violation_type=violation_type, severity=severity, status=status, start_time_utc=start_time_utc, end_time_utc=end_time_utc, limit=limit, offset=offset)),
+        locale,
+    )
 
 
 @router.get("/violations/statistics", response_model=ViolationStatisticsResponse)
@@ -39,16 +47,24 @@ def violation_statistics(camera_id: str | None = None, start_time_utc: datetime 
 
 
 @router.get("/cameras/{camera_id}/status", response_model=CameraStatusResponse)
-def camera_status(camera_id: str, service: PerceptionService = Depends(get_perception_service)) -> CameraStatusResponse:
+def camera_status(
+    camera_id: str,
+    service: PerceptionService = Depends(get_perception_service),
+    locale: SupportedLocale = Depends(get_request_locale),
+) -> CameraStatusResponse:
     result = service.get_camera_status(camera_id)
     if result is None:
         raise HTTPException(status_code=404, detail="camera status not found")
-    return result
+    return localize_response(result, locale)
 
 
 @router.post("/agent/safety-query", response_model=SafetyQueryResponse)
-def safety_query(request: SafetyQueryRequest, service: PerceptionService = Depends(get_perception_service)) -> SafetyQueryResponse:
-    return service.run_safety_query(request)
+def safety_query(
+    request: SafetyQueryRequest,
+    service: PerceptionService = Depends(get_perception_service),
+    locale: SupportedLocale = Depends(get_request_locale),
+) -> SafetyQueryResponse:
+    return localize_response(service.run_safety_query(request), locale)
 
 
 @router.get("/safety/risk-heatmap", response_model=RiskHeatmapResponse)
@@ -56,8 +72,9 @@ def risk_heatmap(
     lookback_days: int = Query(default=7, ge=1, le=30),
     timezone_offset_hours: int = Query(default=8, ge=-12, le=14),
     service: PerceptionService = Depends(get_perception_service),
+    locale: SupportedLocale = Depends(get_request_locale),
 ) -> RiskHeatmapResponse:
-    return service.get_risk_heatmap(lookback_days, timezone_offset_hours)
+    return localize_response(service.get_risk_heatmap(lookback_days, timezone_offset_hours), locale)
 
 
 class FeishuTestRequest(BaseModel):
@@ -87,6 +104,7 @@ def test_feishu_notification(payload: FeishuTestRequest, request: Request) -> di
 async def stream_safety_events(
     request: Request,
     max_events: int = Query(default=0, ge=0, description="Max events to yield before closing stream (0 for infinite)"),
+    locale: SupportedLocale = Depends(get_request_locale),
 ) -> StreamingResponse:
     broadcaster = getattr(request.app.state, "broadcaster", None)
     if broadcaster is None:
@@ -110,7 +128,8 @@ async def stream_safety_events(
                         last_keepalive = now
                     continue
                 event_type = item.get("event_type", "message")
-                payload = json.dumps(item.get("data", {}), ensure_ascii=False)
+                data = localize_response(item.get("data", {}), locale)
+                payload = json.dumps(data, ensure_ascii=False)
                 yield f"event: {event_type}\ndata: {payload}\n\n"
                 last_keepalive = time.monotonic()
                 yielded_count += 1

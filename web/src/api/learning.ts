@@ -1,4 +1,5 @@
 import { apiClient } from './client'
+import { zonedDateBoundaryToIso } from '@/utils/datetime'
 
 const base = '/api/v1/learning'
 
@@ -27,7 +28,7 @@ export const getCaseDetail = async (id: string) => (await apiClient.get<CaseDeta
 export const getDocumentFragments = async (id: string) => (await apiClient.get<{ items: Array<{ content: string; citation: Citation }> }>(`${base}/documents/${id}/fragments`)).data
 export const uploadDocument = async (file: File, fields: { title: string; source_label: string; document_type: string; document_date: string; risk_tags: string; summary: string }) => {
   const data = new FormData(); data.append('file', file)
-  Object.entries(fields).forEach(([key, value]) => { if (value) data.append(key, key === 'document_date' ? `${value}T00:00:00+08:00` : value) })
+  Object.entries(fields).forEach(([key, value]) => { if (value) data.append(key, key === 'document_date' ? zonedDateBoundaryToIso(value) : value) })
   return (await apiClient.post('/api/v1/knowledge/documents', data, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })).data
 }
 export const updateDocumentMetadata = async (id: string, payload: { document_date: string | null; risk_tags: string[]; summary: string | null; source_display: string | null }) => (await apiClient.patch(`/api/v1/knowledge/documents/${id}/metadata`, payload)).data

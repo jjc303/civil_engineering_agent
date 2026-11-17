@@ -27,6 +27,7 @@ from agent.core.config import (
 )
 from agent.db.base import Database
 from agent.db.models import KnowledgeDocumentModel, KnowledgeDocumentVersionModel, KnowledgeIndexJobModel
+from agent.i18n import to_simplified_text
 from agent.llm.protocol import ChatModelPort
 from agent.prompts import load_prompt
 from agent.rag.chroma_adapter import KnowledgeRetrieverPort
@@ -466,9 +467,10 @@ class KnowledgeService:
             raise RuntimeError("RAG is disabled")
         if not query.strip() or not 1 <= top_k <= self.top_k_max:
             raise ValueError("invalid knowledge query")
+        normalized_query = to_simplified_text(query.strip())
         with self.database.session() as session:
             active = KnowledgeRepository(session).get_active_versions_validity(document_type)
-        chunks = self.rag_manager.search(document_type, query.strip(), top_k, [version_id for _, version_id in active])
+        chunks = self.rag_manager.search(document_type, normalized_query, top_k, [version_id for _, version_id in active])
         chunks = [chunk for chunk in chunks if (chunk.document_id, chunk.document_version_id) in active]
         return (
             [{"content": c.text, "title": c.title, "page_or_section": c.page_or_section, "source_label": c.source_label, "validity_status": active[(c.document_id, c.document_version_id)]} for c in chunks],

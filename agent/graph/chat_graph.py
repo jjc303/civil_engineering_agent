@@ -51,6 +51,7 @@ def _invoke_model_respond(
     prompt_context: str,
     tool_catalog: Sequence[dict[str, str]],
     capability_status: dict[str, Any],
+    response_locale: str = "zh-CN",
 ) -> str:
     """Invoke model.respond while keeping backwards compatibility with 3-arg stubs."""
     try:
@@ -66,6 +67,8 @@ def _invoke_model_respond(
         kwargs["tool_catalog"] = tool_catalog
     if accepts_var_kw or "capability_status" in param_names:
         kwargs["capability_status"] = capability_status
+    if accepts_var_kw or "response_locale" in param_names:
+        kwargs["response_locale"] = response_locale
     return active_model.respond(question, tool_results, prompt_context, **kwargs)
 
 
@@ -204,6 +207,7 @@ def build_compiled_chat_graph(
                 prompt_context,
                 full_catalog,
                 capability_status,
+                response_locale=state.get("response_locale", "zh-CN"),
             )
             if _contains_unsupported_standard_reference(answer, standards_context):
                 return {
