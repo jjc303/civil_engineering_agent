@@ -1,13 +1,18 @@
 # Web 与 Agent 接口约定冻结契约 (Web-Agent Interface Freeze Contract)
 
-> **版本**：v1.2.4 (FROZEN)
-> **冻结日期**：2026-09-26
+> **版本**：v1.2.5 (FROZEN)
+> **更新日期**：2026-11-18
 > **状态**：**已冻结 (Jointly Confirmed & Frozen)** —— Web 前端与 Agent 后端以此为唯一交付、实现与联调准绳。  
 > **适用范围**：Web 前端工程、Agent 服务层 (`agent/api` / `agent/contracts`)。
 
 ---
 
 ## 0. 版本演进与变更对齐 (Change Log & Alignment)
+
+### 0.9 v1.2.5：简繁语言协商与展示投影（`zh-CN` / `zh-HK`）
+1. **语言请求约定**：所有标准 HTTP API 通过 `Accept-Language: zh-CN | zh-HK` 声明目标展示语种；`GET /api/v1/safety/events/stream`（SSE）额外支持查询参数 `?lang=zh-CN|zh-HK`（优先于请求头，便于浏览器原生 `EventSource` 传递）。
+2. **存储与展示解耦**：数据库、Redis 缓存与 Chroma 向量库保持规范简体存储；`agent/api/dependencies.py` 的 `get_request_locale` 解析请求语言后，由出参投影对可读中文文本做只读转换。
+3. **机器字段不变量**：`event_uuid`、`camera_id`、`zone_id`、`monitor_session_id`、违规/严重度/状态枚举代码、URL、代码块及 UTC 时间戳在任何语言下均保持原样，不参与繁简字形转换。
 
 ### 0.8 v1.2.4：本地文件源事件时间校正
 1. **时间锚点一致性**：CV 对本地文件与实时流均以会话单调时钟生成事件时间，再由 `TimeAnchor` 映射为 UTC；禁止将 `frame_index / fps` 或 PTS 直接作为时间锚点输入。

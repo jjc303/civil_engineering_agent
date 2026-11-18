@@ -1,7 +1,7 @@
 # 智慧施工安全 Web 控制台 (Frontend) 当前进展报告
 
-> **报告版本**：v1.0 (Minimal Closed Loop Completed)  
-> **更新时间**：2026-09-25  
+> **报告版本**：v2.0 (i18n & Frontend SOLID Refactoring Completed)  
+> **更新时间**：2026-11-18  
 > **当前里程碑**：  
 > - **里程碑 0：工程底座与脚手架搭建 —— 100% 完成**  
 > - **里程碑 1：契约类型固化与高保真 Mock 桩体系 —— 100% 完成**  
@@ -110,3 +110,21 @@ npm run build
 1. **实时推流集成**：在多摄网格中引入 HLS / HTTP-FLV / WebRTC 实时视频流播放器组件。
 2. **WebSocket / SSE 实时推屏**：配合后端第二期 Pub/Sub 机制，在产生 `CRITICAL` 严重违规事件时实现前台全局毫秒级告警弹窗与警笛音效。
 3. **安全日报导出**：在看板中增加一键导出 PDF / Markdown 安全巡检报告功能。
+
+---
+
+## 5. Phase 2 演进记录：简繁双语切换与 SOLID 架构重构（2026-11-18）
+
+### 5.1 全站简繁中文一键切换（面向港澳地区）
+- **对称语言体系**：基于 `vue-i18n` 与 `<el-config-provider>` 建立 `zh-CN`（简体中文）与 `zh-HK`（港澳繁体）897 组对称词条及字体栈适配；通过 `useLocaleStore`（Pinia）持久化至 `localStorage` 并支持跨标签 `storage` 同步。
+- **全端覆盖与协议联动**：顶栏与 `/learn/:token` 独立学习页集成 `<LocaleToggle />`；[dictionaries.ts](../../web/src/stores/dictionaries.ts) 按当前语言动态加载 `/api/v1/meta/dictionaries`；Axios 请求自动注入 `Accept-Language`，SSE 实时流附加 `?lang=` 查询参数，与后端 `agent/i18n/` 协同完成展示层简繁切换。
+
+### 5.2 前端 SOLID 解耦、去硬编码与大组件拆分
+- **配置与存储收口**：新增 [runtime.ts](../../web/src/config/runtime.ts)、[storage.ts](../../web/src/utils/storage.ts) 与 [chat.ts](../../web/src/types/chat.ts)，消除分散的环境变量默认值、超时魔数、本地存储键以及 `ChatMessageItem` 重复声明。
+- **API 基础设施 DIP 重构**：在 [ports.ts](../../web/src/api/ports.ts) 抽象 `ApiNotifier` / `ApiTranslator` 与业务端口，[client.ts](../../web/src/api/client.ts) 彻底解除对 `element-plus` 的依赖并拆出 `api/http/` 与 `api/mock/`，由 [index.ts](../../web/src/api/index.ts) 在构建期实现非 Mock 包对 `mock/fixtures.ts` 的 Tree-Shaking 剥离。
+- **四大主视图模块化拆分**：
+  - [AgentCopilot.vue](../../web/src/views/AgentCopilot.vue)（215 行）：拆出 `useCopilotSession.ts` 与 `components/copilot/*`；整改创建弹窗直接调用结构化 `proposeRectificationTaskCreate`，淘汰自然语言拼接。
+  - [ZoneEditor.vue](../../web/src/views/ZoneEditor.vue)（260 行）：拆出纯几何工具 `zoneGeometry.ts`、`useZoneCanvas.ts`、`useZoneDraft.ts` 与 `components/zones/*`，修复坐标边界钳制硬编码并收敛重复样式。
+  - [LearningCenter.vue](../../web/src/views/LearningCenter.vue)（231 行）：拆出 `useLearningCenter.ts`、`useObjectUrl.ts` 与 11 个 `components/learning/*` 模块。
+  - [Dashboard.vue](../../web/src/views/Dashboard.vue)（261 行）：拆出 `useDashboardCharts.ts`、`useSafetyStream.ts`（`Violations.vue` 共用）与 `components/dashboard/*`，合并历史 4 层覆盖样式。
+- **最新自动化验证**：`cd web && npm test`（Node 原生 TS 单元测试 **12 passed, 0 failed**）与 `cd web && npm run build`（`vue-tsc -b` **0 错误**，Vite 构建通过）全部绿灯。

@@ -1,6 +1,6 @@
 # 智慧施工安全智能体：项目功能与 Agent 工具总览
 
-> 依据当前仓库代码整理，更新日期：2026-10-10。本文描述已经接入的功能与代码边界；能否实际使用还取决于数据库迁移、模型与向量库配置、CV 节点及网络可达性。文中的“Agent 工具”特指聊天图向模型提供的工具目录，不等同于所有 FastAPI 接口。
+> 依据当前仓库代码整理，更新日期：2026-11-18。本文描述已经接入的功能与代码边界；能否实际使用还取决于数据库迁移、模型与向量库配置、CV 节点及网络可达性。文中的“Agent 工具”特指聊天图向模型提供的工具目录，不等同于所有 FastAPI 接口。
 
 ## 1. 项目定位与架构
 
@@ -8,8 +8,8 @@
 
 | 层 | 实现 | 主要职责 |
 | --- | --- | --- |
-| Web | Vue 3、TypeScript、Vite、Element Plus、ECharts、Konva | 监控、事件、整改、标定、聊天、学习中心与工人答题界面；支持 SSE 实时事件流与状态归约 |
-| Agent API | FastAPI、Pydantic、SQLAlchemy、Alembic | 业务接口、工具编排、待确认写操作、知识库与学习任务、SSE 实时事件推流端点 |
+| Web | Vue 3、TypeScript、Vite、Pinia、`vue-i18n`、Element Plus、ECharts、Konva | 监控、事件、整改、标定、聊天、学习中心与工人答题界面；支持 SSE 实时事件流、简繁热切换与依赖倒置 API 层 |
+| Agent API | FastAPI、Pydantic、SQLAlchemy、Alembic、`zhconv` | 业务接口、工具编排、待确认写操作、知识库与学习任务、SSE 实时推流与多语种出参投影 |
 | Agent 模型 | LangGraph、DeepSeek 兼容接口；可切换 Fake 适配器 | 选择工具、生成回答、报告、教育建议和培训材料 |
 | 数据与缓存 | MySQL；ChromaDB；Redis 6+（含内存降级）；本地文档与快照 | 业务持久化、向量索引、分布式互斥锁(Watchdog)、高频缓存及可靠消息流 |
 | CV 节点 | PyTorch、Ultralytics、OpenCV、跟踪和本地控制 API | 解码视频、检测人员与安全帽、判断危险区域、发布事件和状态 |
@@ -112,7 +112,7 @@ graph LR
 | `publish_training_task` | 发布培训任务 | 仅草稿可发布；生成工人学习地址及二维码 |
 | `delete_training_task` | 删除培训任务 | 草稿和已发布任务均可删除；发布任务删除后链接失效，答题记录与成绩一并删除 |
 
-所有写工具均经 `AgentWriteActionService` 生成 `PendingActionResponse`。对话中说“生成报告”只会先出现待确认卡片；必须点击确认才真正生成草稿。培训引导表单通过 `POST /api/v1/agent/learning/training/propose` 创建同一种待确认操作。用户在学习中心页面直接点击生成或修改，则调用学习中心 API；这是**页面业务操作**，不能与 Agent 工具的确认机制混为一谈。
+所有写工具均经 `AgentWriteActionService` 生成 `PendingActionResponse`。对话中说“生成报告”只会先出现待确认卡片；必须点击确认才真正生成草稿。助手页面的整改创建弹窗与培训设置弹窗分别直接调用结构化 `POST /api/v1/rectification-tasks/pending-create` 与 `POST /api/v1/agent/learning/training/propose` 生成待确认操作卡片，不再经自然语言句拼接回传大模型解析。用户在学习中心页面直接点击生成或修改，则调用学习中心 API；这是**页面业务操作**，不能与 Agent 工具的确认机制混为一谈。
 
 ## 3. 系统页面与用户可见功能
 
@@ -158,6 +158,12 @@ graph LR
 5. **工人学习与统计**：工人打开 `/learn/:token` 阅读并答题，按工号和姓名提交；同一工号对同一任务只能提交一次。服务端按正确题数算百分制成绩，保存答题与及格结果；管理端查看完成率、平均分、及格率及提交明细。
 
 `LEARNING_PUBLIC_BASE_URL` 决定二维码中的前端地址。`127.0.0.1` 仅对打开网页的那台设备有效；手机扫码需要手机可访问的局域网地址，同时前端 API 地址也必须能从手机访问。
+
+### 3.4 简繁中文切换与存储展示解耦（`zh-CN` / `zh-HK`）
+
+- **前端国际化架构**：`web/src/i18n/` 基于 `vue-i18n` 与策略表维护对称的简体（`zh-CN`）与繁体（`zh-HK`）词条，配合 [locale.ts](file:///home/jjc/projects/python/civil_engineering_agent/web/src/stores/locale.ts)（`localStorage` 持久化与跨标签 `storage` 监听）及顶栏/工人页 `<LocaleToggle />` 实现全站即时切换，Element Plus 组件随 `<el-config-provider>` 同步。
+- **后端请求解析与投影**：Axios 拦截器自动注入 `Accept-Language`，SSE 事件流携带 `?lang=`；`agent/api/dependencies.py` 的 `get_request_locale` 解析为 `SupportedLocale`（`zh-CN` / `zh-HK`），各 API 出口调用 `agent/i18n/presenter.py` 的 `localize_response` 对可读文本做只读投影，自动跳过机器标识符（`camera_id`、`event_uuid`、状态枚举、URL 等）与 Markdown 代码块，数据库与 Redis/Chroma 缓存保持规范简体存储。
+- **检索与回答一致性**：知识检索与学习搜索入口通过 `to_simplified_text` 归一化繁体检索词，确保命中文库中的简体规范与案例；Agent LLM 链路传入 `response_locale` 引导并使用出参兜底转换，`agent/domain/standards_guard.py` 在校验规范引用前将答案与依据统一归一为简体，防止繁体引用简体规范时触发误拦截。
 
 ## 4. 主要接口分组
 
@@ -205,5 +211,6 @@ graph LR
 | 事故/规范 RAG | `agent/services/knowledge_service.py`、`agent/rag/manager.py`、`agent/rag/chroma_adapter.py` |
 | 报告、培训和答题 | `agent/services/learning_service.py`、`agent/api/learning.py` |
 | CV 管理与事件 | `agent/services/camera_management.py`、`agent/services/perception_service.py`、`perception/control_api.py` |
-| 页面 | `web/src/views/`、`web/src/router/index.ts` |
+| 简繁适配与投影 | `agent/i18n/{locale.py,converter.py,presenter.py}`、`agent/domain/standards_guard.py` |
+| 前端配置、接口与视图 | `web/src/config/runtime.ts`、`web/src/api/{ports.ts,client.ts,index.ts,http/,mock/}`、`web/src/composables/`、`web/src/views/`、`web/src/router/index.ts` |
 

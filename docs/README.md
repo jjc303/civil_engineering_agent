@@ -23,6 +23,10 @@
   - [DeepSeek 接入与模型适配报告 (DeepSeek_Integration.md)](./agent/DeepSeek_Integration.md)：官方 DeepSeek-V3 / R1 协议适配与离线测试桩。
   - [会话记忆与 RAG 向量库管理规范 (Agent_Memory_RAG_Management.md)](./agent/Agent_Memory_RAG_Management.md)：早期设计文档；当前实现以[项目功能与 Agent 工具总览](./PROJECT_FUNCTIONS_AND_AGENT_TOOLS.md)和代码为准。
 
+- [Web 控制台子系统 (Web)](./web/README.md)
+  - [Web 前端当前进展报告 (PROGRESS.md)](./web/PROGRESS.md)：包含简繁双语切换与 Phase 2 前端 SOLID 解耦重构记录。
+  - [前端架构重构台账与验收标准 (frontend-architecture-refactoring-plan.md)](./todo/frontend-architecture-refactoring-plan.md)：API 依赖倒置与四大视图拆分验收记录。
+
 ## 2. 文档组织架构
 
 ```text

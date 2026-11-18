@@ -15,9 +15,9 @@
 | **危险区域多边形标定** | **Konva.js (`vue-konva`)** | 手搓原生 Canvas 像素计算、点选判定、拖拽重绘 | 成熟 2D Canvas 场景图引擎，内置对象树、图层管理、多边形锚点拖拽吸附、视口缩放与事件代理 |
 | **智能问答与 Markdown 渲染** | **`markdown-it` + `github-markdown-css` + `highlight.js`** | 手写正则替换 Markdown / 简易富文本 | 完美兼容 GFM 语法、表格、代码高亮、数学公式与防 XSS 注入 |
 | **视频流与回放** | **`video.js`** 或 **西瓜播放器 `xgplayer`** | 原生 `<video>` 简陋控制器 | 自带专业播放控制条、截图、全屏、倍速、错误重连及 HLS/HTTP-FLV 扩展能力 |
-| **状态管理与通用工具** | **Pinia + `@vueuse/core`** | 手写全局 EventBus、窗口 resize 监听、防抖节流 | Vue 官方推荐状态管理；VueUse 提供开箱即用的传感器、剪贴板、防抖节流 Hooks |
+| **状态管理与国际化** | **Pinia + `vue-i18n` + `@vueuse/core`** | 手写全局 EventBus、硬编码多语言分支、窗口 resize 监听 | Pinia 管理语言/字典状态；`vue-i18n` + `<el-config-provider>` 实现简繁热切换与本地持久化 |
 | **图标体系** | **Lucide Icons (`lucide-vue-next`)** 或 **`@element-plus/icons-vue`** | 手写切图 / 手写 SVG 拼接 | 现代矢量图标库，支持按需加载与统一尺寸配色 |
-| **网络请求库** | **Axios** (封装统一拦截器与 TS 类型推断) | 原生 `fetch` 裸写 | 统一拦截 401/409/422/500 状态码，自动挂载 Token 与超时取消控制 |
+| **网络请求与依赖倒置** | **Axios + Port 端口抽象（`api/ports.ts` + `http/` + `mock/`）** | 在基础设施层耦合 UI 弹窗、在业务 API 中散布 `if (isMockEnabled)` | 统一封装超时、409/422/500 通知端口注入、`Accept-Language` 拦截，非 Mock 生产包可完全 Tree-Shaking 剥离 `fixtures.ts` |
 
 ---
 
@@ -32,36 +32,43 @@
 
 ---
 
-## 3. 前端工程典型目录结构
+## 3. 当前前端工程目录结构
 
 ```text
 web/
 ├── index.html
 ├── package.json
 ├── vite.config.ts
-├── env.d.ts
-├── src/
-│   ├── assets/              # 静态资源、通用样式 (Tailwind/UnoCSS 或 SCSS)
-│   ├── api/                 # 基于契约封装的 API 请求模块 (Axios 实例)
-│   │   ├── client.ts        # 统一拦截器、错误码 409 拦截
-│   │   ├── violations.ts    # 违规列表与统计接口
-│   │   ├── cameras.ts       # 摄像头状态与围栏配置接口
-│   │   └── chat.ts          # Agent 智能问答接口
-│   ├── types/               # 契约 TypeScript 类型定义 (直接引入 integration 契约)
-│   │   └── contract.ts      # 与后端 Pydantic 1:1 严格对齐
-│   ├── mock/                # 本地 Mock 桩数据 (VITE_USE_MOCK=true 时生效)
-│   │   └── fixtures.ts      # 模拟事件、统计指标与问答响应
-│   ├── views/               # 核心业务页面
-│   │   ├── Dashboard/       # 安全态势监控大屏 (ECharts 看板)
-│   │   ├── Violations/      # 违规事件检索列表与详情弹窗
-│   │   ├── ZoneEditor/      # 危险区域多边形标定工具 (基于 Konva.js)
-│   │   └── AgentCopilot/    # 智能安全问答助手 (Markdown 对话 + 证据卡片)
-│   ├── components/          # 业务复用组件
-│   │   ├── VideoPlayer.vue  # 监控播放器封装
-│   │   ├── EvidenceCard.vue # 违规抓拍与证据信息卡片
-│   │   └── ToolTrace.vue    # 智能体工具调用轨迹展示组件
-│   ├── stores/              # Pinia 状态仓储 (相机状态、全局告警、会话缓存)
-│   └── main.ts              # 入口文件 (挂载 Element Plus、ECharts、Pinia、Router)
+├── tests/                             # 纯 Node TypeScript 单元测试（npm test）
+│   ├── register-alias.mjs             # Node ESM @/ 别名解析钩子
+│   ├── apiClient.test.ts              # API 通知/翻译端口与拦截器测试（无 UI 依赖）
+│   ├── zoneGeometry.test.ts           # 围栏坐标几何与边界钳制测试
+│   └── dashboardCharts.test.ts        # 大屏 ECharts Option 纯函数测试
+└── src/
+    ├── config/runtime.ts              # 环境变量默认值、超时与存储键注册表
+    ├── i18n/                          # vue-i18n 简繁词条（zh-CN / zh-HK）、语言探测与策略表
+    ├── api/                           # 依赖倒置的接口层
+    │   ├── ports.ts                   # ApiNotifier / ApiTranslator 与业务 Port 契约
+    │   ├── client.ts                  # 无 UI 依赖的 Axios 实例与拦截器
+    │   ├── index.ts                   # HTTP / Mock 组合根（编译期 Tree-Shaking）
+    │   ├── http/*.http.ts             # 纯 HTTP 与 SSE 实现
+    │   ├── mock/*.mock.ts             # 离线 Mock 适配器
+    │   └── notifiers/elementPlus.ts   # Element Plus 消息通知适配器（main.ts 装配）
+    ├── composables/                   # 高内聚业务与基础设施 Composables
+    │   ├── useCopilotSession.ts       # 助手会话状态机、待确认动作与持久化
+    │   ├── useDashboardCharts.ts      # 4 组 ECharts Option 纯构造与主题阈值
+    │   ├── useLearningCenter.ts       # 学习中心多域加载与共享任务执行器
+    │   ├── useObjectUrl.ts            # Blob URL / 二维码生命周期与自动回收
+    │   ├── useSafetyStream.ts         # SSE 实时事件流生命周期与重连
+    │   ├── useZoneCanvas.ts           # 围栏画布交互、DPR 自适应与预览探测
+    │   └── useZoneDraft.ts            # 围栏未保存草稿缓存读写
+    ├── utils/                         # 纯工具模块（datetime.ts / deployment.ts / monitoring.ts / storage.ts / zoneGeometry.ts）
+    ├── types/                         # 契约类型（contract.ts / chat.ts）
+    ├── stores/                        # Pinia 状态（app.ts / dictionaries.ts / locale.ts）
+    ├── components/                    # 公共组件及领域子组件目录（copilot/ / dashboard/ / learning/ / zones/）
+    ├── views/                         # 业务容器视图（Dashboard / Violations / RectificationTasks / ZoneEditor / CameraManagement / AgentCopilot / LearningCenter / WorkerLearning，主视图均 < 300 行）
+    ├── router/index.ts                # 路由定义与动态页面标题同步
+    └── main.ts                        # 应用装配根（Pinia、Router、i18n、Element Plus、ApiNotifier）
 ```
 
 ---

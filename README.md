@@ -13,6 +13,7 @@
 │   ├── contracts/                 # Pydantic 请求/响应契约
 │   ├── db/                        # SQLAlchemy 模型与 Alembic 迁移
 │   ├── graph/                     # Agent 多步工具规划图
+│   ├── i18n/                      # 简繁中文适配、正文转换与出参只读投影
 │   ├── infra/                     # Redis 缓存、分布式锁(Watchdog)、Streams消息流、SSE实时广播
 │   ├── llm/                       # DeepSeek / Fake 模型适配器
 │   ├── rag/                       # RagManager、Chroma 检索与 Embedding 适配器
@@ -28,14 +29,14 @@
 
 | 层级 | 技术 |
 | --- | --- |
-| 后端 | Python 3.10+、FastAPI、Uvicorn、Pydantic、SQLAlchemy、Alembic |
+| 后端 | Python 3.10+、FastAPI、Uvicorn、Pydantic、SQLAlchemy、Alembic、`zhconv` |
 | 业务数据库 | MySQL 8（开发测试也可用 SQLite 内存库） |
 | 缓存与消息 | Redis 6+（高频数据缓存、原子分布式锁与看门狗、Streams 可靠队列、Pub/Sub）及内存优雅降级 |
 | 实时推送 | Server-Sent Events (SSE) 毫秒级单向流式推送，原生断线自动重连 |
 | Agent | LangGraph、DeepSeek API、短期会话记忆、工具调用与重试 |
 | RAG | ChromaDB、阿里云百炼 DashScope `text-embedding-v4`、`pypdf`、`python-docx` |
 | CV | PyTorch、Ultralytics、OpenCV、目标跟踪、危险区域几何判断 |
-| 前端 | Vue 3、TypeScript、Vite、Vue Router、Element Plus、ECharts、Konva |
+| 前端 | Vue 3、TypeScript、Vite、Pinia、Vue Router、`vue-i18n`、Element Plus、ECharts、Konva |
 
 运行拓扑：
 
@@ -102,6 +103,11 @@ Agent API (FastAPI :8000) ── MySQL                                      │
 - **带看门狗（Watchdog）的分布式互斥锁**：智能体写动作确认（防双击）、摄像头启停控制（防竞争）和知识库定时同步加持原子互斥锁与后台自动续期守护，在多进程与集群部署下保证幂等与并发安全。
 - **可靠流式队列与发布订阅广播**：基于 Redis Streams 消费者组提供 At-Least-Once 事件派发削峰，配合 Redis Pub/Sub 与 FastAPI SSE（Server-Sent Events）端点，前端大屏原生毫秒级接收安全事件与状态更新。
 - **Fail-Open 优雅降级**：所有组件严格基于 DIP 接口抽象；若 Redis 未配置或网络断连，系统自动无缝降级为进程内内存实现，主业务完全不受影响。
+
+### 简繁中文一键切换（面向港澳地区）
+
+- **全站同步热切换**：管理端顶栏与独立工人学习页（`/learn/:token`）均内置简/繁切换胶囊（`zh-CN` / `zh-HK`），基于 `vue-i18n`、Pinia 与 Element Plus `<el-config-provider>` 即时生效，并经 `localStorage` 与 `storage` 事件在多标签页间同步。
+- **存储与展示解耦**：MySQL、Chroma 向量库与 Redis 缓存统一保持简体中文；前端请求自动附带 `Accept-Language` 请求头（SSE 实时流使用 `?lang=` 参数），后端经 `agent/i18n/` 在检索入口归一化为简体、在响应出口只读投影为对应繁简字形，同时跳过标识符、URL、编码与代码块内容；规范依据守卫与助手回答同步兼容繁体引用。
 
 ## 3. 从零开始运行
 
@@ -291,8 +297,11 @@ cp /path/to/事故调查报告.pdf runs/knowledge/inbox/accident_reports/
 # Agent 测试
 python3 -m pytest -q tests/agent
 
+# 前端 Node 单元测试（API 基础设施与纯领域逻辑）
+cd web && npm test
+
 # 前端类型检查与生产构建
-cd web && npm run build
+npm run build
 
 # 检查当前迁移版本
 cd .. && alembic current
@@ -318,6 +327,7 @@ cd .. && alembic current
 
 ## 相关文档
 
+- [Web 控制台规范与进展](docs/web/README.md)
 - [Agent 与 RAG 管理说明](docs/agent/Agent_Memory_RAG_Management.md)
 - [CV / Agent / Web 接口契约](docs/integration/CV_Agent_Web_Integration_Contract.md)
 - [系统功能与使用指南](docs/migration/SYSTEM_FEATURES_AND_USAGE_GUIDE.md)
