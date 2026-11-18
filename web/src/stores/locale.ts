@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { i18n, setI18nLocale } from '@/i18n'
+import { setI18nLocale } from '@/i18n'
+import { writeStorage } from '@/utils/storage'
 import {
   LOCALE_OPTIONS,
   LOCALE_STORAGE_KEY,
@@ -27,12 +28,8 @@ export const useLocaleStore = defineStore('locale', () => {
     if (typeof document !== 'undefined') {
       document.documentElement.lang = activeStrategy.htmlLang
     }
-    if (persist && typeof window !== 'undefined') {
-      try {
-        window.localStorage.setItem(LOCALE_STORAGE_KEY, next)
-      } catch {
-        // Ignore storage write errors in restricted browsing modes
-      }
+    if (persist) {
+      writeStorage(LOCALE_STORAGE_KEY, next, 'local')
     }
   }
 

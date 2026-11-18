@@ -1,208 +1,231 @@
 <template>
   <div class="education-workbench">
     <header class="page-header">
-      <div><span class="eyebrow">SAFETY EDUCATION</span><h1>{{ t('learning.title') }}</h1><p>{{ t('learning.subtitle') }}</p></div>
+      <div>
+        <span class="eyebrow">SAFETY EDUCATION</span>
+        <h1>{{ t('learning.title') }}</h1>
+        <p>{{ t('learning.subtitle') }}</p>
+      </div>
       <el-button text :loading="overviewLoading" @click="refresh">{{ t('learning.refreshData') }}</el-button>
     </header>
 
-    <section class="overview-panel" :aria-label="t('learning.overviewAria')">
-      <div class="overview-heading"><div><span class="section-kicker">{{ t('learning.overviewKicker') }}</span><h2>{{ weekLabel }}</h2></div><span class="overview-source">{{ t('learning.overviewSource') }}</span></div>
-      <div class="metric-grid">
-        <div class="metric"><span>{{ t('learning.metricViolations') }}</span><strong>{{ overview?.total_events ?? '—' }}</strong><small>{{ t('learning.metricViolationsHint') }}</small></div>
-        <div class="metric critical"><span>{{ t('learning.metricHighRisk') }}</span><strong>{{ overview?.high_risk_events ?? '—' }}</strong><small>{{ t('learning.metricHighRiskHint') }}</small></div>
-        <div class="metric"><span>{{ t('learning.metricTrainings') }}</span><strong>{{ overview?.training_count ?? '—' }}</strong><small>{{ t('learning.metricTrainingsHint') }}</small></div>
-        <div class="metric progress"><span>{{ t('learning.metricCompletion') }}</span><strong>{{ overview ? `${Math.min(100, overview.completion_rate)}%` : '—' }}</strong><small>{{ overview ? t('learning.metricCompletionHint', { completed: overview.completed_count, target: overview.target_count }) : t('learning.metricCompletionFallback') }}</small><small v-if="overview?.excess_completed_count">{{ t('learning.excessCompleted', { count: overview.excess_completed_count }) }}</small></div>
-      </div>
-      <div class="overview-footer"><div class="risk-line"><span>{{ t('learning.mainRisks') }}</span><template v-if="overview?.main_risks.length"><span v-for="risk in overview.main_risks" :key="risk.code" class="risk-chip">{{ risk.label }} <b>{{ risk.count }}</b></span></template><span v-else class="muted">{{ t('learning.noWeeklyEvents') }}</span></div><div class="hero-actions"><el-button plain @click="reportFormOpen = true">{{ t('learning.customReportPeriod') }}</el-button><el-button type="primary" :loading="busy" @click="makeWeeklyReport">{{ t('learning.generateWeeklyReport') }}</el-button><el-button color="#6959d5" plain @click="openTrainingComposer()">{{ t('learning.generateTrainingPlan') }}</el-button></div></div>
-      <p v-if="overviewError" class="inline-error">{{ t('learning.overviewError') }}<button @click="loadOverview">{{ t('learning.retry') }}</button></p>
-    </section>
+    <LearningOverviewSection
+      :overview="overview"
+      :week-label="weekLabel"
+      :busy="busy"
+      :error="overviewError"
+      @open-custom-report="reportFormOpen = true"
+      @create-weekly-report="makeWeeklyReport"
+      @open-training-composer="openTrainingComposer()"
+      @retry="loadOverview"
+    />
 
     <div class="content-grid">
       <main class="primary-column">
-        <section class="surface recommended-section">
-          <div class="section-head"><div><span class="section-kicker">{{ t('learning.basedOnRisks') }}</span><h2>{{ t('learning.recommendedCasesTitle') }}</h2></div><span class="small-note">{{ t('learning.semanticRetrievalNote') }}</span></div>
-          <div v-if="currentInsights?.recommended_cases.length" class="recommend-grid">
-            <article v-for="(doc, index) in currentInsights.recommended_cases" :key="doc.document_id" class="recommend-card">
-              <div class="recommend-index">{{ String(index + 1).padStart(2, '0') }}</div>
-              <div class="recommend-body"><div class="card-top"><span class="type-pill">{{ t('enums.documentType.ACCIDENT_CASE') }}</span><time>{{ doc.document_date ? formatDay(doc.document_date) : t('learning.undated') }}</time></div><h3>{{ doc.title }}</h3><p class="summary">{{ doc.summary || t('learning.noSummaryHint') }}</p><div class="related"><span>{{ t('learning.relatedWeeklyRisks') }}</span><b v-for="risk in doc.related_risks" :key="risk">{{ risk }}</b></div><div class="card-actions"><el-button link type="primary" @click="openDocument(doc)">{{ t('learning.viewDetail') }}</el-button><el-button link @click="addToTraining(doc)">{{ t('learning.addToTraining') }}</el-button></div></div>
-            </article>
-          </div>
-          <div v-else class="empty-state"><strong>{{ insightsLoading ? t('learning.searchingCases') : t('learning.noRecommendedCases') }}</strong><p v-if="!insightsLoading">{{ overview?.main_risks.length ? t('learning.confirmIndexedHint') : t('learning.noRiskFallbackHint') }}</p></div>
-        </section>
+        <LearningRecommendSection
+          :insights="currentInsights"
+          :loading="insightsLoading"
+          :has-main-risks="Boolean(overview?.main_risks.length)"
+          :format-day="formatDay"
+          @open-document="openDocument"
+          @add-to-training="addToTraining"
+        />
 
-        <section class="surface library-section">
-          <div class="section-head"><div><span class="section-kicker">{{ t('learning.librarySearchKicker') }}</span><h2>{{ t('learning.libraryTitle') }} <small>· {{ documentTotal }} {{ t('common.unitDocs') }}</small></h2></div><el-button type="primary" plain @click="uploadOpen = true">{{ t('learning.uploadDocument') }}</el-button></div>
-          <div class="filter-row"><el-input v-model="docQuery" :placeholder="t('learning.searchLibraryPlaceholder')" clearable @keyup.enter="loadDocuments" /><el-select v-model="docType" :aria-label="t('learning.docTypeAria')"><el-option :label="t('enums.documentType.ACCIDENT_CASE')" value="ACCIDENT_REPORT" /><el-option :label="t('enums.documentType.STANDARD')" value="STANDARD" /></el-select><el-select v-model="riskType" :placeholder="t('learning.riskTypePlaceholder')" clearable filterable><el-option v-for="tag in availableRiskTags" :key="tag" :label="tag" :value="tag" /></el-select><el-date-picker v-model="documentRange" type="daterange" value-format="YYYY-MM-DD" :range-separator="t('common.rangeSeparator')" :start-placeholder="t('common.startDate')" :end-placeholder="t('common.endDate')" clearable /><el-button @click="searchLibrary">{{ t('common.filter') }}</el-button></div>
-          <div v-if="documents.length" class="library-grid"><button v-for="doc in documents" :key="doc.document_id" class="library-card" @click="openDocument(doc)"><span class="library-type">{{ doc.document_type === 'STANDARD' ? t('enums.documentType.STANDARD_MATERIAL') : t('enums.documentType.ACCIDENT_CASE') }} <time>{{ doc.document_date ? formatDay(doc.document_date) : t('learning.undatedShort') }}</time></span><strong>{{ doc.title }}</strong><span class="library-summary">{{ doc.summary || t('learning.noSummaryCard') }}</span><span class="library-foot">{{ doc.risk_tags.slice(0, 2).join(' · ') || t('learning.untaggedRisk') }} <i>{{ t('learning.viewArrow') }}</i></span></button></div>
-          <div v-else class="empty-state"><strong>{{ t('learning.noMatchedDocs') }}</strong><p>{{ t('learning.noMatchedDocsHint') }}</p></div>
-          <el-pagination v-if="documentTotal > 20" class="pagination" layout="prev, pager, next" :total="documentTotal" :page-size="20" :current-page="documentOffset / 20 + 1" @current-change="changeDocumentPage" />
-        </section>
+        <LearningLibrarySection
+          v-model:doc-query="docQuery"
+          v-model:doc-type="docType"
+          v-model:risk-type="riskType"
+          v-model:document-range="documentRange"
+          :documents="documents"
+          :document-total="documentTotal"
+          :document-offset="documentOffset"
+          :available-risk-tags="availableRiskTags"
+          :format-day="formatDay"
+          @filter="searchLibrary"
+          @page-change="changeDocumentPage"
+          @open-document="openDocument"
+          @open-upload="uploadOpen = true"
+        />
       </main>
 
-      <aside class="side-column">
-        <section class="surface task-section"><div class="section-head"><div><span class="section-kicker">{{ t('learning.trainingExecutionKicker') }}</span><h2>{{ t('learning.weeklyTasksTitle') }}</h2></div><el-button link @click="openTrainingComposer()">{{ t('learning.newTask') }}</el-button></div>
-          <div v-if="weeklyTraining.length" class="weekly-task-list"><button v-for="task in weeklyTraining" :key="task.task_id" class="weekly-task" @click="showTraining(task)"><span class="task-top"><b>{{ task.title }}</b><span :class="task.status === 'PUBLISHED' ? 'status-running' : 'status-draft'">{{ task.status === 'PUBLISHED' ? t('enums.trainingStatus.RUNNING') : t('enums.trainingStatus.PENDING_PUBLISH') }}</span></span><span class="task-count">{{ t('learning.taskParticipants', { target: task.target_count, completed: task.weekly?.completed_count ?? 0 }) }}</span><el-progress :percentage="task.target_count ? Math.min(100, Math.round(100 * (task.weekly?.completed_count ?? 0) / task.target_count)) : 0" :stroke-width="6" :show-text="false" /><span class="task-bottom">{{ t('learning.avgScore', { score: task.weekly?.average_score ?? 0 }) }} <i>{{ t('learning.viewDetailArrow') }}</i></span></button></div>
-          <div v-else class="empty-state compact"><strong>{{ t('learning.noWeeklyTasks') }}</strong><p>{{ t('learning.noWeeklyTasksHint') }}</p><el-button type="primary" plain @click="openTrainingComposer()">{{ t('learning.generateTraining') }}</el-button></div>
-        </section>
-        <section class="advice-panel"><span class="advice-icon">✦</span><span class="section-kicker">AGENT INSIGHT</span><h2>{{ t('learning.aiAdviceTitle') }}</h2><p v-if="currentInsights?.advice">{{ currentInsights.advice }}</p><p v-else>{{ insightsLoading ? t('learning.aiAdviceLoading') : t('learning.aiAdviceEmpty') }}</p><small v-if="currentInsights" class="advice-updated">{{ t('learning.aiAdviceUpdated', { time: formatInsightTime(currentInsights.generated_at_utc) }) }}</small><el-button class="advice-action" @click="openTrainingComposer()">{{ t('learning.generateTrainingFromAdvice') }}</el-button><el-button class="advice-refresh" link :loading="insightsLoading" @click="loadInsights(true)">{{ t('learning.regenerateAdvice') }}</el-button></section>
-      </aside>
+      <LearningSideColumn
+        :weekly-training="weeklyTraining"
+        :insights="currentInsights"
+        :insights-loading="insightsLoading"
+        :format-insight-time="formatInsightTime"
+        @open-training-composer="openTrainingComposer()"
+        @show-training="showTraining"
+        @refresh-insights="loadInsights(true)"
+      />
     </div>
 
-    <section class="history-section"><div class="section-head"><div><span class="section-kicker">{{ t('learning.historyKicker') }}</span><h2>{{ t('learning.historyTitle') }}</h2></div></div><div class="history-grid"><div class="surface history-list"><h3>{{ t('learning.safetyReports') }} <small>{{ reports.length }}</small></h3><div v-if="reports.length"><div v-for="report in reports.slice(0, showAllReports ? undefined : 8)" :key="report.report_id" class="history-row"><div><strong>{{ reportDay(report.period_start_utc) }} — {{ reportDay(report.period_end_utc, true) }}</strong><small>{{ t('learning.reportStatsLine', { status: report.status === 'CONFIRMED' ? t('enums.reportStatus.CONFIRMED') : t('enums.reportStatus.DRAFT'), total: report.statistics.total }) }}</small></div><div><el-button link @click="showReport(report)">{{ t('learning.view') }}</el-button><el-button v-if="report.pdf_url" link type="primary" @click="downloadPdf(report.report_id)">{{ t('copilot.downloadPdf') }}</el-button></div></div><el-button v-if="reports.length > 8" link @click="showAllReports = !showAllReports">{{ showAllReports ? t('learning.collapse') : t('learning.viewAllReports', { count: reports.length }) }}</el-button></div><p v-else class="muted">{{ t('learning.noHistoryReports') }}</p></div><div class="surface history-list"><h3>{{ t('learning.trainingRecords') }} <small>{{ trainings.length }}</small></h3><div v-if="trainings.length"><div v-for="task in trainings.slice(0, showAllTraining ? undefined : 8)" :key="task.task_id" class="history-row"><div><strong>{{ task.title }}</strong><small>{{ t('learning.trainingRecordLine', { status: task.status === 'PUBLISHED' ? t('enums.trainingStatus.PUBLISHED') : t('enums.trainingStatus.DRAFT'), target: task.target_count }) }}</small></div><el-button link @click="showTraining(task)">{{ t('learning.view') }}</el-button></div><el-button v-if="trainings.length > 8" link @click="showAllTraining = !showAllTraining">{{ showAllTraining ? t('learning.collapse') : t('learning.viewAllTrainings', { count: trainings.length }) }}</el-button></div><p v-else class="muted">{{ t('learning.noHistoryTrainings') }}</p></div></div></section>
+    <LearningHistorySection
+      :reports="reports"
+      :trainings="trainings"
+      :report-day="reportDay"
+      @show-report="showReport"
+      @download-pdf="downloadPdf"
+      @show-training="showTraining"
+    />
 
-    <el-dialog v-model="reportFormOpen" :title="t('learning.customReportTitle')" width="600px"><el-date-picker v-model="reportRange" type="daterange" value-format="YYYY-MM-DD" :range-separator="t('common.rangeSeparator')" :start-placeholder="t('common.startDate')" :end-placeholder="t('common.endDate')" /><p class="hint">{{ t('learning.customReportHint') }}</p><template #footer><el-button @click="reportFormOpen = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="busy" @click="makeReport">{{ t('learning.generateReportDraft') }}</el-button></template></el-dialog>
-
-    <el-dialog v-model="reportDetailOpen" :title="t('learning.safetyReportDialogTitle')" width="880px" destroy-on-close><template v-if="selectedReport"><div class="dialog-meta"><strong>{{ reportDay(selectedReport.period_start_utc) }} — {{ reportDay(selectedReport.period_end_utc, true) }}</strong><el-tag :type="selectedReport.status === 'CONFIRMED' ? 'success' : 'warning'">{{ selectedReport.status === 'CONFIRMED' ? t('enums.reportStatus.CONFIRMED') : t('enums.reportStatus.DRAFT') }}</el-tag></div><div class="dialog-metrics"><span>{{ t('learning.reportMetricsEvents', { count: selectedReport.statistics.total }) }}</span><span>{{ t('learning.reportMetricsRepeat', { count: selectedReport.statistics.repeat_occurrences }) }}</span></div><p>{{ t('learning.riskTypesLine', { pairs: pairs(selectedReport.statistics.by_type) }) }}</p><p>{{ t('learning.zonesLine', { pairs: pairs(selectedReport.statistics.by_zone) }) }}</p><el-form label-position="top"><el-form-item :label="t('copilot.reportSummary')"><el-input v-model="selectedReport.content.summary" type="textarea" :rows="4" :disabled="selectedReport.status !== 'DRAFT'" /></el-form-item><el-form-item :label="t('copilot.reportRiskAnalysis')"><el-input v-model="selectedReport.content.risk_analysis" type="textarea" :rows="4" :disabled="selectedReport.status !== 'DRAFT'" /></el-form-item><el-form-item :label="t('copilot.reportRemediation')"><el-input v-model="selectedReport.content.remediation" type="textarea" :rows="4" :disabled="selectedReport.status !== 'DRAFT'" /></el-form-item></el-form><h4>{{ t('copilot.citationsTitle') }}</h4><p v-if="!selectedReport.citations.length" class="hint">{{ t('learning.noCitationsHint') }}</p><p v-for="citation in selectedReport.citations" :key="citation.chunk_id" class="citation">{{ citation.title }} · {{ citation.page_or_section }}</p><div class="dialog-actions"><template v-if="selectedReport.status === 'DRAFT'"><el-button :loading="busy" @click="saveReport">{{ t('learning.saveDraft') }}</el-button><el-button type="primary" :loading="busy" @click="approveReport">{{ t('learning.confirmAndPdf') }}</el-button></template><el-button v-if="selectedReport.pdf_url" @click="downloadPdf(selectedReport.report_id)">{{ t('copilot.downloadPdf') }}</el-button><el-button type="danger" plain :disabled="busy" @click="removeReport">{{ t('learning.deleteItem', { kind: selectedReport.status === 'DRAFT' ? t('learning.reportDraftKind') : t('learning.reportConfirmedKind') }) }}</el-button></div></template></el-dialog>
-
-    <el-dialog v-model="trainingFormOpen" :title="t('learning.trainingBuilderTitle')" width="740px"><p class="hint">{{ t('learning.trainingBuilderHint') }}</p><p v-if="!confirmedReports.length" class="inline-error">{{ t('learning.needConfirmedReport') }}</p><el-form label-position="top"><el-form-item :label="t('learning.taskName')"><el-input v-model="trainingForm.title" :placeholder="t('learning.taskNamePlaceholder')" /></el-form-item><el-form-item :label="t('learning.currentReport')"><el-select v-model="trainingForm.report_id" :placeholder="t('learning.selectConfirmedReport')" style="width:100%"><el-option v-for="report in confirmedReports" :key="report.report_id" :label="`${reportDay(report.period_start_utc)} — ${reportDay(report.period_end_utc, true)}`" :value="report.report_id" /></el-select></el-form-item><el-form-item :label="t('learning.casesAndStandards')"><el-select v-model="trainingForm.document_ids" multiple filterable remote :remote-method="loadDocumentOptions" :placeholder="t('learning.selectDocsPlaceholder')" style="width:100%"><el-option v-for="doc in allDocuments" :key="doc.document_id" :label="`${doc.document_type === 'STANDARD' ? t('enums.documentType.STANDARD_SHORT') : t('enums.documentType.ACCIDENT_CASE_SHORT')} · ${doc.title}`" :value="doc.document_id" /></el-select></el-form-item><div class="form-row"><el-form-item :label="t('copilot.targetCount')"><el-input-number v-model="trainingForm.target_count" :min="1" /></el-form-item><el-form-item :label="t('copilot.questionCount')"><el-input-number v-model="trainingForm.question_count" :min="1" :max="20" /></el-form-item><el-form-item :label="t('copilot.passScore')"><el-input-number v-model="trainingForm.pass_score" :min="0" :max="100" /></el-form-item></div></el-form><template #footer><el-button @click="trainingFormOpen = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="busy" @click="makeTraining">{{ t('learning.generateTrainingDraft') }}</el-button></template></el-dialog>
-
-    <el-dialog v-model="trainingDetailOpen" :title="t('learning.trainingDialogTitle')" width="920px" destroy-on-close><template v-if="selectedTraining"><div class="dialog-meta"><strong>{{ selectedTraining.title }}</strong><el-tag :type="selectedTraining.status === 'PUBLISHED' ? 'success' : 'warning'">{{ selectedTraining.status === 'PUBLISHED' ? t('enums.trainingStatus.PUBLISHED') : t('enums.trainingStatus.DRAFT') }}</el-tag></div><div class="source-list"><span>{{ t('learning.referencedDocs') }}</span><p v-if="!selectedTraining.selected_documents.length" class="hint">{{ t('learning.noReferencedDocs') }}</p><p v-for="source in selectedTraining.selected_documents" :key="source.document_id" class="citation">{{ source.title }} · {{ source.document_type === 'STANDARD' ? t('enums.documentType.STANDARD_SHORT') : t('enums.documentType.ACCIDENT_REPORT') }}</p></div><el-form label-position="top"><el-form-item :label="t('learning.taskName')"><el-input v-model="selectedTraining.title" :disabled="selectedTraining.status !== 'DRAFT'" /></el-form-item><div class="form-row"><el-form-item :label="t('copilot.targetCount')"><el-input-number v-model="selectedTraining.target_count" :min="1" :disabled="selectedTraining.status !== 'DRAFT'" /></el-form-item><el-form-item :label="t('copilot.passScore')"><el-input-number v-model="selectedTraining.pass_score" :min="0" :max="100" :disabled="selectedTraining.status !== 'DRAFT'" /></el-form-item></div><el-form-item :label="t('copilot.studyMaterial')"><el-input v-model="selectedTraining.material" type="textarea" :rows="7" :disabled="selectedTraining.status !== 'DRAFT'" /></el-form-item><div v-for="(question, index) in selectedTraining.questions" :key="index" class="question-editor"><strong>{{ t('learning.questionIndex', { index: index + 1 }) }}</strong><el-input v-model="question.stem" :disabled="selectedTraining.status !== 'DRAFT'" /><div v-for="(_, optionIndex) in question.options" :key="optionIndex" class="option-row"><span>{{ String.fromCharCode(65 + optionIndex) }}</span><el-input v-model="question.options[optionIndex]" :disabled="selectedTraining.status !== 'DRAFT'" /></div><el-radio-group v-model="question.answer" :disabled="selectedTraining.status !== 'DRAFT'"><el-radio v-for="(_, optionIndex) in question.options" :key="optionIndex" :value="optionIndex">{{ t('learning.optionCorrect', { letter: String.fromCharCode(65 + optionIndex) }) }}</el-radio></el-radio-group><p v-if="question.evidence" class="hint">{{ t('copilot.questionEvidence', { evidence: question.evidence }) }}</p></div></el-form><div v-if="selectedTraining.status === 'PUBLISHED'"><p>{{ t('learning.studyUrlLabel') }}<a :href="learningPath(selectedTraining.public_url || '') || '#'" target="_blank" rel="noopener">{{ selectedTraining.public_url }}</a></p><img v-if="qrObjectUrl" class="qr" :src="qrObjectUrl" :alt="t('copilot.qrAlt')" /><div v-if="trainingStats" class="stats"><span>{{ t('learning.trainingStatsCompletion', { completed: trainingStats.completed_count, target: trainingStats.target_count, rate: Math.min(100, trainingStats.completion_rate) }) }}</span><span v-if="trainingStats.excess_completed_count">{{ t('learning.excessCompleted', { count: trainingStats.excess_completed_count }) }}</span><span>{{ t('learning.trainingStatsAvg', { score: trainingStats.average_score }) }}</span><span>{{ t('learning.trainingStatsPassRate', { rate: trainingStats.pass_rate }) }}</span><el-table :data="trainingStats.submissions" size="small"><el-table-column prop="worker_id" :label="t('learning.colWorkerId')" /><el-table-column prop="worker_name" :label="t('learning.colWorkerName')" /><el-table-column prop="score" :label="t('learning.colScore')" /><el-table-column :label="t('learning.colPassed')"><template #default="scope">{{ scope.row.passed ? t('common.yes') : t('common.no') }}</template></el-table-column></el-table></div></div><div class="dialog-actions"><template v-if="selectedTraining.status === 'DRAFT'"><el-button :loading="busy" @click="saveTraining">{{ t('learning.saveDraft') }}</el-button><el-button type="primary" :loading="busy" @click="approveTraining">{{ t('learning.confirmPublish') }}</el-button></template><el-button type="danger" plain :disabled="busy" @click="removeTraining">{{ t('learning.deleteItem', { kind: selectedTraining.status === 'DRAFT' ? t('learning.trainingDraftKind') : t('learning.trainingTaskKind') }) }}</el-button></div></template></el-dialog>
-
-    <el-dialog v-model="documentDetailOpen" :title="selectedDocument?.title || t('learning.docDetailFallback')" width="880px" destroy-on-close><template v-if="selectedDocument"><div class="dialog-meta"><span>{{ selectedDocument.document_type === 'STANDARD' ? t('enums.documentType.STANDARD_MATERIAL') : t('enums.documentType.ACCIDENT_CASE') }} · {{ selectedDocument.document_date ? formatDay(selectedDocument.document_date) : t('learning.undated') }}</span><el-button type="danger" link @click="removeDocument">{{ t('learning.retireDoc') }}</el-button></div><el-form label-position="top"><el-form-item :label="t('learning.docDateLabel')"><el-date-picker v-model="documentEdit.document_date" type="date" value-format="YYYY-MM-DD" clearable /></el-form-item><el-form-item :label="t('learning.riskTagsComma')"><el-input v-model="documentEdit.risk_tags" /></el-form-item><el-form-item :label="t('learning.sourceField')"><el-input v-model="documentEdit.source_label" /></el-form-item><el-form-item :label="t('learning.aiSummaryEditable')"><el-input v-model="documentEdit.summary" type="textarea" :rows="3" /></el-form-item><el-form-item v-if="selectedDocument.document_type === 'STANDARD'" :label="t('learning.standardValidity')"><el-select v-model="documentEdit.validity_status"><el-option :label="t('enums.validityStatus.CURRENT')" value="CURRENT" /><el-option :label="t('enums.validityStatus.SUPERSEDED')" value="SUPERSEDED" /><el-option :label="t('enums.validityStatus.UNKNOWN')" value="UNKNOWN" /></el-select></el-form-item><div class="dialog-actions"><el-button @click="saveDocument">{{ t('learning.saveMetadata') }}</el-button><el-button :loading="busy" @click="generateSummary">{{ t('learning.aiGenerateSummary') }}</el-button><el-button v-if="selectedDocument.document_type === 'ACCIDENT_REPORT'" @click="addToTraining(selectedDocument)">{{ t('learning.addToTrainingBtn') }}</el-button></div></el-form><template v-if="selectedDocument.document_type === 'ACCIDENT_REPORT'"><el-divider /><el-button :loading="busy" @click="generateCase">{{ t('learning.generateCaseAnalysis') }}</el-button><div v-if="caseDetail" class="case-detail"><h4>{{ t('learning.caseProcess') }}</h4><p>{{ caseDetail.process }}</p><h4>{{ t('learning.caseCauses') }}</h4><p>{{ caseDetail.causes }}</p><h4>{{ t('learning.caseRisks') }}</h4><p>{{ caseDetail.risks }}</p><h4>{{ t('learning.casePrevention') }}</h4><p>{{ caseDetail.prevention }}</p><h4>{{ t('learning.caseCitations') }}</h4><p v-for="item in caseDetail.citations" :key="item.chunk_id" class="citation">{{ item.title }} · {{ item.page_or_section }}</p></div></template><template v-else><el-divider /><h4>{{ t('learning.standardFragments') }}</h4><el-button v-if="!documentFragments.length" @click="loadFragments">{{ t('learning.viewOriginalFragments') }}</el-button><div v-for="fragment in documentFragments" :key="fragment.citation.chunk_id" class="fragment"><strong>{{ fragment.citation.page_or_section }}</strong><p>{{ fragment.content }}</p></div></template></template></el-dialog>
-
-    <el-dialog v-model="uploadOpen" width="720px" class="upload-dialog" destroy-on-close>
-      <template #header>
-        <div class="upload-heading"><span class="upload-heading-icon"><el-icon><UploadFilled /></el-icon></span><div><h2>{{ t('learning.uploadTitle') }}</h2><p>{{ t('learning.uploadSubtitle') }}</p></div></div>
-      </template>
-      <div class="upload-content">
-        <label class="upload-drop-zone" :class="{ 'has-file': file }" for="learning-file-upload" @dragover.prevent @drop.prevent="dropFile">
-          <input :key="fileInputKey" id="learning-file-upload" class="upload-file-input" type="file" accept=".pdf,.docx,.md,.txt" @change="pickFile" />
-          <span class="upload-drop-icon"><el-icon><UploadFilled /></el-icon></span>
-          <strong>{{ file ? file.name : t('learning.dropZonePrompt') }}</strong>
-          <span class="upload-drop-subtitle">{{ file ? t('learning.dropZoneSelected', { size: formatFileSize(file.size) }) : t('learning.dropZoneTypes') }}</span>
-          <span class="upload-select-button">{{ file ? t('learning.replaceFile') : t('learning.chooseFile') }}</span>
-        </label>
-        <div class="upload-divider"><strong>{{ t('learning.docInfoDivider') }}</strong><span>{{ t('learning.docInfoHint') }}</span></div>
-        <el-form class="upload-form" label-position="top">
-          <el-form-item :label="t('learning.docTitleLabel')" required><el-input v-model="uploadForm.title" :placeholder="t('learning.docTitlePlaceholder')" clearable /></el-form-item>
-          <div class="upload-form-grid">
-            <el-form-item :label="t('learning.docTypeLabel')" required><el-select v-model="uploadForm.document_type" style="width:100%"><el-option :label="t('enums.documentType.ACCIDENT_REPORT')" value="ACCIDENT_REPORT" /><el-option :label="t('enums.documentType.STANDARD')" value="STANDARD" /></el-select></el-form-item>
-            <el-form-item :label="uploadForm.document_type === 'STANDARD' ? t('learning.standardPublishDate') : t('learning.accidentDate')"><el-date-picker v-model="uploadForm.document_date" type="date" value-format="YYYY-MM-DD" :placeholder="t('learning.chooseDate')" clearable style="width:100%" /></el-form-item>
-            <el-form-item :label="t('learning.riskTagsLabel')"><el-input v-model="uploadForm.risk_tags" :placeholder="t('learning.riskTagsPlaceholder')" /></el-form-item>
-            <el-form-item :label="t('learning.docSourceLabel')"><el-input v-model="uploadForm.source_label" :placeholder="t('learning.docSourcePlaceholder')" /></el-form-item>
-          </div>
-          <el-form-item :label="t('learning.summaryLabel')"><el-input v-model="uploadForm.summary" type="textarea" :rows="3" :placeholder="t('learning.summaryPlaceholder')" /></el-form-item>
-        </el-form>
-      </div>
-      <template #footer><div class="upload-footer"><span>{{ t('learning.uploadFooterHint') }}</span><div><el-button @click="uploadOpen = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="busy" @click="submitUpload">{{ t('learning.uploadAndIndex') }}</el-button></div></div></template>
-    </el-dialog>
+    <CustomReportDialog v-model="reportFormOpen" :busy="busy" @submit="makeReport" />
+    <ReportDetailDialog
+      v-model="reportDetailOpen"
+      :report="selectedReport"
+      :busy="busy"
+      :report-day="reportDay"
+      @save="saveReport"
+      @confirm="approveReport"
+      @download-pdf="downloadPdf"
+      @delete="removeReport"
+    />
+    <TrainingBuilderDialog
+      v-model="trainingFormOpen"
+      :form="trainingForm"
+      :confirmed-reports="confirmedReports"
+      :all-documents="allDocuments"
+      :busy="busy"
+      :report-day="reportDay"
+      @search-docs="(q) => loadDocumentOptions(q, trainingForm.document_ids)"
+      @submit="makeTraining"
+    />
+    <TrainingDetailDialog
+      v-model="trainingDetailOpen"
+      :training="selectedTraining"
+      :busy="busy"
+      @save="saveTraining"
+      @publish="approveTraining"
+      @delete="removeTraining"
+    />
+    <DocumentDetailDialog
+      v-model="documentDetailOpen"
+      :document="selectedDocument"
+      :case-detail="caseDetail"
+      :fragments="documentFragments"
+      :busy="busy"
+      :format-day="formatDay"
+      @save="saveDocument"
+      @regenerate-summary="generateSummary"
+      @add-to-training="addToTraining"
+      @generate-case="generateCase"
+      @load-fragments="loadFragments"
+      @retire="removeDocument"
+    />
+    <DocumentUploadDialog v-model="uploadOpen" :busy="busy" @submit="submitUpload" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { learningPath } from '@/utils/deployment'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { UploadFilled } from '@element-plus/icons-vue'
 import * as api from '@/api/learning'
-import { useAppI18n, useLocaleRefresh } from '@/i18n/useAppI18n'
-import { getLearningTimezone, utcDate, zonedDateBoundaryToIso } from '@/utils/datetime'
+import { LEARNING_PAGE_SIZE, useLearningCenter } from '@/composables/useLearningCenter'
+import { useAppI18n } from '@/i18n/useAppI18n'
+import { zonedDateBoundaryToIso } from '@/utils/datetime'
+import CustomReportDialog from '@/components/learning/CustomReportDialog.vue'
+import DocumentDetailDialog, { type DocumentEditPayload } from '@/components/learning/DocumentDetailDialog.vue'
+import DocumentUploadDialog, { type UploadDocumentFields } from '@/components/learning/DocumentUploadDialog.vue'
+import LearningHistorySection from '@/components/learning/LearningHistorySection.vue'
+import LearningLibrarySection from '@/components/learning/LearningLibrarySection.vue'
+import LearningOverviewSection from '@/components/learning/LearningOverviewSection.vue'
+import LearningRecommendSection from '@/components/learning/LearningRecommendSection.vue'
+import LearningSideColumn from '@/components/learning/LearningSideColumn.vue'
+import ReportDetailDialog from '@/components/learning/ReportDetailDialog.vue'
+import TrainingBuilderDialog, { type TrainingBuilderFormState } from '@/components/learning/TrainingBuilderDialog.vue'
+import TrainingDetailDialog from '@/components/learning/TrainingDetailDialog.vue'
 
-const { t, formatDate, formatDateTime } = useAppI18n()
+const { t } = useAppI18n()
+const {
+  timezone, busy, overviewLoading, overviewError, insightsLoading, overview, reports, trainings, documents,
+  allDocuments, documentTotal, documentOffset, docQuery, riskType, docType, documentRange, confirmedReports,
+  currentInsights, weeklyTraining, availableRiskTags, weekLabel, formatDay, formatInsightTime, reportDay,
+  runTask, downloadPdf, loadOverview, loadInsights, loadDocuments, loadDocumentOptions, reloadReports, reloadTrainings, refresh,
+} = useLearningCenter()
 
-const busy = ref(false), overviewLoading = ref(false), overviewError = ref(false), insightsLoading = ref(false)
-const showAllReports = ref(false), showAllTraining = ref(false)
-const overview = ref<api.WeeklyOverview | null>(null)
-const insights = ref<api.WeeklyInsights | null>(null)
-const reports = ref<api.Report[]>([]), selectedReport = ref<api.Report | null>(null)
-const trainings = ref<api.Training[]>([]), selectedTraining = ref<api.Training | null>(null), trainingStats = ref<api.TrainingStatistics | null>(null)
-const documents = ref<api.KnowledgeDocument[]>([]), allDocuments = ref<api.KnowledgeDocument[]>([]), documentTotal = ref(0), documentOffset = ref(0)
+const reportFormOpen = ref(false), reportDetailOpen = ref(false), trainingFormOpen = ref(false)
+const trainingDetailOpen = ref(false), documentDetailOpen = ref(false), uploadOpen = ref(false)
+const selectedReport = ref<api.Report | null>(null), selectedTraining = ref<api.Training | null>(null)
 const selectedDocument = ref<api.KnowledgeDocument | null>(null), caseDetail = ref<api.CaseDetail | null>(null)
 const documentFragments = ref<Array<{ content: string; citation: api.Citation }>>([])
-const reportFormOpen = ref(false), reportDetailOpen = ref(false), trainingFormOpen = ref(false), trainingDetailOpen = ref(false), documentDetailOpen = ref(false), uploadOpen = ref(false)
-const reportRange = ref<string[]>([]), documentRange = ref<string[]>([]), docQuery = ref(''), riskType = ref(''), docType = ref<'ACCIDENT_REPORT' | 'STANDARD'>('ACCIDENT_REPORT')
-const documentEdit = ref({ document_date: '', risk_tags: '', source_label: '', summary: '', validity_status: 'UNKNOWN' })
-const uploadForm = ref({ title: '', source_label: '', document_type: 'ACCIDENT_REPORT', document_date: '', risk_tags: '', summary: '' }), file = ref<File | null>(null)
-const fileInputKey = ref(0)
-const trainingForm = ref({ report_id: '', title: '', document_ids: [] as string[], target_count: 1, question_count: 5, pass_score: 80 })
-const qrObjectUrl = ref('')
-const timezone = getLearningTimezone()
+const trainingForm = ref<TrainingBuilderFormState>({ report_id: '', title: '', document_ids: [], target_count: 1, question_count: 5, pass_score: 80 })
 
-const confirmedReports = computed(() => reports.value.filter(item => item.status === 'CONFIRMED'))
-const currentInsights = computed(() => insights.value && overview.value && insights.value.period_start_utc === overview.value.period_start_utc && insights.value.risk_codes.join('|') === overview.value.main_risks.map(item => item.code).join('|') ? insights.value : null)
-const weeklyTraining = computed(() => (overview.value?.weekly_tasks || []).map(weekly => {
-  const task = trainings.value.find(item => item.task_id === weekly.task_id)
-  return task ? { ...task, weekly } : null
-}).filter((item): item is api.Training & { weekly: api.WeeklyOverview['weekly_tasks'][number] } => item !== null))
-const availableRiskTags = computed(() => [...new Set([...documents.value.flatMap(doc => doc.risk_tags), ...allDocuments.value.flatMap(doc => doc.risk_tags), ...(overview.value?.main_risks.map(risk => risk.label) || [])])].filter(Boolean).sort())
-const weekLabel = computed(() => overview.value ? `${formatDay(overview.value.period_start_utc)} — ${formatDay(overview.value.period_end_utc)}` : t('learning.defaultWeekLabel'))
-const pairs = (value: Record<string, number>) => Object.entries(value).map(([key, count]) => `${key} ${count}`).join('；') || t('common.none')
-function formatDay(value: string) { return formatDate(value, { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }) }
-function formatInsightTime(value: string) { return formatDateTime(value, { timeZone: timezone, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }
-function formatFileSize(bytes: number) { return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB` }
-function reportDay(value: string, exclusiveEnd = false) { return formatDate(new Date(utcDate(value).getTime() - (exclusiveEnd ? 1 : 0)), { timeZone: timezone }) }
-async function downloadPdf(id: string) { const url = URL.createObjectURL(await api.downloadReport(id)); const link = document.createElement('a'); link.href = url; link.download = `safety-report-${id}.pdf`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000) }
+const searchLibrary = () => { documentOffset.value = 0; void loadDocuments() }
+const changeDocumentPage = (page: number) => { documentOffset.value = (page - 1) * LEARNING_PAGE_SIZE; void loadDocuments() }
+const showReport = (report: api.Report) => { selectedReport.value = JSON.parse(JSON.stringify(report)) as api.Report; reportDetailOpen.value = true }
+const makeWeeklyReport = () => {
+  if (!overview.value) return ElMessage.warning(t('learning.overviewNotReady'))
+  void runTask(async () => { const report = await api.createReport(overview.value!.period_start_utc, overview.value!.period_end_utc); await reloadReports(); showReport(report); ElMessage.success(t('learning.weeklyReportDraftCreated')) })
+}
+const makeReport = (range: [string, string]) => {
+  void runTask(async () => { const report = await api.createReport(zonedDateBoundaryToIso(range[0], timezone), zonedDateBoundaryToIso(range[1], timezone, true)); await reloadReports(); reportFormOpen.value = false; showReport(report); ElMessage.success(t('learning.reportDraftCreated')) })
+}
+const saveReport = (report: api.Report) => { void runTask(async () => { selectedReport.value = await api.editReport(report.report_id, report.content); await reloadReports(); ElMessage.success(t('learning.savedSuccess')) }) }
+const approveReport = (report: api.Report) => { void runTask(async () => { await api.editReport(report.report_id, report.content); selectedReport.value = await api.confirmReport(report.report_id); await reloadReports(); ElMessage.success(t('learning.reportConfirmedSuccess')) }) }
+async function removeReport(report: api.Report) {
+  if (trainings.value.some((task) => task.report_id === report.report_id)) return ElMessage.warning(t('learning.deleteReferencedWarning'))
+  try { await ElMessageBox.confirm(report.status === 'CONFIRMED' ? t('learning.deleteConfirmedReportWarn') : t('learning.deleteDraftReportWarn'), t('learning.confirmDeleteReportTitle'), { type: 'warning', confirmButtonText: t('learning.confirmDeleteBtn') }) } catch { return }
+  await runTask(async () => { await api.deleteReport(report.report_id); reportDetailOpen.value = false; selectedReport.value = null; if (trainingForm.value.report_id === report.report_id) trainingForm.value.report_id = ''; await reloadReports(); ElMessage.success(t('learning.reportDeletedSuccess')) })
+}
 
-async function loadOverview() { overviewLoading.value = true; overviewError.value = false; try { overview.value = await api.getWeeklyOverview() } catch { overviewError.value = true } finally { overviewLoading.value = false } }
-async function loadInsights(force = false) { insightsLoading.value = true; try { insights.value = await api.getWeeklyInsights(force) } catch { if (!insights.value) ElMessage.warning(t('learning.insightsLoadFailed')) } finally { insightsLoading.value = false } }
-async function refresh() { await Promise.allSettled([loadOverview(), loadInsights(), loadDocuments(), api.listReports().then(value => { reports.value = value }), api.listTraining().then(value => { trainings.value = value })]) }
-async function loadDocumentOptions(query: string) { const fetched = (await api.searchDocuments({ query, limit: 100 })).items; const selected = allDocuments.value.filter(doc => trainingForm.value.document_ids.includes(doc.document_id)); allDocuments.value = [...selected, ...fetched.filter(doc => !selected.some(item => item.document_id === doc.document_id))] }
-async function loadDocuments() { const start = documentRange.value?.[0], end = documentRange.value?.[1]; const dateEnd = end ? zonedDateBoundaryToIso(end, timezone, true) : undefined; const result = await api.searchDocuments({ query: docQuery.value || undefined, risk_type: riskType.value || undefined, document_type: docType.value, date_start: start ? zonedDateBoundaryToIso(start, timezone) : undefined, date_end: dateEnd, offset: documentOffset.value }); documents.value = result.items; documentTotal.value = result.total }
-function searchLibrary() { documentOffset.value = 0; void loadDocuments() }
-function changeDocumentPage(page: number) { documentOffset.value = (page - 1) * 20; void loadDocuments() }
-async function run(fn: () => Promise<void>) { busy.value = true; try { await fn() } catch (error) { const status = (error as { response?: { status: number } })?.response?.status; if (!status || status === 404) ElMessage.error(error instanceof Error ? error.message : t('common.operationFailed')) } finally { busy.value = false } }
+const openDocument = (doc: api.KnowledgeDocument) => { selectedDocument.value = doc; caseDetail.value = null; documentFragments.value = []; documentDetailOpen.value = true }
+const generateSummary = (doc: api.KnowledgeDocument) => { void runTask(async () => { selectedDocument.value = await api.regenerateDocumentSummary(doc.document_id); await loadDocuments(); ElMessage.success(t('learning.summaryGeneratedSuccess')) }) }
+const loadFragments = (doc: api.KnowledgeDocument) => { void runTask(async () => { documentFragments.value = (await api.getDocumentFragments(doc.document_id)).items }) }
+const generateCase = (doc: api.KnowledgeDocument) => { void runTask(async () => { caseDetail.value = await api.getCaseDetail(doc.document_id) }) }
+const saveDocument = (doc: api.KnowledgeDocument, form: DocumentEditPayload) => {
+  void runTask(async () => {
+    let updated = await api.updateDocumentMetadata(doc.document_id, { document_date: form.document_date ? zonedDateBoundaryToIso(form.document_date, timezone) : null, risk_tags: form.risk_tags.split(',').map((s) => s.trim()).filter(Boolean), source_display: form.source_label, summary: form.summary })
+    if (doc.document_type === 'STANDARD') updated = await api.updateStandardValidity(doc.document_id, form.validity_status)
+    selectedDocument.value = updated as api.KnowledgeDocument; await loadDocuments(); ElMessage.success(t('learning.metadataSavedSuccess'))
+  })
+}
+async function removeDocument(doc: api.KnowledgeDocument) {
+  try { await ElMessageBox.confirm(t('learning.retireDocConfirm'), t('learning.retireDocTitle')) } catch { return }
+  await runTask(async () => { await api.retireDocument(doc.document_id); documentDetailOpen.value = false; selectedDocument.value = null; await loadDocuments(); void loadInsights(true); ElMessage.success(t('learning.docRetiredSuccess')) })
+}
+const submitUpload = (file: File, fields: UploadDocumentFields, done: () => void) => {
+  void runTask(async () => { await api.uploadDocument(file, fields); uploadOpen.value = false; done(); await loadDocuments(); void loadInsights(true); ElMessage.success(t('learning.docUploadedSuccess')) })
+}
 
-function showReport(report: api.Report) { selectedReport.value = JSON.parse(JSON.stringify(report)) as api.Report; reportDetailOpen.value = true }
-function makeWeeklyReport() { if (!overview.value) return ElMessage.warning(t('learning.overviewNotReady')); void run(async () => { const report = await api.createReport(overview.value!.period_start_utc, overview.value!.period_end_utc); reports.value = await api.listReports(); showReport(report); ElMessage.success(t('learning.weeklyReportDraftCreated')) }) }
-function makeReport() { if (reportRange.value?.length !== 2) return ElMessage.warning(t('learning.selectRangeWarning')); void run(async () => { const start = zonedDateBoundaryToIso(reportRange.value[0]!, timezone); const end = zonedDateBoundaryToIso(reportRange.value[1]!, timezone, true); const report = await api.createReport(start, end); reports.value = await api.listReports(); reportFormOpen.value = false; showReport(report); ElMessage.success(t('learning.reportDraftCreated')) }) }
-function saveReport() { if (!selectedReport.value) return; void run(async () => { selectedReport.value = await api.editReport(selectedReport.value!.report_id, selectedReport.value!.content); reports.value = await api.listReports(); ElMessage.success(t('learning.savedSuccess')) }) }
-function approveReport() { if (!selectedReport.value) return; void run(async () => { await api.editReport(selectedReport.value!.report_id, selectedReport.value!.content); selectedReport.value = await api.confirmReport(selectedReport.value!.report_id); reports.value = await api.listReports(); ElMessage.success(t('learning.reportConfirmedSuccess')) }) }
-async function removeReport() { const report = selectedReport.value; if (!report) return; if (trainings.value.some(task => task.report_id === report.report_id)) return ElMessage.warning(t('learning.deleteReferencedWarning')); try { await ElMessageBox.confirm(report.status === 'CONFIRMED' ? t('learning.deleteConfirmedReportWarn') : t('learning.deleteDraftReportWarn'), t('learning.confirmDeleteReportTitle'), { type: 'warning', confirmButtonText: t('learning.confirmDeleteBtn') }) } catch { return } await run(async () => { await api.deleteReport(report.report_id); reportDetailOpen.value = false; selectedReport.value = null; if (trainingForm.value.report_id === report.report_id) trainingForm.value.report_id = ''; reports.value = await api.listReports(); ElMessage.success(t('learning.reportDeletedSuccess')) }) }
-
-function openDocument(doc: api.KnowledgeDocument) { selectedDocument.value = doc; caseDetail.value = null; documentFragments.value = []; documentEdit.value = { document_date: doc.document_date?.slice(0, 10) || '', risk_tags: doc.risk_tags.join(', '), source_label: doc.source_display, summary: doc.summary || '', validity_status: doc.validity_status }; documentDetailOpen.value = true }
-function generateSummary() { if (!selectedDocument.value) return; void run(async () => { selectedDocument.value = await api.regenerateDocumentSummary(selectedDocument.value!.document_id); documentEdit.value.summary = selectedDocument.value.summary || ''; await loadDocuments(); ElMessage.success(t('learning.summaryGeneratedSuccess')) }) }
-function loadFragments() { if (!selectedDocument.value) return; void run(async () => { documentFragments.value = (await api.getDocumentFragments(selectedDocument.value!.document_id)).items }) }
-function saveDocument() { if (!selectedDocument.value) return; void run(async () => { const id = selectedDocument.value!.document_id; let updated = await api.updateDocumentMetadata(id, { document_date: documentEdit.value.document_date ? zonedDateBoundaryToIso(documentEdit.value.document_date, timezone) : null, risk_tags: documentEdit.value.risk_tags.split(',').map(item => item.trim()).filter(Boolean), source_display: documentEdit.value.source_label, summary: documentEdit.value.summary }); if (selectedDocument.value!.document_type === 'STANDARD') updated = await api.updateStandardValidity(id, documentEdit.value.validity_status); selectedDocument.value = updated as api.KnowledgeDocument; await loadDocuments(); ElMessage.success(t('learning.metadataSavedSuccess')) }) }
-function generateCase() { if (!selectedDocument.value) return; void run(async () => { caseDetail.value = await api.getCaseDetail(selectedDocument.value!.document_id) }) }
-async function removeDocument() { if (!selectedDocument.value) return; try { await ElMessageBox.confirm(t('learning.retireDocConfirm'), t('learning.retireDocTitle')) } catch { return } await run(async () => { await api.retireDocument(selectedDocument.value!.document_id); documentDetailOpen.value = false; selectedDocument.value = null; await loadDocuments(); void loadInsights(true); ElMessage.success(t('learning.docRetiredSuccess')) }) }
-function pickFile(event: Event) { file.value = (event.target as HTMLInputElement).files?.[0] || null; if (file.value && !uploadForm.value.title) uploadForm.value.title = file.value.name.replace(/\.[^.]+$/, '') }
-function dropFile(event: DragEvent) { file.value = event.dataTransfer?.files?.[0] || null; if (file.value && !uploadForm.value.title) uploadForm.value.title = file.value.name.replace(/\.[^.]+$/, '') }
-function submitUpload() { if (!file.value || !uploadForm.value.title) return ElMessage.warning(t('learning.uploadValidationWarning')); void run(async () => { await api.uploadDocument(file.value!, uploadForm.value); uploadOpen.value = false; uploadForm.value = { title: '', source_label: '', document_type: 'ACCIDENT_REPORT', document_date: '', risk_tags: '', summary: '' }; file.value = null; fileInputKey.value += 1; await loadDocuments(); void loadInsights(true); ElMessage.success(t('learning.docUploadedSuccess')) }) }
-
-function openTrainingComposer(document?: api.KnowledgeDocument) {
+function openTrainingComposer(doc?: api.KnowledgeDocument) {
   if (!trainingForm.value.report_id) trainingForm.value.report_id = confirmedReports.value[0]?.report_id || ''
   if (!trainingForm.value.title) trainingForm.value.title = overview.value?.main_risks[0] ? t('learning.defaultTrainingTitleWithRisk', { risk: overview.value.main_risks[0].label }) : t('learning.defaultTrainingTitle')
   if (!trainingForm.value.document_ids.length) {
-    const recommendations = currentInsights.value?.recommended_cases.slice(0, 2) || []
-    trainingForm.value.document_ids = recommendations.map(item => item.document_id)
-    allDocuments.value = [...recommendations.filter(item => !allDocuments.value.some(doc => doc.document_id === item.document_id)), ...allDocuments.value]
+    const recs = currentInsights.value?.recommended_cases.slice(0, 2) || []
+    trainingForm.value.document_ids = recs.map((item) => item.document_id)
+    allDocuments.value = [...recs.filter((item) => !allDocuments.value.some((d) => d.document_id === item.document_id)), ...allDocuments.value]
   }
-  if (document && !trainingForm.value.document_ids.includes(document.document_id)) {
+  if (doc && !trainingForm.value.document_ids.includes(doc.document_id)) {
     if (trainingForm.value.document_ids.length >= 10) return ElMessage.warning(t('learning.maxDocsWarning'))
-    trainingForm.value.document_ids.push(document.document_id)
-    if (!allDocuments.value.some(item => item.document_id === document.document_id)) allDocuments.value = [document, ...allDocuments.value]
+    trainingForm.value.document_ids.push(doc.document_id)
+    if (!allDocuments.value.some((item) => item.document_id === doc.document_id)) allDocuments.value = [doc, ...allDocuments.value]
   }
   trainingFormOpen.value = true
-  void loadDocumentOptions('').catch(() => ElMessage.warning(t('learning.docOptionsFailed')))
+  void loadDocumentOptions('', trainingForm.value.document_ids).catch(() => ElMessage.warning(t('learning.docOptionsFailed')))
 }
-function addToTraining(document: api.KnowledgeDocument) { openTrainingComposer(document); ElMessage.success(t('learning.addedToTrainingMsg')) }
-function makeTraining() { if (!trainingForm.value.report_id || !trainingForm.value.title) return ElMessage.warning(t('learning.makeTrainingValidation')); void run(async () => { const task = await api.createTraining(trainingForm.value); trainings.value = await api.listTraining(); trainingFormOpen.value = false; await loadOverview(); await showTraining(task); ElMessage.success(t('learning.trainingDraftCreated')) }) }
-async function showTraining(task: api.Training) { selectedTraining.value = JSON.parse(JSON.stringify(task)) as api.Training; trainingDetailOpen.value = true; trainingStats.value = null; if (qrObjectUrl.value) URL.revokeObjectURL(qrObjectUrl.value); qrObjectUrl.value = ''; if (task.status === 'PUBLISHED') { try { trainingStats.value = await api.getTrainingStats(task.task_id); qrObjectUrl.value = URL.createObjectURL(await api.getTrainingQr(task.task_id)) } catch { ElMessage.warning(t('learning.trainingPartialLoadWarn')) } } }
-function saveTraining() { if (!selectedTraining.value) return; void run(async () => { selectedTraining.value = await api.editTraining(selectedTraining.value!.task_id, selectedTraining.value!); trainings.value = await api.listTraining(); ElMessage.success(t('learning.trainingDraftSaved')) }) }
-function approveTraining() { if (!selectedTraining.value) return; void run(async () => { await api.editTraining(selectedTraining.value!.task_id, selectedTraining.value!); const task = await api.publishTraining(selectedTraining.value!.task_id); trainings.value = await api.listTraining(); await loadOverview(); await showTraining(task); ElMessage.success(t('learning.trainingPublishedMsg')) }) }
-async function removeTraining() { const task = selectedTraining.value; if (!task) return; const published = task.status === 'PUBLISHED'; const count = trainingStats.value?.completed_count; const records = count === undefined ? t('learning.existingRecordsFallback') : t('learning.existingRecordsCount', { count }); const message = published ? t('learning.deletePublishedTrainingWarn', { records }) : t('learning.deleteTrainingDraftWarn'); try { await ElMessageBox.confirm(message, published ? t('learning.deletePublishedTrainingTitle') : t('learning.deleteTrainingDraftTitle'), { type: 'warning', confirmButtonText: t('learning.confirmDeleteBtn') }) } catch { return } await run(async () => { await api.deleteTraining(task.task_id); trainingDetailOpen.value = false; selectedTraining.value = null; trainingStats.value = null; if (qrObjectUrl.value) URL.revokeObjectURL(qrObjectUrl.value); qrObjectUrl.value = ''; trainings.value = await api.listTraining(); await loadOverview(); ElMessage.success(t('learning.trainingDeletedMsg')) }) }
+const addToTraining = (doc: api.KnowledgeDocument) => { openTrainingComposer(doc); ElMessage.success(t('learning.addedToTrainingMsg')) }
+const showTraining = (task: api.Training) => { selectedTraining.value = JSON.parse(JSON.stringify(task)) as api.Training; trainingDetailOpen.value = true }
+const makeTraining = () => { void runTask(async () => { const task = await api.createTraining(trainingForm.value); await reloadTrainings(); trainingFormOpen.value = false; await loadOverview(); showTraining(task); ElMessage.success(t('learning.trainingDraftCreated')) }) }
+const saveTraining = (task: api.Training) => { void runTask(async () => { selectedTraining.value = await api.editTraining(task.task_id, task); await reloadTrainings(); ElMessage.success(t('learning.trainingDraftSaved')) }) }
+const approveTraining = (task: api.Training) => { void runTask(async () => { await api.editTraining(task.task_id, task); const published = await api.publishTraining(task.task_id); await reloadTrainings(); await loadOverview(); showTraining(published); ElMessage.success(t('learning.trainingPublishedMsg')) }) }
+async function removeTraining(task: api.Training, completedCount?: number) {
+  const published = task.status === 'PUBLISHED'
+  const records = completedCount === undefined ? t('learning.existingRecordsFallback') : t('learning.existingRecordsCount', { count: completedCount })
+  try { await ElMessageBox.confirm(published ? t('learning.deletePublishedTrainingWarn', { records }) : t('learning.deleteTrainingDraftWarn'), published ? t('learning.deletePublishedTrainingTitle') : t('learning.deleteTrainingDraftTitle'), { type: 'warning', confirmButtonText: t('learning.confirmDeleteBtn') }) } catch { return }
+  await runTask(async () => { await api.deleteTraining(task.task_id); trainingDetailOpen.value = false; selectedTraining.value = null; await reloadTrainings(); await loadOverview(); ElMessage.success(t('learning.trainingDeletedMsg')) })
+}
 
-useLocaleRefresh(refresh)
 onMounted(() => { void refresh() })
-onUnmounted(() => { if (qrObjectUrl.value) URL.revokeObjectURL(qrObjectUrl.value) })
 </script>
 
 <style scoped>
-.education-workbench{max-width:1480px;margin:0 auto;padding:14px 20px 48px;color:#384257}.page-header{display:flex;justify-content:space-between;align-items:flex-start;margin:2px 0 22px}.page-header h1{font-size:28px;letter-spacing:-.03em;margin:6px 0}.page-header p{color:#8a92a3;margin:0;font-size:13px}.eyebrow,.section-kicker{color:#7d6bd5;font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase}.overview-panel{background:linear-gradient(115deg,#fff 15%,#f6f4ff 100%);border:1px solid #e6e4f7;border-radius:22px;padding:26px 30px;box-shadow:0 10px 35px #4b3b9b0b}.overview-heading,.section-head{display:flex;align-items:center;justify-content:space-between;gap:16px}.overview-heading h2,.section-head h2{margin:5px 0 0;font-size:21px;letter-spacing:-.02em}.overview-source,.small-note,.muted,.hint{color:#919aab;font-size:12px}.metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin-top:26px;border:1px solid #eceaf7;background:#fff;border-radius:16px;overflow:hidden}.metric{display:flex;flex-direction:column;gap:5px;padding:19px 22px;border-right:1px solid #f0eef8}.metric:last-child{border-right:0}.metric span{color:#8791a1;font-size:12px}.metric strong{font-size:31px;line-height:1.25;color:#3d425d;font-weight:700}.metric.critical strong{color:#d16968}.metric.progress strong{color:#6657c9}.metric small{color:#a1a8b4;font-size:11px}.overview-footer{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-top:23px;flex-wrap:wrap}.risk-line,.hero-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.risk-line>span:first-child{font-size:12px;font-weight:700;margin-right:4px;color:#5a6478}.risk-chip{background:#eceafb;color:#6555ba;border-radius:16px;padding:7px 10px;font-size:11px}.risk-chip b{margin-left:4px}.inline-error{font-size:12px;color:#c16b5c;margin:16px 0 0}.inline-error button{border:0;background:none;color:inherit;text-decoration:underline;cursor:pointer}.content-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(300px,1fr);gap:20px;align-items:start;margin-top:22px}.primary-column,.side-column{display:grid;gap:20px;min-width:0}.surface{border:1px solid #eceef5;border-radius:20px;background:#fff;box-shadow:0 5px 20px #37406607;padding:24px}.section-head{margin-bottom:20px}.section-head h2 small{color:#a0a7b4;font-size:13px;font-weight:400}.recommend-grid{display:grid;gap:12px}.recommend-card{display:flex;gap:18px;padding:18px;border:1px solid #eaeaf4;border-radius:16px;background:linear-gradient(125deg,#fff,#fbfaff)}.recommend-index{font:700 28px Georgia,serif;color:#c7bdec}.recommend-body{flex:1;min-width:0}.card-top,.related,.card-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.card-top time,.related>span{font-size:11px;color:#a0a8b5}.type-pill{font-size:10px;background:#eae6fa;color:#725fc8;padding:4px 8px;border-radius:5px}.recommend-card h3{margin:9px 0;font-size:16px;line-height:1.5;color:#39425b}.summary{font-size:12px;line-height:1.8;color:#7e8999;margin:0 0 11px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.related b{font-size:10px;font-weight:500;color:#6b7e9d;background:#edf2fa;padding:5px 8px;border-radius:12px}.card-actions{margin-top:12px}.empty-state{padding:42px 18px;text-align:center;color:#7f8a9d;background:#fafbfe;border-radius:14px}.empty-state strong{display:block;color:#697487;font-size:14px}.empty-state p{font-size:12px;margin:8px 0 0;line-height:1.7}.empty-state.compact{padding:30px 12px}.empty-state .el-button{margin-top:16px}.filter-row{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:18px}.filter-row>.el-input{width:220px;flex:1;min-width:170px}.filter-row>.el-select{width:130px}.filter-row>.el-date-editor{width:250px;max-width:100%}.library-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.library-card{width:100%;border:1px solid #ebeef4;border-radius:14px;background:#fff;text-align:left;padding:18px;display:flex;flex-direction:column;gap:9px;cursor:pointer;min-height:166px;transition:box-shadow .2s,transform .2s}.library-card:hover{box-shadow:0 9px 22px #4f4d8d13;transform:translateY(-2px)}.library-type,.library-foot{font-size:11px;color:#8b94a4}.library-type time{float:right;color:#a9afbb}.library-card strong{font-size:14px;line-height:1.5;color:#3d465a}.library-summary{font-size:12px;color:#8993a2;line-height:1.6;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.library-foot{margin-top:auto}.library-foot i,.task-bottom i{float:right;font-style:normal;color:#7665cc}.pagination{margin-top:18px;justify-content:flex-end}.weekly-task-list{display:grid;gap:11px}.weekly-task{border:1px solid #ebeef4;border-radius:13px;background:#fff;text-align:left;padding:15px;width:100%;cursor:pointer;display:grid;gap:11px}.weekly-task:hover{background:#faf9ff}.task-top,.task-bottom{display:flex;justify-content:space-between;gap:12px;align-items:center}.task-top b{font-size:13px;color:#3c4658;line-height:1.4}.status-running,.status-draft{font-size:10px;white-space:nowrap;border-radius:10px;padding:4px 7px}.status-running{background:#e9f6ef;color:#449871}.status-draft{background:#fff3e4;color:#b58242}.task-count,.task-bottom{font-size:11px;color:#8c96a5}.advice-panel{border-radius:20px;padding:25px;color:#fff;background:linear-gradient(148deg,#6355be,#8c77d8);box-shadow:0 16px 35px #6150bf22}.advice-panel .section-kicker{color:#d8d1ff}.advice-icon{display:block;font-size:30px;margin-bottom:9px}.advice-panel h2{margin:8px 0 14px;font-size:20px}.advice-panel p{line-height:1.85;font-size:13px;white-space:pre-line;color:#f0edff;min-height:84px}.advice-panel .el-button{margin-top:12px}.history-section{margin-top:28px}.history-section>.section-head{margin-bottom:15px}.history-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.history-list h3{font-size:15px;margin:0 0 12px}.history-list h3 small{color:#a0a8b6;font-weight:400}.history-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-top:1px solid #f0f1f6}.history-row>div:first-child{display:grid;gap:4px;min-width:0}.history-row strong{font-size:12px;line-height:1.5}.history-row small{font-size:11px;color:#99a2ae}.history-row>div:last-child{display:flex;white-space:nowrap}.dialog-meta,.dialog-actions,.dialog-metrics,.form-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.dialog-meta{justify-content:space-between;margin-bottom:16px}.dialog-actions{justify-content:flex-end;margin-top:20px}.dialog-metrics span,.stats>span{padding:7px 12px;border-radius:9px;background:#eef0ff;color:#6258ac;font-size:12px}.citation{padding-left:10px;border-left:2px solid #aa9fe6;color:#788398;font-size:12px}.question-editor{border:1px solid #e8ecf4;border-radius:12px;padding:14px;margin:14px 0;display:grid;gap:9px}.option-row{display:flex;align-items:center;gap:8px}.qr{width:180px;height:180px;margin:14px 0}.stats{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.stats .el-table{width:100%}.drop-zone{padding:18px;border:2px dashed #b8c7e2;border-radius:12px;text-align:center;background:#f8faff}.drop-zone p{margin:0 0 8px}.fragment{border-bottom:1px solid #edf0f5;padding:12px 0}.fragment p,.case-detail p{white-space:pre-wrap;line-height:1.7}.source-list{margin:16px 0}
-.advice-panel .advice-action{background:#fff;border-color:#fff;color:#5444ad;font-weight:600}
-.advice-panel .advice-action:hover,.advice-panel .advice-action:focus-visible{background:#f0edff;border-color:#f0edff;color:#47369f}
-.advice-panel .advice-action:active{background:#e5dfff;border-color:#e5dfff;color:#3f308f}
-.advice-panel .advice-refresh{color:#f0ebff}.advice-panel .advice-refresh:hover{color:#fff}
-.advice-updated{display:block;margin:0 0 8px;color:#e1dbff;font-size:11px}
-:global(.upload-dialog){max-width:calc(100vw - 32px);border-radius:20px;overflow:hidden;box-shadow:0 24px 70px #29345b2b}
-:global(.upload-dialog .el-dialog__header){padding:24px 28px 16px;margin:0}
-:global(.upload-dialog .el-dialog__body){padding:0 28px 4px}
-:global(.upload-dialog .el-dialog__footer){padding:16px 28px 22px;border-top:1px solid #eef0f6}
-.upload-heading{display:flex;align-items:center;gap:14px;padding-right:28px}.upload-heading-icon{width:44px;height:44px;flex:none;display:grid;place-items:center;border-radius:13px;background:#eeeaff;color:#7461d5;font-size:23px}.upload-heading h2{margin:0 0 3px;font-size:20px;color:#303950}.upload-heading p{margin:0;color:#8d96a6;font-size:12px;line-height:1.5}
-.upload-content{max-height:min(68vh,660px);overflow-y:auto;padding:2px 2px 4px}
-.upload-drop-zone{position:relative;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:7px;min-height:170px;padding:20px 24px;text-align:center;border:1.5px dashed #bcb8e9;border-radius:16px;background:#f8f7ff;cursor:pointer;transition:background .2s,border-color .2s,box-shadow .2s}.upload-drop-zone:hover,.upload-drop-zone:focus-within{background:#f1efff;border-color:#7967d8;box-shadow:0 0 0 3px #7967d818}.upload-drop-zone.has-file{background:#f4f9f8;border-color:#91c9b0}.upload-file-input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}.upload-drop-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:13px;background:#e9e5fc;color:#7562d0;font-size:22px}.upload-drop-zone.has-file .upload-drop-icon{background:#e1f2e9;color:#39946d}.upload-drop-zone strong{max-width:100%;font-size:14px;color:#38445d;line-height:1.5;overflow-wrap:anywhere}.upload-drop-subtitle{font-size:12px;color:#929bab}.upload-select-button{display:inline-flex;align-items:center;justify-content:center;min-height:30px;margin-top:4px;padding:0 13px;border:1px solid #d6d0f2;border-radius:8px;background:#fff;color:#6857be;font-size:12px;font-weight:600}
-.upload-divider{display:flex;align-items:center;gap:10px;margin:24px 0 16px}.upload-divider strong{font-size:14px;color:#3f485e}.upload-divider span{font-size:11px;color:#a0a8b5}.upload-divider:after{content:"";height:1px;background:#eef0f5;flex:1}.upload-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:16px}.upload-form :deep(.el-form-item){margin-bottom:16px}.upload-form :deep(.el-form-item__label){color:#5b6679;font-size:12px;font-weight:600;margin-bottom:5px}.upload-form :deep(.el-input__wrapper),.upload-form :deep(.el-select__wrapper),.upload-form :deep(.el-textarea__inner){border-radius:9px}.upload-footer{display:flex;align-items:center;justify-content:space-between;gap:16px}.upload-footer>span{font-size:11px;color:#99a2b0}.upload-footer>div{display:flex;gap:8px}.upload-footer .el-button{margin:0}.upload-footer .el-button--primary{background:#7563d4;border-color:#7563d4}.upload-footer .el-button--primary:hover{background:#6652c5;border-color:#6652c5}
-@media(max-width:1080px){.content-grid{grid-template-columns:1fr}.side-column{grid-template-columns:repeat(2,minmax(0,1fr))}.overview-footer{align-items:flex-start}}
-@media(max-width:640px){:global(.upload-dialog .el-dialog__header){padding:20px 18px 14px}:global(.upload-dialog .el-dialog__body){padding:0 18px 4px}:global(.upload-dialog .el-dialog__footer){padding:14px 18px 18px}.upload-form-grid{grid-template-columns:1fr}.upload-drop-zone{min-height:150px}.upload-heading h2{font-size:18px}.upload-footer{align-items:stretch;flex-direction:column}.upload-footer>div{justify-content:flex-end}}
-@media(max-width:760px){.education-workbench{padding:10px 4px 36px}.page-header h1{font-size:23px}.overview-panel,.surface,.advice-panel{padding:18px;border-radius:16px}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metric:nth-child(2){border-right:0}.metric:nth-child(-n+2){border-bottom:1px solid #f0eef8}.metric{padding:15px}.metric strong{font-size:25px}.library-grid,.history-grid,.side-column{grid-template-columns:1fr}.filter-row>.el-date-editor{width:100%}.hero-actions{width:100%}.hero-actions .el-button{margin:0}.recommend-card{padding:14px;gap:10px}.overview-source,.small-note{display:none}}
+.education-workbench { max-width: 1480px; margin: 0 auto; padding: 14px 20px 48px; color: #384257; }
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin: 2px 0 22px; }
+.page-header h1 { font-size: 28px; letter-spacing: -.03em; margin: 6px 0; }
+.page-header p { color: #8a92a3; margin: 0; font-size: 13px; }
+.eyebrow { color: #7d6bd5; font-size: 10px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+.content-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); gap: 20px; align-items: start; margin-top: 22px; }
+.primary-column { display: grid; gap: 20px; min-width: 0; }
+
+@media (max-width: 1080px) { .content-grid { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .education-workbench { padding: 10px 4px 36px; } .page-header h1 { font-size: 23px; } }
 </style>

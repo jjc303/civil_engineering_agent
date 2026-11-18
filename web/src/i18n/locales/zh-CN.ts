@@ -706,8 +706,8 @@ export const zhCnMessages = {
     trainingPendingCreated: '已根据选定报告生成培训待确认操作。请确认后生成草稿。',
     trainingProposeFailed: '培训操作创建失败',
     rectificationValidation: '请填写整改要求、负责人和截止时间',
-    rectificationPrompt: '创建整改任务：关联违规 {optionId}，整改内容为 {title}，负责人 {owner}，截止 {dueAt}{descPart}',
-    rectificationDescPart: '，补充说明：{desc}',
+    rectificationPendingCreated: '已生成整改任务待确认操作，请确认后创建整改任务。',
+    rectificationProposeFailed: '整改待确认操作创建失败',
     confirmWriteTitle: '确认执行写操作',
     confirmWriteBody: '将执行：{summary}',
     confirmWriteOk: '确认执行',
@@ -946,6 +946,9 @@ export const zhCnMessages = {
     fillIdentityWarning: '请填写工号和姓名',
     completeAllWarning: '请完成全部题目',
     submitFailed: '提交失败，请核对工号或联系管理员',
+  },
+  mock: {
+    heatmapEmptySummary: '模拟数据：暂无风险数据。',
   },
 }
 

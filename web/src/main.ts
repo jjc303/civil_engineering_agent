@@ -3,7 +3,9 @@ import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 
-import { i18n } from './i18n'
+import { registerApiTranslator } from './api/ports'
+import { registerElementApiNotifier } from './api/notifiers/elementPlus'
+import { i18n, translateAppMessage } from './i18n'
 import { useLocaleStore } from './stores/locale'
 import router from './router'
 import App from './App.vue'
@@ -45,6 +47,8 @@ const pinia = createPinia()
 app.component('v-chart', AsyncECharts)
 app.use(pinia)
 useLocaleStore(pinia).init()
+registerApiTranslator(translateAppMessage)
+registerElementApiNotifier()
 app.use(i18n)
 app.use(router)
 app.use(ElementPlus)

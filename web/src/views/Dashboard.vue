@@ -1,493 +1,261 @@
 <template>
   <div class="monitor-dashboard" :class="{ 'focus-mode': focusMode }">
     <header class="page-heading">
-      <div><p class="eyebrow">LIVE MONITORING</p><h1>{{ t('dashboard.title') }}</h1><p class="subtitle">{{ t('dashboard.subtitle') }}</p></div>
-      <div class="heading-actions"><label class="auto-refresh"><input v-model="autoRefresh" type="checkbox">{{ t('dashboard.realtimePush') }}<span v-if="autoRefresh && streamStateLabel" class="stream-badge" :class="streamState">{{ streamStateLabel }}</span></label><button class="monitor-button" :disabled="loading" @click="refreshAll"><el-icon><Refresh /></el-icon>{{ loading ? t('dashboard.updating') : t('dashboard.refreshData') }}</button></div>
+      <div>
+        <p class="eyebrow">LIVE MONITORING</p>
+        <h1>{{ t('dashboard.title') }}</h1>
+        <p class="subtitle">{{ t('dashboard.subtitle') }}</p>
+      </div>
+      <div class="heading-actions">
+        <label class="auto-refresh">
+          <input v-model="autoRefresh" type="checkbox" />
+          {{ t('dashboard.realtimePush') }}
+          <span v-if="autoRefresh && streamStateLabel" class="stream-badge" :class="streamState">{{ streamStateLabel }}</span>
+        </label>
+        <button class="monitor-button" :disabled="loading" @click="refreshAll">
+          <el-icon><Refresh /></el-icon>
+          {{ loading ? t('dashboard.updating') : t('dashboard.refreshData') }}
+        </button>
+      </div>
     </header>
+
     <div v-if="isMockEnabled" class="notice">{{ t('dashboard.mockNotice') }}</div>
-    <div v-if="errorLabels.length" class="notice error" role="alert">{{ t('dashboard.readFailed', { labels: errorLabels.join('、') }) }}{{ hasAnyData ? t('dashboard.keepLastData') : t('dashboard.noSiteData') }}<button :disabled="loading" @click="refreshAll">{{ t('dashboard.reload') }}</button></div>
-    <nav class="quick-actions" :aria-label="t('dashboard.quickActionsAria')"><router-link to="/cameras"><el-icon><VideoCamera /></el-icon>{{ t('dashboard.quickDevice') }}<span>↗</span></router-link><router-link to="/violations"><el-icon><Warning /></el-icon>{{ t('dashboard.quickViolations') }}<span>↗</span></router-link><router-link to="/copilot"><el-icon><ChatDotRound /></el-icon>{{ t('dashboard.quickCopilot') }}<span>↗</span></router-link><router-link to="/learning"><el-icon><CircleCheck /></el-icon>{{ t('dashboard.quickLearning') }}<span>↗</span></router-link></nav>
-    <section class="metrics" :aria-label="t('dashboard.metricsAria')">
-      <div><p>{{ t('dashboard.metricCamerasOnline') }} <small>{{ t('dashboard.metricCamerasHint') }}</small></p><strong>{{ cameraLoaded ? onlineCamerasCount : '—' }}<em>/ {{ cameraLoaded ? cameras.length : '—' }}</em></strong><span :class="{ stale: errors.cameras }">{{ sourceTime('cameras') }}</span></div>
-      <div><p>{{ t('dashboard.metricTodayViolations') }} <small>{{ dayLabel }}</small></p><strong>{{ stats?.total_violations ?? '—' }}<em>{{ t('common.unitCount') }}</em></strong><span :class="{ stale: errors.stats }">{{ sourceTime('stats') }}</span></div>
-      <div><p>{{ t('dashboard.metricTodayCritical') }} <small>{{ t('dashboard.metricCriticalHint') }}</small></p><strong class="critical-number">{{ stats ? stats.by_severity.CRITICAL ?? 0 : '—' }}<em>{{ t('common.unitCount') }}</em></strong><span :class="{ stale: errors.stats }">{{ sourceTime('stats') }}</span></div>
-
-    </section>
-    <div class="workspace-grid">
-      <section ref="videoPanel" tabindex="-1" class="video-panel" :aria-label="t('dashboard.videoWallAria')">
-        <div class="section-heading"><div><h2>{{ t('dashboard.videoSectionTitle') }}</h2><p>{{ t('dashboard.videoSectionDesc') }}</p></div><div class="view-controls"><button class="focus-toggle" :aria-pressed="focusMode" @click="focusMode = !focusMode">{{ focusMode ? t('dashboard.exitFocus') : t('dashboard.enterFocus') }}</button><div class="layout-switch" role="group" :aria-label="t('dashboard.layoutAria')"><button v-for="n in [1,4,6]" :key="n" :aria-pressed="layout === n" @click="setLayout(n)">{{ n === 1 ? t('dashboard.layout1') : n === 4 ? t('dashboard.layout4') : t('dashboard.layout6') }}</button></div><button class="icon-button" :aria-label="fullscreen ? t('dashboard.exitFullscreenAria') : t('dashboard.enterFullscreenAria')" @click="toggleFullscreen"><el-icon><FullScreen /></el-icon></button></div></div>
-        <div class="camera-filters"><label class="camera-search"><el-icon><Search /></el-icon><input v-model="cameraQuery" type="search" :placeholder="t('dashboard.searchCameraPlaceholder')" :aria-label="t('dashboard.searchCameraAria')" /></label><div class="status-filter" role="group" :aria-label="t('dashboard.statusFilterAria')"><button v-for="option in statusOptions" :key="option.value" :aria-pressed="cameraStatus === option.value" @click="cameraStatus = option.value">{{ option.label }}</button></div></div>
-        <div class="camera-toolbar"><label v-if="layout === 1">{{ t('dashboard.currentChannel') }} <select v-model="selectedCameraId" :aria-label="t('dashboard.selectChannelAria')" :disabled="!filteredCameras.length"><option v-for="camera in filteredCameras" :key="camera.camera_id" :value="camera.camera_id">{{ camera.camera_id }}</option></select></label><span v-else>{{ t('dashboard.channelSummary', { matched: cameraLoaded ? filteredCameras.length : '—', total: cameras.length }) }}</span><button v-if="cameraQuery || cameraStatus !== 'all'" class="clear-filter" @click="clearFilters">{{ t('dashboard.clearFilter') }}</button></div>
-        <div v-if="!cameraLoaded" class="section-empty"><el-icon><VideoCamera /></el-icon><h3>{{ loading ? t('dashboard.fetchingCameras') : t('dashboard.camerasUnavailable') }}</h3><p>{{ t('dashboard.camerasConnectHint') }}</p></div>
-        <div v-else-if="!cameras.length" class="section-empty"><el-icon><VideoCamera /></el-icon><h3>{{ t('dashboard.noCamerasTitle') }}</h3><p>{{ t('dashboard.noCamerasDesc') }}</p><router-link to="/cameras">{{ t('dashboard.goDeviceMgmt') }}</router-link></div>
-        <div v-else-if="!filteredCameras.length" class="section-empty"><el-icon><Search /></el-icon><h3>{{ t('dashboard.noMatchedCameras') }}</h3><p>{{ t('dashboard.noMatchedCamerasDesc') }}</p><button class="monitor-button" @click="clearFilters">{{ t('dashboard.clearFilter') }}</button></div>
-        <div v-else class="video-grid" :class="`grid-${layout}`"><MonitorCamera v-for="camera in displayedCameras" :key="camera.camera_id" :camera="camera" :index="cameras.findIndex(c => c.camera_id === camera.camera_id)" :active-event-count="events.filter(e => e.camera_id === camera.camera_id).length" :stale="Boolean(errors.cameras)" :preview-allowed="pageVisible" @focus="focusCamera" /></div>
-        <div v-if="layout > 1 && filteredCameras.length" class="page-controls"><span>{{ t('dashboard.pageControls', { page: cameraPageNumber, total: pageCount, count: filteredCameras.length }) }}</span><div><button class="icon-button" :aria-label="t('dashboard.prevPageAria')" :disabled="cameraPageNumber <= 1" @click="cameraPageNumber--">←</button><button class="icon-button" :aria-label="t('dashboard.nextPageAria')" :disabled="cameraPageNumber >= pageCount" @click="cameraPageNumber++">→</button></div></div>
-      </section>
-      <aside class="event-column">
-        <section class="events-panel"><div class="section-heading"><div><h2>{{ t('dashboard.attentionTitle') }} <span class="event-total">{{ eventLoaded ? eventTotal : '—' }}</span></h2><p>{{ t('dashboard.attentionDesc') }}</p></div><router-link class="quiet-link" to="/violations">{{ t('dashboard.viewAll') }}</router-link></div>
-          <div v-if="!eventLoaded || !events.length" class="section-empty compact"><el-icon><CircleCheck v-if="eventLoaded" /><Warning v-else /></el-icon><h3>{{ eventLoaded ? t('dashboard.noActiveViolations') : loading ? t('dashboard.readingEvents') : t('dashboard.eventsUnavailable') }}</h3><p>{{ eventLoaded ? t('dashboard.noActiveEventsDesc') : t('dashboard.eventsUnavailableDesc') }}</p></div>
-          <div v-else class="event-list"><button v-for="(event, index) in events" :key="event.event_uuid" class="event-item" :class="{ critical: event.severity === 'CRITICAL', featured: index === 0 }" @click="openEvidence(event)"><span class="event-rank">{{ String(index + 1).padStart(2, '0') }}</span><div class="event-body"><div class="event-topline"><b>{{ violationLabel(event.violation_type) }}</b><span class="severity-tag" :class="event.severity.toLowerCase()">{{ severityLabel(event.severity) }}</span></div><span class="event-location">{{ event.camera_id }}</span><div class="event-bottomline"><time>{{ formatEventTime(event.occurred_at_utc, true) }}</time><span>{{ t('dashboard.viewEvidence') }}</span></div><p v-if="index === 0" class="event-detail">{{ t('dashboard.durationSeconds', { seconds: event.duration_seconds.toFixed(1) }) }}<span v-if="event.zone_name"> · {{ event.zone_name }}</span></p></div></button></div>
-          <div class="events-footer">{{ sourceTime('events') }}<span v-if="eventTotal > events.length">{{ t('dashboard.showingRecent', { count: events.length }) }}</span></div>
-        </section>
-        <router-link to="/copilot" class="assistant-card"><div class="assistant-icon"><el-icon><ChatDotRound /></el-icon></div><div><h3>{{ t('dashboard.copilotTitle') }}</h3><p>{{ t('dashboard.copilotDesc') }}</p><span>{{ t('dashboard.copilotAsk') }} <i>↗</i></span></div></router-link>
-      </aside>
+    <div v-if="errorLabels.length" class="notice error" role="alert">
+      {{ t('dashboard.readFailed', { labels: errorLabels.join('、') }) }}
+      {{ hasAnyData ? t('dashboard.keepLastData') : t('dashboard.noSiteData') }}
+      <button :disabled="loading" @click="refreshAll">{{ t('dashboard.reload') }}</button>
     </div>
-    <section class="statistics-panel visible-statistics" :aria-label="t('dashboard.todayStatsTitle')">
-      <div class="section-heading"><div><h2>{{ t('dashboard.todayStatsTitle') }}</h2><p>{{ t('dashboard.todayStatsDesc', { day: dayLabel }) }}</p></div><router-link class="statistics-link" to="/violations">{{ t('dashboard.viewEventDetails') }}</router-link></div>
-      <p v-if="errors.stats" class="statistics-warning" role="status">{{ t('dashboard.statsWarning', { detail: stats ? t('dashboard.statsWarningKeep') : t('dashboard.statsWarningRetry') }) }}</p>
-      <div v-if="stats" class="charts-grid">
-        <div class="chart"><h3>{{ t('dashboard.typeDistTitle') }} <span>{{ t('dashboard.totalCountLabel', { count: stats.total_violations }) }}</span></h3><v-chart :option="typePieOption" autoresize :aria-label="t('dashboard.typeDistTitle')" /><p v-if="stats.total_violations === 0" class="zero-chart-note">{{ t('dashboard.zeroChartNote') }}</p><ul class="chart-values" :aria-label="t('dashboard.typeDistTitle')"><li v-for="(label, type) in typeNames" :key="type"><span>{{ label }}</span><b>{{ stats.by_type[type] ?? 0 }}</b></li></ul></div>
-        <div class="chart"><h3>{{ t('dashboard.severityDistTitle') }} <span>{{ t('dashboard.severityUnit') }}</span></h3><v-chart :option="severityBarOption" autoresize :aria-label="t('dashboard.severityDistTitle')" /><ul class="chart-values" :aria-label="t('dashboard.severityDistTitle')"><li v-for="severity in severityKeys" :key="severity"><span>{{ severityLabel(severity) }}</span><b>{{ stats.by_severity[severity] ?? 0 }}</b></li></ul></div>
-      </div>
-      <div v-else class="chart-empty">{{ loading ? t('dashboard.loadingCharts') : t('dashboard.chartsEmpty') }}<button v-if="!loading" class="clear-filter" @click="refreshAll">{{ t('dashboard.reloadPlain') }}</button></div>
-      <p class="statistics-updated">{{ t('dashboard.chartsUpdated', { source: sourceTime('stats') }) }}</p>
-    </section>
 
-    <section v-if="heatmap" class="risk-heatmap-section" :aria-label="t('dashboard.heatmapAria')">
-      <div class="section-heading">
-        <div>
-          <h2>{{ t('dashboard.heatmapTitle') }}</h2>
-          <p>{{ t('dashboard.heatmapDesc', { days: heatmap.lookback_days }) }}</p>
-        </div>
-        <span class="heatmap-summary">{{ heatmap.summary }}</span>
-      </div>
-      <div class="heatmap-grid">
-        <div class="chart heatmap-chart">
-          <h3>{{ t('dashboard.hourlyTitle') }} <span>{{ t('dashboard.hourlyDesc') }}</span></h3>
-          <v-chart :option="heatmapChartOption" autoresize :aria-label="t('dashboard.hourlyTitle')" />
-        </div>
-        <div class="chart daily-chart">
-          <h3>{{ t('dashboard.dailyTitle') }} <span>{{ t('dashboard.dailyDesc', { days: heatmap.lookback_days }) }}</span></h3>
-          <v-chart :option="dailyBarOption" autoresize :aria-label="t('dashboard.dailyTitle')" />
-        </div>
-      </div>
-      <div v-if="heatmap.zone_risks.length" class="zone-risk-list">
-        <h3>{{ t('dashboard.zoneRiskRanking') }}</h3>
-        <div class="zone-risk-items">
-          <div v-for="(zone, i) in heatmap.zone_risks.slice(0, 5)" :key="i" class="zone-risk-item">
-            <span class="zone-rank">{{ i + 1 }}</span>
-            <div class="zone-info"><strong>{{ zone.zone_name }}</strong><small>{{ zone.camera_id }}</small></div>
-            <div class="zone-count"><b>{{ zone.total }}</b><span>{{ t('common.unitCount') }}</span></div>
-            <div class="risk-bar"><div class="risk-fill" :style="{ width: (zone.risk_score * 100) + '%', background: zone.risk_score > 0.6 ? '#e4a58c' : zone.risk_score > 0.3 ? '#e0c48c' : '#85b5b2' }"></div></div>
-          </div>
-        </div>
-      </div>
-    </section>
+    <nav class="quick-actions" :aria-label="t('dashboard.quickActionsAria')">
+      <router-link to="/cameras"><el-icon><VideoCamera /></el-icon>{{ t('dashboard.quickDevice') }}<span>↗</span></router-link>
+      <router-link to="/violations"><el-icon><Warning /></el-icon>{{ t('dashboard.quickViolations') }}<span>↗</span></router-link>
+      <router-link to="/copilot"><el-icon><ChatDotRound /></el-icon>{{ t('dashboard.quickCopilot') }}<span>↗</span></router-link>
+      <router-link to="/learning"><el-icon><CircleCheck /></el-icon>{{ t('dashboard.quickLearning') }}<span>↗</span></router-link>
+    </nav>
+
+    <DashboardMetricsRow
+      :camera-loaded="cameraLoaded"
+      :online-count="onlineCamerasCount"
+      :total-cameras="cameras.length"
+      :cameras-stale="errors.cameras"
+      :camera-source-time="sourceTime('cameras')"
+      :stats="stats"
+      :day-label="dayLabel"
+      :stats-stale="errors.stats"
+      :stats-source-time="sourceTime('stats')"
+    />
+
+    <div class="workspace-grid">
+      <DashboardVideoWall
+        v-model:focus-mode="focusMode"
+        :cameras="cameras"
+        :events="events"
+        :camera-loaded="cameraLoaded"
+        :cameras-stale="Boolean(errors.cameras)"
+        :loading="loading"
+        :page-visible="pageVisible"
+      />
+
+      <DashboardEventsAside
+        :event-loaded="eventLoaded"
+        :events="events"
+        :event-total="eventTotal"
+        :loading="loading"
+        :events-source-time="sourceTime('events')"
+        :violation-label="violationLabel"
+        :severity-label="severityLabel"
+        :format-event-time="formatEventTime"
+        @open-evidence="openEvidence"
+      />
+    </div>
+
+    <DashboardAnalyticsSection
+      :stats="stats"
+      :heatmap="heatmap"
+      :violation-labels="typeNames"
+      :severity-keys="severityKeys"
+      :severity-label="severityLabel"
+      :day-label="dayLabel"
+      :stats-error="errors.stats"
+      :loading="loading"
+      :stats-source-time="sourceTime('stats')"
+      :chart-animation="chartAnimation"
+      @refresh="refreshAll"
+    />
 
     <EvidenceModal v-model="evidenceVisible" :record="selectedEvent" />
   </div>
 </template>
+
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Refresh, FullScreen, VideoCamera, ChatDotRound, CircleCheck, Warning, Search } from '@element-plus/icons-vue'
+import { ChatDotRound, CircleCheck, Refresh, VideoCamera, Warning } from '@element-plus/icons-vue'
 import { fetchCameras } from '@/api/cameras'
-import { fetchViolations, fetchViolationStatistics, fetchRiskHeatmap, type RiskHeatmapData } from '@/api/violations'
-import { createSafetyEventStream, type RealtimeConnectionState, type SafetyEventStreamHandle } from '@/api/realtime'
-import { isMockEnabled } from '@/api/client'
-import type { CameraStatusResponse, ViolationRecord, ViolationStatistics, ViolationType, ViolationSeverity } from '@/types/contract'
-import MonitorCamera from '@/components/MonitorCamera.vue'
+import { fetchRiskHeatmap, fetchViolations, fetchViolationStatistics, type RiskHeatmapData } from '@/api/violations'
+import { useSafetyStream } from '@/composables/useSafetyStream'
+import { APP_CONFIG } from '@/config/runtime'
+import DashboardAnalyticsSection from '@/components/dashboard/DashboardAnalyticsSection.vue'
+import DashboardEventsAside from '@/components/dashboard/DashboardEventsAside.vue'
+import DashboardMetricsRow from '@/components/dashboard/DashboardMetricsRow.vue'
+import DashboardVideoWall from '@/components/dashboard/DashboardVideoWall.vue'
 import EvidenceModal from '@/components/EvidenceModal.vue'
 import { useAppI18n, useLocaleRefresh } from '@/i18n/useAppI18n'
 import { useDictionariesStore } from '@/stores/dictionaries'
-import { todayWindow, cameraPage, cameraSelection, filterCameras, applyRealtimeCameraStatus, applyRealtimeViolationEvent } from '@/utils/monitoring'
+import type { CameraStatusResponse, ViolationRecord, ViolationSeverity, ViolationStatistics, ViolationType } from '@/types/contract'
+import { applyRealtimeCameraStatus, applyRealtimeViolationEvent, todayWindow } from '@/utils/monitoring'
+
 const { t, formatDate, formatTime: formatLocaleTime, formatDateTime } = useAppI18n()
+const isMockEnabled = APP_CONFIG.useMock
+const dictionaries = useDictionariesStore()
+dictionaries.ensureLoaded()
+
 const cameras = ref<CameraStatusResponse[]>([])
-const cameraQuery = ref(''), cameraStatus = ref<'all' | 'online' | 'offline'>('all'), focusMode = ref(false)
-const statusOptions = computed(() => [
-  { value: 'all', label: t('dashboard.statusAll') },
-  { value: 'online', label: t('dashboard.statusOnline') },
-  { value: 'offline', label: t('dashboard.statusOffline') },
-] as const)
-const filteredCameras = computed(() => filterCameras(cameras.value, cameraQuery.value, cameraStatus.value))
-function clearFilters() { cameraQuery.value = ''; cameraStatus.value = 'all' }
 const stats = ref<ViolationStatistics | null>(null)
 const events = ref<ViolationRecord[]>([])
 const eventTotal = ref(0)
 const heatmap = ref<RiskHeatmapData | null>(null)
-const cameraLoaded = ref(false), eventLoaded = ref(false), loading = ref(false), autoRefresh = ref(true)
+const cameraLoaded = ref(false), eventLoaded = ref(false), loading = ref(false), autoRefresh = ref(true), focusMode = ref(false)
 const pageVisible = ref(!document.hidden)
 const errors = reactive({ cameras: false, stats: false, events: false })
 const updatedAt = reactive<Record<'cameras' | 'stats' | 'events', Date | null>>({ cameras: null, stats: null, events: null })
 const statsDayRef = ref(new Date())
 const dayLabel = computed(() => formatDate(statsDayRef.value, { month: '2-digit', day: '2-digit' }))
-const selectedCameraId = ref(''), cameraPageNumber = ref(1), layout = ref(4)
-const videoPanel = ref<HTMLElement | null>(null), fullscreen = ref(false)
 const evidenceVisible = ref(false), selectedEvent = ref<ViolationRecord | null>(null)
-const labels = computed(() => ({
-  cameras: t('dashboard.sourceCameras'),
-  stats: t('dashboard.sourceStats'),
-  events: t('dashboard.sourceEvents'),
-}))
-const errorLabels = computed(() => (Object.keys(errors) as (keyof typeof errors)[]).filter(k => errors[k]).map(k => labels.value[k]))
+
+const errorLabels = computed(() => {
+  const sourceLabels = { cameras: t('dashboard.sourceCameras'), stats: t('dashboard.sourceStats'), events: t('dashboard.sourceEvents') }
+  return (Object.keys(errors) as (keyof typeof errors)[]).filter((k) => errors[k]).map((k) => sourceLabels[k])
+})
 const hasAnyData = computed(() => cameraLoaded.value || eventLoaded.value || stats.value !== null)
-const onlineCamerasCount = computed(() => cameras.value.filter(c => c.is_online).length)
-const pageCount = computed(() => Math.max(1, Math.ceil(filteredCameras.value.length / layout.value)))
-const displayedCameras = computed(() => cameraPage(filteredCameras.value, layout.value, cameraPageNumber.value, selectedCameraId.value))
-watch([cameraQuery, cameraStatus], () => { cameraPageNumber.value = 1 })
-watch(filteredCameras, value => { selectedCameraId.value = cameraSelection(value, selectedCameraId.value); cameraPageNumber.value = Math.min(cameraPageNumber.value, pageCount.value) })
+const onlineCamerasCount = computed(() => cameras.value.filter((c) => c.is_online).length)
 const severityKeys: ViolationSeverity[] = ['INFO', 'WARNING', 'CRITICAL']
 const chartAnimation = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-const dictionaries = useDictionariesStore()
-dictionaries.ensureLoaded()
 const typeNames = computed<Record<ViolationType, string>>(() => dictionaries.violationLabels)
-function violationLabel(type: ViolationType) { return dictionaries.violationLabel(type) }
-function severityLabel(severity: ViolationSeverity) { return dictionaries.severityLabel(severity) }
-function formatEventTime(value: string | Date, date = false) {
-  return date
-    ? formatDateTime(value, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
-    : formatLocaleTime(value)
-}
+const violationLabel = (type: ViolationType) => dictionaries.violationLabel(type)
+const severityLabel = (severity: ViolationSeverity) => dictionaries.severityLabel(severity)
+const formatEventTime = (value: string | Date, date = false) =>
+  date ? formatDateTime(value, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : formatLocaleTime(value)
+
 function sourceTime(key: keyof typeof errors) {
   if (!updatedAt[key]) return t('dashboard.noDataYet')
   const formatted = formatEventTime(updatedAt[key]!)
   return errors[key] ? t('dashboard.lastSuccessAt', { time: formatted }) : t('dashboard.updatedAt', { time: formatted })
 }
-function setLayout(count: number) { layout.value = count; cameraPageNumber.value = 1 }
-function focusCamera(id: string) { selectedCameraId.value = id; layout.value = 1 }
-function openEvidence(event: ViolationRecord) { selectedEvent.value = event; evidenceVisible.value = true }
+
+const openEvidence = (event: ViolationRecord) => { selectedEvent.value = event; evidenceVisible.value = true }
+
 let alive = true
 let timer: ReturnType<typeof setInterval> | undefined
 let statsDebounceTimer: ReturnType<typeof setTimeout> | undefined
-let streamHandle: SafetyEventStreamHandle | undefined
 let lastFullRefreshAt = 0
-const streamState = ref<RealtimeConnectionState>('closed')
-const streamStateLabel = computed(() => {
-  if (streamState.value === 'connected') return t('dashboard.streamConnected')
-  if (streamState.value === 'connecting') return t('dashboard.streamConnecting')
-  if (streamState.value === 'reconnecting') return t('dashboard.streamReconnecting')
-  return ''
-})
+
+const { streamState, start: startSafetyStream, stop: stopEventStream } = useSafetyStream()
+const streamStateLabel = computed(() =>
+  ({ connected: t('dashboard.streamConnected'), connecting: t('dashboard.streamConnecting'), reconnecting: t('dashboard.streamReconnecting'), closed: '', disabled: '' })[streamState.value],
+)
 
 async function refreshStatsAndHeatmap() {
   const now = new Date()
   try {
     const statsResult = await fetchViolationStatistics(todayWindow(now))
     if (!alive) return
-    stats.value = statsResult
-    errors.stats = false
-    updatedAt.stats = new Date()
-    statsDayRef.value = now
-  } catch {
-    if (alive) errors.stats = true
-  }
-  fetchRiskHeatmap(7).then(data => { if (alive) heatmap.value = data }).catch(() => {})
+    stats.value = statsResult; errors.stats = false; updatedAt.stats = new Date(); statsDayRef.value = now
+  } catch { if (alive) errors.stats = true }
+  fetchRiskHeatmap(7).then((data) => { if (alive) heatmap.value = data }).catch(() => {})
 }
 
 function scheduleStatsRefresh() {
   if (statsDebounceTimer) clearTimeout(statsDebounceTimer)
-  statsDebounceTimer = setTimeout(() => {
-    if (alive) void refreshStatsAndHeatmap()
-  }, 300)
+  statsDebounceTimer = setTimeout(() => { if (alive) void refreshStatsAndHeatmap() }, 300)
 }
 
 function startEventStream() {
-  stopEventStream()
-  if (!autoRefresh.value) return
-  streamHandle = createSafetyEventStream({
-    onStateChange(state) {
-      if (alive) streamState.value = state
-    },
+  if (!autoRefresh.value) return stopEventStream()
+  startSafetyStream({
     onCameraStatus(incoming) {
       if (!alive) return
       cameras.value = applyRealtimeCameraStatus(cameras.value, incoming)
-      cameraLoaded.value = true
-      errors.cameras = false
-      updatedAt.cameras = new Date()
+      cameraLoaded.value = true; errors.cameras = false; updatedAt.cameras = new Date()
     },
     onViolationEvent(payload) {
       if (!alive) return
       const next = applyRealtimeViolationEvent(events.value, eventTotal.value, payload.record, 6)
-      events.value = next.events
-      eventTotal.value = next.eventTotal
-      eventLoaded.value = true
-      errors.events = false
-      updatedAt.events = new Date()
+      events.value = next.events; eventTotal.value = next.eventTotal
+      eventLoaded.value = true; errors.events = false; updatedAt.events = new Date()
       scheduleStatsRefresh()
     },
   })
 }
 
-function stopEventStream() {
-  if (streamHandle) {
-    streamHandle.close()
-    streamHandle = undefined
-  }
-}
-
-watch(autoRefresh, enabled => {
-  if (enabled) {
-    startEventStream()
-    void refreshAll()
-  } else {
-    stopEventStream()
-  }
-})
+watch(autoRefresh, (enabled) => { if (enabled) { startEventStream(); void refreshAll() } else { stopEventStream() } })
 
 async function refreshAll() {
   if (loading.value) return
   loading.value = true
   const now = new Date()
   try {
-    const [cameraResult, statsResult, eventResult] = await Promise.allSettled([fetchCameras(), fetchViolationStatistics(todayWindow(now)), fetchViolations({ status: 'ACTIVE', limit: 6, offset: 0 })])
-
-    // Fetch risk heatmap separately (not critical, don't block other loading)
-    fetchRiskHeatmap(7).then(data => { if (alive) heatmap.value = data }).catch(() => {})
+    const [cameraResult, statsResult, eventResult] = await Promise.allSettled([
+      fetchCameras(), fetchViolationStatistics(todayWindow(now)), fetchViolations({ status: 'ACTIVE', limit: 6, offset: 0 }),
+    ])
+    fetchRiskHeatmap(7).then((data) => { if (alive) heatmap.value = data }).catch(() => {})
     if (!alive) return
     lastFullRefreshAt = Date.now()
     errors.cameras = cameraResult.status === 'rejected'; errors.stats = statsResult.status === 'rejected'; errors.events = eventResult.status === 'rejected'
-    if (cameraResult.status === 'fulfilled') {
-      cameras.value = cameraResult.value; cameraLoaded.value = true; updatedAt.cameras = new Date()
-      selectedCameraId.value = cameraSelection(filteredCameras.value, selectedCameraId.value)
-      cameraPageNumber.value = Math.min(cameraPageNumber.value, pageCount.value)
-    }
+    if (cameraResult.status === 'fulfilled') { cameras.value = cameraResult.value; cameraLoaded.value = true; updatedAt.cameras = new Date() }
     if (statsResult.status === 'fulfilled') { stats.value = statsResult.value; updatedAt.stats = new Date(); statsDayRef.value = now }
-    if (eventResult.status === 'fulfilled') { events.value = eventResult.value.items.filter(e => e.status === 'ACTIVE').slice(0, 6); eventTotal.value = eventResult.value.total; eventLoaded.value = true; updatedAt.events = new Date() }
+    if (eventResult.status === 'fulfilled') { events.value = eventResult.value.items.filter((e) => e.status === 'ACTIVE').slice(0, 6); eventTotal.value = eventResult.value.total; eventLoaded.value = true; updatedAt.events = new Date() }
   } finally { if (alive) loading.value = false }
 }
-async function toggleFullscreen() { try { if (document.fullscreenElement) await document.exitFullscreen(); else await videoPanel.value?.requestFullscreen() } catch { ElMessage.info(t('dashboard.fullscreenUnsupported')) } }
-function syncFullscreen() { fullscreen.value = document.fullscreenElement === videoPanel.value }
-function onVisibility() { pageVisible.value = !document.hidden; if (pageVisible.value && autoRefresh.value) void refreshAll() }
-useLocaleRefresh(() => {
-  if (autoRefresh.value) startEventStream()
-  void refreshAll()
-})
+
+const onVisibility = () => { pageVisible.value = !document.hidden; if (pageVisible.value && autoRefresh.value) void refreshAll() }
+useLocaleRefresh(() => { if (autoRefresh.value) startEventStream(); void refreshAll() })
 onMounted(() => {
-  void refreshAll()
-  startEventStream()
+  void refreshAll(); startEventStream()
   timer = setInterval(() => {
     if (!autoRefresh.value || document.hidden) return
-    const intervalMs = streamState.value === 'connected' ? 60000 : 30000
-    if (Date.now() - lastFullRefreshAt >= intervalMs) {
-      void refreshAll()
-    }
+    if (Date.now() - lastFullRefreshAt >= (streamState.value === 'connected' ? 60000 : 30000)) void refreshAll()
   }, 15000)
   document.addEventListener('visibilitychange', onVisibility)
-  document.addEventListener('fullscreenchange', syncFullscreen)
 })
-onUnmounted(() => {
-  alive = false
-  stopEventStream()
-  clearInterval(timer)
-  if (statsDebounceTimer) clearTimeout(statsDebounceTimer)
-  document.removeEventListener('visibilitychange', onVisibility)
-  document.removeEventListener('fullscreenchange', syncFullscreen)
-})
-const typePieOption = computed(() => ({
-  animation: chartAnimation, animationDuration: 400,
-  color: ['#9181ea', '#e4a58c', '#85b5b2'],
-  title: { text: String(stats.value?.total_violations ?? 0), subtext: t('dashboard.chartTodayEvents'), left: '28%', top: '36%', textAlign: 'center', textStyle: { color: '#625775', fontSize: 30, fontWeight: 500 }, subtextStyle: { color: '#8d869b', fontSize: 11 } },
-  tooltip: { trigger: 'item', valueFormatter: (value: unknown) => t('dashboard.chartUnitSuffix', { value: String(value ?? 0) }) },
-  legend: { data: Object.values(dictionaries.violationLabels), orient: 'vertical', right: '1%', top: 'middle', icon: 'circle', itemWidth: 8, itemHeight: 8, selectedMode: false, textStyle: { color: '#72798b', fontSize: 11 } },
-  series: [{ type: 'pie', radius: ['55%', '73%'], center: ['28%', '50%'], label: { show: false }, stillShowZeroSum: false, showEmptyCircle: true, emptyCircleStyle: { color: '#eeebf6' }, itemStyle: { borderWidth: 3, borderColor: '#f9f9fd', borderRadius: 5 }, data: stats.value?.total_violations ? Object.entries(dictionaries.violationLabels).map(([key, name]) => ({ name, value: stats.value?.by_type[key as ViolationType] ?? 0 })) : [] }],
-}))
-const severityBarOption = computed(() => ({
-  animation: chartAnimation, animationDuration: 400,
-  tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: (value: unknown) => t('dashboard.chartUnitSuffix', { value: String(value ?? 0) }) },
-  grid: { top: 22, bottom: 22, left: 48, right: 35 },
-  xAxis: { type: 'value', minInterval: 1, max: stats.value?.total_violations === 0 ? 1 : undefined, splitLine: { lineStyle: { color: '#ececf4', type: 'dashed' } }, axisLabel: { color: '#8a8fa0' } },
-  yAxis: { type: 'category', data: severityKeys.map(code => severityLabel(code)), axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#72798b', fontSize: 12 } },
-  series: [{ type: 'bar', barWidth: 14, label: { show: true, position: 'right', color: '#817590' }, itemStyle: { borderRadius: [0, 5, 5, 0] }, data: [{ value: stats.value?.by_severity.INFO ?? 0, itemStyle: { color: '#85b5b2' } }, { value: stats.value?.by_severity.WARNING ?? 0, itemStyle: { color: '#b2a1e5' } }, { value: stats.value?.by_severity.CRITICAL ?? 0, itemStyle: { color: '#e4a58c' } }] }],
-}))
-
-const heatmapChartOption = computed(() => {
-  const hourlyData = heatmap.value?.hourly_risk ?? []
-  const maxCount = Math.max(1, ...(hourlyData.map(h => h.count) ?? [1]))
-
-  return {
-    animation: chartAnimation,
-    tooltip: {
-      position: 'top',
-      backgroundColor: 'rgba(255, 255, 255, 0.96)',
-      borderColor: '#ece9f4',
-      borderWidth: 1,
-      padding: [8, 12],
-      textStyle: { color: '#433d59', fontSize: 12 },
-      formatter: (params: any) => {
-        const raw = Array.isArray(params.value) ? params.value : [0, 0, 0]
-        const hour = Number(raw[0])
-        const count = Number(raw[2])
-        const nextHour = (hour + 1) % 24
-        const timeRange = `${String(hour).padStart(2, '0')}:00 - ${String(nextHour).padStart(2, '0')}:00`
-        const riskLevel = count === 0 ? t('dashboard.riskSafe') : count >= (maxCount * 0.6) ? t('dashboard.riskExtreme') : count >= (maxCount * 0.25) ? t('dashboard.riskHigh') : t('dashboard.riskNormal')
-        const riskColor = count === 0 ? '#85b5b2' : count >= (maxCount * 0.6) ? '#ce7666' : count >= (maxCount * 0.25) ? '#caa266' : '#7969d0'
-        return `
-          <div style="font-size:12px; line-height:1.6;">
-            <div style="font-weight:600; color:#343b51; margin-bottom:2px;">${timeRange}</div>
-            <div>${t('dashboard.tooltipFreq')}<b style="color:${count > 0 ? '#645383' : '#888'}; font-size:13px;">${count}</b> ${t('common.unitCount')}</div>
-            <div style="font-size:11px; margin-top:2px;">${t('dashboard.tooltipRisk')}<span style="color:${riskColor}; font-weight:600;">${riskLevel}</span></div>
-          </div>
-        `
-      }
-    },
-    grid: { top: 12, bottom: 56, left: 14, right: 14 },
-    xAxis: {
-      type: 'category',
-      data: Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`),
-      axisLine: { show: false },
-      axisTick: { show: false },
-      axisLabel: { color: '#989daf', fontSize: 10, interval: 2 },
-      splitArea: { show: false },
-      splitLine: { show: false }
-    },
-    yAxis: {
-      type: 'category',
-      data: [''],
-      axisLine: { show: false },
-      axisTick: { show: false },
-      axisLabel: { show: false },
-      splitLine: { show: false }
-    },
-    visualMap: {
-      min: 0,
-      max: maxCount,
-      calculable: false,
-      orient: 'horizontal',
-      left: 'center',
-      bottom: 4,
-      itemWidth: 12,
-      itemHeight: 140,
-      inRange: {
-        color: ['#f4f3f9', '#ded6f7', '#bcabec', '#8f70db', '#6245b7']
-      },
-      text: [t('dashboard.legendHighRisk'), t('dashboard.legendNoViolation')],
-      textGap: 8,
-      textStyle: { color: '#959caa', fontSize: 10 }
-    },
-    series: [{
-      type: 'heatmap',
-      data: hourlyData.map(h => [h.hour, 0, h.count]),
-      label: { show: false },
-      itemStyle: {
-        borderColor: '#ffffff',
-        borderWidth: 2,
-        borderRadius: 4
-      },
-      emphasis: {
-        itemStyle: {
-          shadowBlur: 8,
-          shadowColor: 'rgba(99, 69, 183, 0.35)',
-          borderColor: '#ffffff',
-          borderWidth: 2
-        }
-      }
-    }]
-  }
-})
-
-const dailyBarOption = computed(() => ({
-  animation: chartAnimation,
-  tooltip: {
-    trigger: 'axis',
-    backgroundColor: 'rgba(255, 255, 255, 0.96)',
-    borderColor: '#ece9f4',
-    borderWidth: 1,
-    padding: [8, 12],
-    textStyle: { color: '#433d59', fontSize: 12 },
-    formatter: (params: any) => {
-      const item = Array.isArray(params) ? params[0] : params
-      const count = Number(item?.value ?? 0)
-      return `
-        <div style="font-size:12px; line-height:1.6;">
-          <div style="font-weight:600; color:#343b51; margin-bottom:2px;">${item?.name}</div>
-          <div>${t('dashboard.tooltipFreq')}<b style="color:${count > 0 ? '#645383' : '#888'}; font-size:13px;">${count}</b> ${t('common.unitCount')}</div>
-        </div>
-      `
-    }
-  },
-  grid: { top: 18, bottom: 26, left: 36, right: 14 },
-  xAxis: {
-    type: 'category',
-    data: Array.from({ length: heatmap.value?.lookback_days ?? 7 }, (_, i) => {
-      const d = new Date()
-      d.setDate(d.getDate() - (heatmap.value?.lookback_days ?? 7) + i + 1)
-      return `${d.getMonth() + 1}/${d.getDate()}`
-    }),
-    axisLine: { lineStyle: { color: '#eeebf5' } },
-    axisTick: { show: false },
-    axisLabel: { color: '#989daf', fontSize: 10 }
-  },
-  yAxis: {
-    type: 'value',
-    minInterval: 1,
-    splitLine: { lineStyle: { color: '#f0edf6', type: 'dashed' } },
-    axisLabel: { color: '#989daf', fontSize: 10 }
-  },
-  series: [{
-    type: 'bar',
-    data: heatmap.value?.daily_counts ?? [],
-    itemStyle: { color: '#9b86d2', borderRadius: [4, 4, 0, 0] },
-    emphasis: { itemStyle: { color: '#7f66c4' } },
-    barWidth: '42%'
-  }]
-}))
+onUnmounted(() => { alive = false; clearInterval(timer); if (statsDebounceTimer) clearTimeout(statsDebounceTimer); document.removeEventListener('visibilitychange', onVisibility) })
 </script>
+
 <style scoped>
-.monitor-dashboard { padding: 34px 34px 24px; max-width: 1800px; margin: 0 auto; color: #d5dfe4; --line: #ffffff0c; }
-.page-heading { display: flex; justify-content: space-between; gap: 20px; align-items: center; margin-bottom: 26px; }
-.eyebrow { display: flex; align-items: center; gap: 9px; color: #9caaaf; font-size: 9px; letter-spacing: 1.6px; margin: 0 0 13px; }.eyebrow span { width: 14px; height: 2px; background: #8b7ee5; }.eyebrow i { font-style: normal; color: #485761; margin: 0 3px; }
-h1 { font-weight: 500; font-size: 28px; line-height: 1.4; letter-spacing: 1px; color: #303446; margin: 0; }h1 span { color: #7969d0; }.subtitle { color: #8a9aa6; font-size: 12px; margin: 11px 0 0; }
-.heading-actions { display: flex; align-items: center; gap: 18px; }.auto-refresh { font-size: 11px; color: #8f9ca5; white-space: nowrap; }.auto-refresh input { accent-color: #8271db; vertical-align: middle; margin-right: 6px; }
-.monitor-button { border: 1px solid #e1def3; background: #edeafd; color: #6559cf; display: inline-flex; align-items: center; gap: 8px; border-radius: 5px; padding: 9px 13px; font-size: 11px; white-space: nowrap; }.monitor-button:hover { border-color: #8271db80; }.monitor-button:disabled { opacity: .5; }
-.notice { padding: 10px 14px; border: 1px solid #8271db29; background: #8271db09; color: #786bb0; font-size: 11px; border-radius: 5px; margin-bottom: 18px; line-height: 1.7; }.notice.error { color: #dbad9e; background: #a0594910; border-color: #a0594930; }.notice button { color: inherit; background: none; border: 0; text-decoration: underline; margin-left: 15px; }
-.metrics { display: grid; grid-template-columns: repeat(4,1fr); padding: 22px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 28px; }.metrics > div { padding: 0 25px; border-right: 1px solid var(--line); }.metrics > div:first-child { padding-left: 0; }.metrics > div:last-child { border: 0; }.metrics p { margin: 0 0 11px; font-size: 12px; color: #686f80; }.metrics p small { display: block; color: #788d9a; font-size: 9px; margin-top: 5px; }
-.metrics strong { font-size: 35px; line-height: 1.3; font-weight: 500; color: #34394b; letter-spacing: -.8px; font-variant-numeric: tabular-nums; }.metrics strong em { font-size: 13px; color: #8b9ba6; font-weight: 400; font-style: normal; letter-spacing: 0; margin-left: 10px; }.metrics strong.critical-number { color: #ce7666; }.metrics > div > span { display: block; color: #83939d; font-size: 9px; margin-top: 8px; }.metrics .stale { color: #ce7666; }
-.workspace-grid { display: grid; grid-template-columns: minmax(0,1fr) 295px; gap: 26px; align-items: start; }.section-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }.section-heading h2 { font-size: 15px; font-weight: 500; margin: 0; color: #3f4555; }.section-heading h2 small { color: #68808f; font-size: 8px; letter-spacing: 1.3px; margin-left: 10px; font-weight: 400; }.section-heading p { font-size: 10px; color: #7f929e; margin: 7px 0 0; }
-.view-controls { display: flex; gap: 10px; align-items: center; }.layout-switch { display: flex; padding: 3px; background: #f4f3fb; border: 1px solid var(--line); border-radius: 5px; }.layout-switch button { background: none; color: #8f9fa9; border: 0; padding: 4px 10px; font-size: 10px; border-radius: 3px; }.layout-switch button[aria-pressed=true] { background: #ffffff; color: #6559cf; }.icon-button { width: 28px; height: 28px; display: inline-grid; place-items: center; border: 1px solid #e6e8f0; color: #98aab6; background: #f4f3fb; border-radius: 4px; font-size: 13px; }.icon-button:disabled { opacity: .3; }
-.camera-toolbar { display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #8c9daa; margin-bottom: 13px; min-height: 27px; }.camera-toolbar select { margin-left: 10px; max-width: 230px; padding: 4px 8px; border-radius: 4px; background: #f4f3fb; color: #5f6175; border: 1px solid #ffffff15; font-size: 11px; }.preview-note { color: #7d919e; font-size: 9px; }
-.video-grid { display: grid; gap: 14px; }.grid-1 { grid-template-columns: 1fr; }.grid-4 { grid-template-columns: repeat(2,minmax(0,1fr)); }.grid-6 { grid-template-columns: repeat(3,minmax(0,1fr)); }.video-panel:fullscreen { padding: 28px; background: #f7f8fc; overflow: auto; }.video-panel:fullscreen .grid-1 { max-width: 1100px; margin: auto; }.page-controls { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 10px; color: #81939f; }.page-controls > div { display: flex; gap: 6px; }
-.event-column { min-width: 0; border-left: 1px solid var(--line); padding-left: 24px; }.events-panel .section-heading { padding-bottom: 16px; margin: 0; border-bottom: 1px solid var(--line); }.event-total { font-size: 10px; font-weight: 400; color: #ceae8c; background: #8b7ee512; border: 1px solid #8b7ee520; padding: 1px 5px; margin-left: 8px; border-radius: 3px; }.quiet-link { font-size: 10px; color: #776acb; text-decoration: none; }
-.event-item { width: 100%; text-align: left; display: flex; align-items: flex-start; padding: 21px 0; gap: 12px; border: 0; border-bottom: 1px solid var(--line); color: inherit; background: none; }.event-item:hover { background: #f8f7fd; }.event-item.featured { background: linear-gradient(90deg,#f6f3ff,transparent); }.event-rank { font-size: 10px; color: #788b98; padding-top: 3px; }.critical .event-rank { color: #cb9384; }.event-body { flex: 1; min-width: 0; }.event-topline { display: flex; justify-content: space-between; gap: 6px; align-items: center; }.event-topline b { font-size: 12px; font-weight: 500; }.severity-tag { font-size: 9px; padding: 2px 5px; border-radius: 3px; white-space: nowrap; }.severity-tag.critical { background: #b56a571c; color: #c46957; }.severity-tag.warning { background: #b3996017; color: #a77d36; }.severity-tag.info { background: #67839820; color: #718ca5; }.event-location { display: block; color: #8297a5; font-size: 10px; margin-top: 9px; overflow-wrap: anywhere; }.event-bottomline { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; font-size: 10px; color: #7d929f; }.event-bottomline > span { color: #7969d0; }.event-detail { font-size: 10px; line-height: 1.8; color: #9fa8ac; margin: 12px 0 0; }.events-footer { font-size: 9px; color: #7f929f; margin: 15px 0; }
-.assistant-card { display: flex; gap: 13px; padding: 20px 16px; margin-top: 25px; border: 1px solid #baa17e26; border-radius: 7px; background: linear-gradient(135deg,#f3efff,#f8f6ff); text-decoration: none; }.assistant-icon { color: #8b7ee5; font-size: 22px; }.assistant-card > div:last-child { flex: 1; }.assistant-card h3 { margin: 0; font-size: 13px; font-weight: 500; color: #464058; }.assistant-card p { color: #97a4ad; font-size: 11px; margin: 9px 0 19px; }.assistant-card span { display: flex; justify-content: space-between; font-size: 10px; color: #7969d0; border-top: 1px solid #e9ecf3; padding-top: 12px; }.assistant-card i { font-style: normal; }
-.section-empty { min-height: 310px; border: 1px dashed #e4e7f0; border-radius: 8px; padding: 45px 22px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #7f95a3; }.section-empty > .el-icon { font-size: 28px; }.section-empty h3 { font-size: 14px; font-weight: 400; color: #616a7d; margin: 18px 0 8px; }.section-empty p { font-size: 11px; margin: 0; line-height: 1.9; }.section-empty a { font-size: 12px; color: #7969d0; margin-top: 20px; }.section-empty.compact { min-height: 240px; border: 0; padding: 25px 10px; }
-.statistics-panel { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 24px; }.range-label { font-size: 10px; color: #83949e; }.charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }.chart { background: #ffffff; border: 1px solid var(--line); padding: 16px; border-radius: 7px; min-width: 0; }.chart h3 { font-size: 11px; color: #737b8f; font-weight: 400; margin: 0; }.chart .echarts { height: 180px; }.chart-empty { padding: 25px; font-size: 12px; color: #8295a2; background: #ffffff; border-radius: 5px; text-align: center; }
-.dashboard-footer { display: flex; gap: 15px; justify-content: space-between; margin-top: 26px; color: #748996; font-size: 9px; }.dashboard-footer i { margin: 0 10px; font-style: normal; color: #455864; }
-@media (min-width: 1650px) { .monitor-dashboard { padding: 40px 48px; }.workspace-grid { grid-template-columns: minmax(0,1fr) 340px; gap: 32px; }.event-column { padding-left: 30px; }.event-item { padding: 25px 0; } }
-@media (max-width: 1300px) { .monitor-dashboard { padding: 28px 24px; }.workspace-grid { grid-template-columns: minmax(0,1fr) 260px; gap: 18px; }.event-column { padding-left: 18px; }.heading-actions { flex-direction: column-reverse; gap: 10px; align-items: end; }h1 { font-size: 25px; }.grid-6 { grid-template-columns: repeat(2,minmax(0,1fr)); } }
-@media (max-width: 1050px) { .workspace-grid { grid-template-columns: 1fr; }.event-column { border: 0; padding: 0; display: grid; grid-template-columns: minmax(0,1fr) 250px; gap: 24px; }.assistant-card { align-self: start; margin-top: 0; }.metrics > div { padding: 0 16px; }.section-heading h2 small { display: none; } }
-@media (max-width: 620px) { .monitor-dashboard { padding: 25px 18px; }.page-heading { align-items: start; flex-direction: column; }h1 { font-size: 23px; letter-spacing: 0; }.heading-actions { flex-direction: row; align-items: center; width: 100%; justify-content: space-between; }.metrics { grid-template-columns: 1fr 1fr; row-gap: 23px; }.metrics > div { padding: 0 0 0 20px; }.metrics > div:nth-child(3) { padding-left: 0; }.metrics > div:nth-child(even) { border: 0; }.metrics strong { font-size: 30px; }.grid-4,.grid-6 { grid-template-columns: 1fr; }.event-column,.charts-grid { grid-template-columns: 1fr; }.dashboard-footer { flex-direction: column; line-height: 1.8; gap: 5px; }.view-controls { gap: 7px; }.layout-switch button { padding: 4px 8px; }.camera-toolbar select { max-width: 180px; }.preview-note { display: none; } }
+.monitor-dashboard { --line: #ece9f3; max-width: 1512px; margin: 0 auto; padding: 32px 32px 40px; color: #545d70; }
+.page-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 26px; }
+.eyebrow { display: flex; align-items: center; gap: 9px; font-size: 10px; font-weight: 600; letter-spacing: 1.8px; color: #9584c7; margin: 0 0 10px; }
+.page-heading h1 { font-size: 27px; font-weight: 650; line-height: 1.4; letter-spacing: -.5px; color: #343b51; margin: 0; }
+.page-heading .subtitle { font-size: 13px; line-height: 1.8; color: #737b8d; margin: 11px 0 0; }
+.heading-actions { display: flex; align-items: center; gap: 18px; }
+.auto-refresh { font-size: 11px; color: #737b8d; white-space: nowrap; }
+.auto-refresh input { accent-color: #8879df; vertical-align: middle; margin-right: 6px; }
+.monitor-button { border: 0; border-radius: 11px; background: #fff; color: #8370b6; display: inline-flex; align-items: center; gap: 8px; padding: 12px 18px; font-size: 12px; min-height: 37px; white-space: nowrap; }
+.monitor-button:disabled { opacity: .5; }
+.notice { padding: 10px 14px; border: 1px solid #e8e2f3; background: #f1eefb; color: #82759e; font-size: 11px; border-radius: 12px; margin-bottom: 18px; line-height: 1.7; }
+.notice.error { background: #fff0ec; color: #bd7a67; border-color: #f2dcd5; }
+.notice button { color: inherit; background: none; border: 0; text-decoration: underline; margin-left: 15px; }
+.quick-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0 0 24px; }
+.quick-actions a { display: flex; align-items: center; gap: 9px; min-height: 40px; background: #fff; border: 1px solid #eae5f4; border-radius: 12px; padding: 14px 16px; color: #84739e; font-size: 12px; text-decoration: none; transition: box-shadow .2s, transform .2s, background .2s; }
+.quick-actions a:hover { background: #f3eefb; border-color: #cfc0e9; transform: translateY(-2px); box-shadow: 0 4px 12px #615a9910; }
+.quick-actions a > span { margin-left: auto; color: #a09aaa; }
+.workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 22px; align-items: start; }
+.focus-mode .workspace-grid { grid-template-columns: 1fr; }
+.focus-mode :deep(.event-column) { display: none; }
+.stream-badge { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 500; background: #eef6f0; color: #4e9a67; }
+.stream-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.stream-badge.connecting, .stream-badge.reconnecting { background: #fef6e7; color: #b88230; }
 
-/* Light workspace: primary actions first, advanced analysis on demand. */
-.monitor-dashboard{--line:#e9ecf3;color:#545d70;max-width:1800px;margin:0 auto;padding:32px 36px 44px}
-h1{font-size:28px;font-weight:600;letter-spacing:-.5px}.eyebrow{font-size:11px;letter-spacing:0;color:#969cad;margin-bottom:10px}.subtitle{font-size:13px;color:#8b92a3}.page-heading{margin-bottom:24px}.monitor-button{background:#ece8fc;color:#7565c9;border:0;border-radius:24px;padding:12px 18px;font-size:12px;min-height:42px}.auto-refresh{color:#9298a7}.auto-refresh input{accent-color:#8879df}
-.quick-actions{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 26px}.quick-actions a{display:flex;align-items:center;gap:9px;background:#fff;border:1px solid #e9eaf2;border-radius:24px;padding:10px 15px;color:#6d7485;font-size:12px;text-decoration:none;transition:box-shadow .2s,transform .2s,background .2s}.quick-actions a:hover{background:#f2efff;color:#7868ca;transform:translateY(-2px);box-shadow:0 4px 12px #615a9910}.quick-actions span{margin-left:12px;color:#a09aaa}
-.metrics{grid-template-columns:repeat(3,1fr);gap:18px;padding:0;border:0;margin-bottom:28px}.metrics>div,.metrics>div:first-child{border:1px solid #edf0f5;border-radius:18px;padding:20px 24px;background:#fff;box-shadow:0 3px 16px #28356103}.metrics>div:last-child{border:1px solid #edf0f5}.metrics p{font-size:13px;color:#7d8495}.metrics p small{display:inline;margin-left:8px;color:#a1a6b3;font-size:10px}.metrics strong{font-size:32px;color:#454a5a;font-weight:550}.metrics strong em{color:#a1a6b3}.metrics>div>span{color:#a1a6b3;font-size:10px}
-.workspace-grid{gap:24px;grid-template-columns:minmax(0,1fr) 300px}.video-panel{background:#fff;border:1px solid #edf0f5;border-radius:20px;padding:24px;min-width:0}.section-heading h2{font-weight:600;font-size:16px;color:#50576a}.section-heading p{color:#999faf;font-size:11px}.section-heading h2 small{display:none}.layout-switch{border:0;border-radius:20px;background:#f2f1f8;padding:4px}.layout-switch button{border-radius:18px;padding:7px 12px;min-height:32px;font-size:11px;color:#9195a5;transition:background .2s,box-shadow .2s,color .2s}.layout-switch button[aria-pressed=true]{background:#fff;box-shadow:0 2px 7px #43386c15;color:#7969cd}.icon-button{border:0;border-radius:50%;width:36px;height:36px;background:#f3f2fa;color:#8b80ba}.camera-toolbar{color:#959caa;margin-bottom:16px}.camera-toolbar select{background:#f5f3fc;border:1px solid #e9e4f6;border-radius:12px;padding:7px 10px;color:#7b7198}.preview-note{color:#999eab}.page-controls{color:#969cab;margin-top:18px}.page-controls:has(button:disabled + button:disabled){opacity:.6}
-.event-column{border:0;padding:0}.events-panel{background:#fff;border:1px solid #edf0f5;border-radius:20px;padding:23px}.events-panel .section-heading{border-bottom:0;padding-bottom:12px}.event-total{background:#f1edff;color:#8a78ce;border:0;border-radius:9px;padding:3px 7px}.quiet-link{color:#8a7bcc}.section-empty{border:1px dashed #e4e5ef;border-radius:16px;color:#a09ab9}.section-empty h3{color:#74798c;font-size:14px}.section-empty p{color:#a0a5b3;font-size:12px}.section-empty.compact{min-height:220px}.section-empty.compact>.el-icon{width:58px;height:58px;border-radius:50%;background:#eeF6f0;color:#90b39a;font-size:28px}.event-item{padding:18px 8px;border-color:#f0f1f6;border-radius:10px;color:#646b7b;transition:background .2s,transform .2s}.event-item:hover{background:#f7f5fe;transform:translateX(2px)}.event-item.featured{background:none}.event-bottomline{flex-wrap:wrap}.events-footer{color:#a1a6b3}.assistant-card{background:linear-gradient(125deg,#eeebff,#f7f5ff);border:0;border-radius:20px;padding:24px;transition:transform .2s,box-shadow .2s}.assistant-card:hover{transform:translateY(-3px);box-shadow:0 10px 24px #7e6cca14}.assistant-card h3{color:#70649b}.assistant-card p{color:#9a91ae}.assistant-card span{color:#8c7bc4;border-color:#e4dcf3}
-.statistics-panel{border:1px solid #edf0f5;border-radius:18px;background:#fff;padding:0 24px;margin-top:24px}.statistics-panel summary{cursor:pointer;padding:22px 0;color:#777e90;font-size:13px;list-style:none;display:flex;align-items:center;gap:10px}.statistics-panel summary:before{content:'›';font-size:20px;color:#9c90c9;transition:transform .2s}.statistics-panel[open] summary:before{transform:rotate(90deg)}.statistics-panel summary span{margin-left:auto;color:#a4a9b6;font-size:11px}.statistics-panel>.section-heading,.statistics-panel>.charts-grid,.statistics-panel>.chart-empty{margin-bottom:24px}.chart{border:0;background:#f9f9fd;border-radius:14px}.chart-empty{background:#f8f8fc;color:#a0a5b2}.range-label{color:#969dab}.video-panel:fullscreen{background:#f7f8fc}.notice{background:#f1eefb;color:#82759e;border-color:#e8e2f3;border-radius:12px}.notice.error{background:#fff0ec;color:#bd7a67;border-color:#f2dcd5}
-@media(max-width:1250px){.workspace-grid{grid-template-columns:minmax(0,1fr) 270px;gap:18px}.video-panel{padding:18px}.events-panel{padding:20px}.monitor-dashboard{padding:28px 24px}.view-controls{gap:5px}.layout-switch button{padding:6px 9px}}
-@media(max-width:1050px){.workspace-grid{grid-template-columns:1fr}.event-column{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:20px}.assistant-card{margin-top:0;align-self:start}}
-@media(max-width:620px){.monitor-dashboard{padding:24px 16px}.page-heading{gap:18px}.metrics{gap:8px;grid-template-columns:repeat(3,minmax(0,1fr))}.metrics>div,.metrics>div:first-child,.metrics>div:nth-child(3){padding:15px 10px;border-radius:14px}.metrics p{font-size:11px;line-height:1.7}.metrics p small{display:none}.metrics strong{font-size:25px}.metrics strong em{font-size:11px;margin-left:4px}.metrics>div>span{font-size:9px;line-height:1.7}.quick-actions{gap:7px}.quick-actions a{font-size:11px;padding:9px 11px}.quick-actions span{display:none}.video-panel{padding:16px;border-radius:18px}.section-heading{flex-wrap:wrap;gap:14px}.event-column{grid-template-columns:1fr}.statistics-panel{padding:0 16px}.heading-actions{justify-content:space-between}.grid-4,.grid-6{grid-template-columns:1fr}.camera-toolbar select{max-width:155px}}
-
-/* Keep secondary copy legible on the light surface. */
-.subtitle,.section-heading p,.camera-toolbar,.auto-refresh{color:#737b8d}.metrics>div>span,.events-footer,.page-controls{color:#81889a}.metrics p small{color:#838a9b}.section-empty p{color:#858c9d}.quick-actions a{min-height:40px}.event-location,.event-bottomline{font-size:11px}.section-empty.compact{min-height:220px}.statistics-panel summary span{color:#838a9b}
-
-.camera-filters{display:flex;gap:12px;justify-content:space-between;align-items:center;margin:18px 0 12px;flex-wrap:wrap}.camera-search{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid #eeebf6;border-radius:14px;background:#f9f8fd;color:#aaa0c0;flex:1;min-width:150px;max-width:300px;transition:box-shadow .2s,border-color .2s}.camera-search:focus-within{border-color:#b4a6e2;box-shadow:0 0 0 3px #eee8fb}.camera-search input{width:100%;min-width:0;background:transparent;border:0;outline:none;font-size:12px;color:#747087}.camera-search input::placeholder{color:#aaa4b6}.status-filter{display:flex;gap:4px}.status-filter button,.focus-toggle,.clear-filter{background:transparent;border:0;border-radius:18px;color:#9386ac;padding:9px 12px;font-size:11px;min-height:36px}.status-filter button:hover{background:#f6f2fc}.status-filter button[aria-pressed=true],.focus-toggle[aria-pressed=true]{background:#eee8fa;color:#7c68b2}.focus-toggle{border:1px solid #e9e3f5;white-space:nowrap}.clear-filter{padding:4px 9px}.clear-filter:hover{background:#f5f1fa}.focus-mode .workspace-grid{grid-template-columns:1fr}.focus-mode .event-column{display:none}.video-panel{scroll-margin-top:20px}.video-grid{transition:gap .2s}.section-empty>.monitor-button{margin-top:16px}.view-controls{flex-wrap:wrap}.focus-mode .grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}.focus-mode .grid-6{grid-template-columns:repeat(3,minmax(0,1fr))}@media(max-width:620px){.camera-search{max-width:none}.camera-filters{gap:8px}.status-filter{width:100%;justify-content:flex-start}.focus-mode .grid-4,.focus-mode .grid-6{grid-template-columns:1fr}.view-controls{width:100%;justify-content:space-between}.focus-toggle{padding:7px 10px}}
-
-.statistics-panel.visible-statistics{padding:24px}.visible-statistics .section-heading{margin-bottom:20px}.visible-statistics .chart{padding:20px;position:relative}.visible-statistics .chart h3{display:flex;justify-content:space-between;gap:10px;font-size:13px;font-weight:500;color:#6e687f}.visible-statistics .chart h3 span{font-size:11px;font-weight:400;color:#8d869b}.visible-statistics .chart .echarts{height:220px}.statistics-link{font-size:12px;color:#8978bd;text-decoration:none;border-radius:20px;background:#f3effb;padding:9px 14px}.statistics-link:hover{background:#eae3f9}.chart-values{display:flex;gap:12px;justify-content:space-between;padding:14px 0 0;margin:0;list-style:none;border-top:1px solid #eeebf5}.chart-values li{display:flex;flex-direction:column;gap:6px;color:#878093;font-size:11px}.chart-values b{font-size:17px;color:#716282;font-weight:500}.statistics-updated{color:#97909f;font-size:11px;margin:0}.zero-chart-note{font-size:11px;color:#968b9e;text-align:center;margin:-10px 0 14px}.statistics-warning{font-size:12px;color:#b77964;background:#fff2ec;padding:10px 14px;border-radius:10px}@media(max-width:620px){.statistics-panel.visible-statistics{padding:18px}.visible-statistics .chart{padding:14px}.visible-statistics .chart .echarts{height:200px}.chart-values{gap:8px}.chart-values li{font-size:10px}}
-
-/* Match the safety education workbench surfaces. */
-.monitor-dashboard{max-width:1512px;padding:32px 32px 40px;--line:#ece9f3}.page-heading{margin-bottom:26px}.eyebrow{font-size:10px;font-weight:600;letter-spacing:1.8px;color:#9584c7;margin-bottom:10px}.page-heading h1{font-size:27px;font-weight:650;letter-spacing:-.5px;color:#343b51}.page-heading .subtitle{font-size:13px;line-height:1.8;color:#8791a2}.monitor-button{border-radius:11px;font-size:12px;min-height:37px;background:#fff;color:#8370b6}.quick-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:24px}.quick-actions a{background:#fff;border:1px solid #eae5f4;border-radius:12px;padding:14px 16px;font-size:12px;color:#84739e;display:flex;align-items:center;gap:9px}.quick-actions a:hover{background:#f3eefb;border-color:#cfc0e9}.quick-actions a>span{margin-left:auto}.metrics{grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;padding:0;border:0;margin-bottom:24px}.metrics>div,.metrics>div:first-child,.metrics>div:last-child{border:1px solid #ece9f4;border-radius:18px;background:#fff;padding:22px 24px}.metrics p{font-size:12px;color:#8590a2}.metrics p small{font-size:10px;color:#a1a3b3}.metrics strong{font-size:32px;font-weight:600;color:#645383}.metrics>div>span{color:#a19eaf;font-size:10px}.workspace-grid{grid-template-columns:minmax(0,1fr) 300px;gap:22px}.video-panel{padding:22px;border:1px solid #ece9f4;border-radius:20px;background:#fff;min-width:0}.event-column{border:0;padding-left:0}.events-panel{padding:22px 20px;background:#fff;border:1px solid #ece9f4;border-radius:20px}.section-heading h2{font-size:15px;font-weight:600;color:#4a526b}.section-heading p{color:#9c99ad;font-size:11px;line-height:1.7}.event-item{border-radius:8px;padding:19px 2px}.event-item.featured{background:linear-gradient(90deg,#f7f2fe,transparent)}.event-topline b{font-size:12px;color:#626076}.assistant-card{border-radius:18px;border:0;padding:24px 22px;background:linear-gradient(148deg,#6355be,#8c77d8)}.assistant-card h3,.assistant-card span{color:#fff}.assistant-card p{color:#e1dbf5}.assistant-icon{color:#eee8ff}.assistant-card span{border-color:#ffffff28}.statistics-panel.visible-statistics{background:#fff;border:1px solid #ece9f4;border-radius:20px;margin-top:24px}.visible-statistics .chart{border-radius:14px;background:#fcfbfe;border-color:#efebf6}.status-filter,.layout-switch{border-radius:10px}.video-panel:fullscreen{border-radius:0}@media(min-width:1650px){.monitor-dashboard{padding:36px 40px 44px}.workspace-grid{grid-template-columns:minmax(0,1fr) 310px;gap:24px}}@media(max-width:1100px){.workspace-grid{grid-template-columns:minmax(0,1fr)}.event-column{padding:0;display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:20px}.assistant-card{margin-top:0;align-self:start}}@media(max-width:760px){.monitor-dashboard{padding:24px 16px}.quick-actions{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.quick-actions a{padding:12px;font-size:11px}.metrics{gap:9px}.metrics>div,.metrics>div:first-child,.metrics>div:last-child{padding:17px 12px;border-radius:14px}.metrics p{font-size:11px}.metrics strong{font-size:27px}.metrics strong em{font-size:11px;margin-left:4px}.metrics>div>span{font-size:9px}.video-panel{padding:16px;border-radius:16px}.event-column{grid-template-columns:minmax(0,1fr)}.events-panel{border-radius:16px}.page-heading .subtitle{font-size:12px}.heading-actions{flex-direction:row;align-items:center}.auto-refresh{font-size:10px}.page-heading h1{font-size:24px}}
-
-/* Risk heatmap */
-.risk-heatmap-section{margin-top:24px;border:1px solid #ece9f4;border-radius:20px;padding:24px;background:#fff}
-.risk-heatmap-section>.section-heading{margin-bottom:20px;flex-wrap:wrap;display:flex;justify-content:space-between;align-items:center;gap:12px}
-.heatmap-summary{font-size:12px;color:#7e6ba8;background:#f5f0fc;border:1px solid #e8def6;padding:8px 14px;border-radius:10px;max-width:560px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.heatmap-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:22px}
-.heatmap-grid .chart{background:#fcfbfe;border:1px solid #efebf6;border-radius:14px;padding:20px;min-width:0;display:flex;flex-direction:column}
-.heatmap-grid .chart h3{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;font-weight:500;color:#6e687f;margin:0 0 10px}
-.heatmap-grid .chart h3 span{font-size:11px;font-weight:400;color:#8d869b}
-.heatmap-grid .chart .echarts{height:180px;width:100%}
-.zone-risk-list h3{font-size:13px;font-weight:500;color:#6e687f;margin:0 0 16px}
-.zone-risk-items{display:grid;gap:10px}
-.zone-risk-item{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:10px;background:#fcfbfe;border:1px solid #efebf6}
-.zone-rank{width:26px;height:26px;display:grid;place-items:center;border-radius:50%;background:#ede5fa;color:#7b63b9;font-size:12px;font-weight:600;flex-shrink:0}
-.zone-info{flex:1;min-width:0}.zone-info strong{display:block;font-size:13px;color:#504963}.zone-info small{font-size:10px;color:#9b93ab}
-.zone-count b{font-size:16px;color:#695bb4;font-weight:600}.zone-count span{font-size:10px;color:#a29ab5;margin-left:3px}
-.risk-bar{width:90px;height:6px;background:#eae5f2;border-radius:3px;overflow:hidden;flex-shrink:0}.risk-fill{height:100%;border-radius:3px;transition:width .4s}
-.stream-badge{display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:500;background:#eef6f0;color:#4e9a67}
-.stream-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
-.stream-badge.connecting,.stream-badge.reconnecting{background:#fef6e7;color:#b88230}
-@media(max-width:760px){.heatmap-grid{grid-template-columns:1fr}.risk-bar{width:60px}.heatmap-summary{max-width:100%;white-space:normal}}
+@media (min-width: 1650px) { .monitor-dashboard { padding: 36px 40px 44px; } .workspace-grid { grid-template-columns: minmax(0, 1fr) 310px; gap: 24px; } }
+@media (max-width: 1250px) { .monitor-dashboard { padding: 28px 24px; } .workspace-grid { grid-template-columns: minmax(0, 1fr) 270px; gap: 18px; } }
+@media (max-width: 1100px) { .workspace-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) {
+  .monitor-dashboard { padding: 24px 16px; }
+  .page-heading { align-items: start; flex-direction: column; gap: 18px; }
+  .page-heading h1 { font-size: 24px; }
+  .page-heading .subtitle { font-size: 12px; }
+  .heading-actions { width: 100%; justify-content: space-between; flex-direction: row; align-items: center; }
+  .auto-refresh { font-size: 10px; }
+  .quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .quick-actions a { padding: 12px; font-size: 11px; }
+}
 </style>

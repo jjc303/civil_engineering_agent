@@ -69,7 +69,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createCvNode, createManagedCamera, fetchCvNodes, fetchManagedCameras, fetchNodeMediaFiles, previewUrl, setMonitoring, updateManagedCamera } from '@/api/cameraManagement'
 import type { CvNodeMediaDirectory } from '@/api/cameraManagement'
-import { isMockEnabled } from '@/api/client'
+import { APP_CONFIG } from '@/config/runtime'
 import type { CvNodeResponse, ManagedCameraResponse } from '@/types/contract'
 import WorkspaceIntro from '@/components/WorkspaceIntro.vue'
 import WorkspaceSummary from '@/components/WorkspaceSummary.vue'
@@ -80,7 +80,7 @@ const nodes = ref<CvNodeResponse[]>([]); const cameras = ref<ManagedCameraRespon
 const loading = ref(false); const creating = ref(false); const creatingNode = ref(false); const nodeDialogVisible = ref(false); const previewVisible = ref(false); const previewCameraId = ref('')
 const editDialogVisible = ref(false); const savingEdit = ref(false); const editingCamera = ref<ManagedCameraResponse | null>(null)
 const mediaBrowserVisible = ref(false); const browsingMedia = ref(false); const mediaDirectory = ref<CvNodeMediaDirectory | null>(null); const mediaTarget = ref<'create' | 'edit'>('create'); const mediaNodeId = ref('')
-const isMock = isMockEnabled
+const isMock = APP_CONFIG.useMock
 const onlineNodes = computed(() => nodes.value.filter((node) => node.is_online))
 const cameraDialogVisible = ref(false), dataLoaded = ref(false), cameraQuery = ref(''), sourceFilter = ref<'all' | 'rtsp' | 'file'>('all')
 const filteredCameras = computed(() => cameras.value.filter(camera => (sourceFilter.value === 'all' || camera.source_type === sourceFilter.value) && `${camera.display_name} ${camera.camera_id}`.toLowerCase().includes(cameraQuery.value.trim().toLowerCase())))

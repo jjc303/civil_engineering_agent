@@ -1,6 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
-import { apiClient, isMockEnabled } from '../api/client'
+import { apiClient } from '../api/client'
+import { APP_CONFIG } from '../config/runtime'
 import { translateAppMessage } from '../i18n'
 import type { SupportedLocale } from '../i18n/types'
 import { useLocaleStore } from './locale'
@@ -90,7 +91,7 @@ export const useDictionariesStore = defineStore('dictionaries', () => {
 
   async function ensureLoaded(force = false): Promise<void> {
     const targetLocale = localeStore.locale
-    if (!force && (remoteByLocale.value[targetLocale] || isMockEnabled)) {
+    if (!force && (remoteByLocale.value[targetLocale] || APP_CONFIG.useMock)) {
       loadedLocale.value = targetLocale
       return
     }

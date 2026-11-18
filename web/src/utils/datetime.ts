@@ -1,3 +1,5 @@
+import { APP_CONFIG } from '@/config/runtime'
+
 /**
  * Shared UTC parsing and locale-aware date/time formatting utilities.
  */
@@ -8,7 +10,7 @@ export function utcDate(value: string | Date): Date {
 }
 
 export function getLearningTimezone(): string {
-  return import.meta.env.VITE_LEARNING_TIMEZONE || 'Asia/Shanghai'
+  return APP_CONFIG.learningTimezone
 }
 
 export function formatLocaleDate(

@@ -1,58 +1,54 @@
-import { apiClient, isMockEnabled } from './client'
-import type { PendingAction, RectificationTaskDetail, RectificationTaskPageResponse, RectificationTaskRecord, RectificationTaskStatus } from '@/types/contract'
+import {
+  getApiBundle,
+  type CreateRectificationTaskPayload,
+  type RectificationTaskFilters,
+  type UpdateRectificationTaskPayload,
+} from './index'
+import type {
+  PendingAction,
+  RectificationTaskDetail,
+  RectificationTaskPageResponse,
+  RectificationTaskRecord,
+} from '@/types/contract'
 
-export interface RectificationTaskFilters {
-  status?: RectificationTaskStatus
-  owner?: string
-  overdue?: boolean
-  limit?: number
-  offset?: number
+export type {
+  CreateRectificationTaskPayload,
+  RectificationTaskFilters,
+  UpdateRectificationTaskPayload,
 }
 
-export interface CreateRectificationTaskPayload {
-  conversation_id: string
-  event_uuid: string
-  title: string
-  description?: string
-  owner: string
-  due_at_utc: string
-}
-
-export interface UpdateRectificationTaskPayload {
-  conversation_id: string
-  owner?: string
-  due_at_utc?: string
-  status?: RectificationTaskStatus
-  note?: string
-}
-
-export async function fetchRectificationTasks(filters: RectificationTaskFilters = {}): Promise<RectificationTaskPageResponse> {
-  if (isMockEnabled) return { items: [], total: 0, limit: filters.limit || 20, offset: filters.offset || 0 }
-  const res = await apiClient.get<RectificationTaskPageResponse>('/api/v1/rectification-tasks', { params: filters })
-  return res.data
+export async function fetchRectificationTasks(
+  filters: RectificationTaskFilters = {},
+): Promise<RectificationTaskPageResponse> {
+  return (await getApiBundle()).rectificationTasks.fetchRectificationTasks(filters)
 }
 
 export async function fetchRectificationTask(taskId: string): Promise<RectificationTaskDetail> {
-  const res = await apiClient.get<RectificationTaskDetail>(`/api/v1/rectification-tasks/${taskId}`)
-  return res.data
+  return (await getApiBundle()).rectificationTasks.fetchRectificationTask(taskId)
 }
 
-export async function createRectificationTask(payload: CreateRectificationTaskPayload): Promise<RectificationTaskRecord> {
-  const res = await apiClient.post<RectificationTaskRecord>('/api/v1/rectification-tasks', payload)
-  return res.data
+export async function createRectificationTask(
+  payload: CreateRectificationTaskPayload,
+): Promise<RectificationTaskRecord> {
+  return (await getApiBundle()).rectificationTasks.createRectificationTask(payload)
 }
 
-export async function updateRectificationTask(taskId: string, payload: UpdateRectificationTaskPayload): Promise<RectificationTaskRecord> {
-  const res = await apiClient.patch<RectificationTaskRecord>(`/api/v1/rectification-tasks/${taskId}`, payload)
-  return res.data
+export async function updateRectificationTask(
+  taskId: string,
+  payload: UpdateRectificationTaskPayload,
+): Promise<RectificationTaskRecord> {
+  return (await getApiBundle()).rectificationTasks.updateRectificationTask(taskId, payload)
 }
 
-export async function proposeRectificationTaskCreate(payload: CreateRectificationTaskPayload): Promise<PendingAction> {
-  const res = await apiClient.post<{ pending_action: PendingAction }>('/api/v1/rectification-tasks/pending-create', payload)
-  return res.data.pending_action
+export async function proposeRectificationTaskCreate(
+  payload: CreateRectificationTaskPayload,
+): Promise<PendingAction> {
+  return (await getApiBundle()).rectificationTasks.proposeRectificationTaskCreate(payload)
 }
 
-export async function proposeRectificationTaskUpdate(taskId: string, payload: UpdateRectificationTaskPayload): Promise<PendingAction> {
-  const res = await apiClient.post<{ pending_action: PendingAction }>(`/api/v1/rectification-tasks/${taskId}/pending-update`, payload)
-  return res.data.pending_action
+export async function proposeRectificationTaskUpdate(
+  taskId: string,
+  payload: UpdateRectificationTaskPayload,
+): Promise<PendingAction> {
+  return (await getApiBundle()).rectificationTasks.proposeRectificationTaskUpdate(taskId, payload)
 }

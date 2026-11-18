@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --experimental-strip-types --import ./tests/register-alias.mjs --test tests/*.test.ts"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",

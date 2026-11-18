@@ -148,7 +148,7 @@ import { useRoute } from 'vue-router'
 import { Refresh, View } from '@element-plus/icons-vue'
 import { fetchViolations } from '@/api/violations'
 import { fetchCameras } from '@/api/cameras'
-import { createSafetyEventStream, type SafetyEventStreamHandle } from '@/api/realtime'
+import { useSafetyStream } from '@/composables/useSafetyStream'
 import type {
   CameraStatusResponse,
   EventStatus,
@@ -264,13 +264,13 @@ useLocaleRefresh(() => {
   void loadData()
 })
 
-let streamHandle: SafetyEventStreamHandle | undefined
+const { start: startSafetyStream } = useSafetyStream()
 let refreshDebounceTimer: ReturnType<typeof setTimeout> | undefined
 
 onMounted(() => {
   loadCameras()
   loadData()
-  streamHandle = createSafetyEventStream({
+  startSafetyStream({
     onViolationEvent() {
       if (currentPage.value !== 1) return
       if (refreshDebounceTimer) clearTimeout(refreshDebounceTimer)
@@ -282,7 +282,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  streamHandle?.close()
   if (refreshDebounceTimer) clearTimeout(refreshDebounceTimer)
 })
 </script>

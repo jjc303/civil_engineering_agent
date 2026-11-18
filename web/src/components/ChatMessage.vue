@@ -166,35 +166,13 @@ import { resolveMediaUrl } from '@/api/client'
 import { useAppI18n } from '@/i18n/useAppI18n'
 import { getLearningTimezone, utcDate } from '@/utils/datetime'
 import { learningPath as learningPathValue } from '@/utils/deployment'
-import type { ChatEvidence, GuidedSelection, GuidedSelectionOption, PendingAction, PendingActionStatus, ReportPreview, TrainingPreview, ToolTraceItem } from '@/types/contract'
+import type { ChatMessageItem } from '@/types/chat'
+import type { ChatEvidence, GuidedSelectionOption, PendingActionStatus } from '@/types/contract'
 
 const { t, formatTime: formatLocaleTime, formatDateTime: formatLocaleDateTime, formatDate: formatLocaleDate } = useAppI18n()
 
-interface ChatMessage {
-  role: 'user' | 'assistant'
-  text: string
-  evidence?: ChatEvidence[]
-  knowledgeCitations?: import('@/types/contract').KnowledgeCitation[]
-  reportPreviews?: ReportPreview[]
-  reportCount?: number
-  trainingPreviews?: TrainingPreview[]
-  trainingCount?: number
-  toolTrace?: ToolTraceItem[]
-  degraded?: boolean
-  errorCode?: string | null
-  retryQuestion?: string
-  pendingAction?: PendingAction
-  guidedSelection?: GuidedSelection
-  actionBusy?: boolean
-  actionResult?: string
-  actionReportId?: string
-  actionReportPdf?: boolean
-  actionTrainingId?: string
-  actionTrainingUrl?: string
-}
-
 const props = defineProps<{
-  msg: ChatMessage
+  msg: ChatMessageItem
   thinking: boolean
   showEvidence: boolean
   assistantName: string
@@ -203,9 +181,9 @@ const props = defineProps<{
 defineEmits<{
   selectPrompt: [question: string]
   viewEvidence: [ev: ChatEvidence]
-  selectGuidedTarget: [msg: ChatMessage, option: GuidedSelectionOption]
-  confirmAction: [msg: ChatMessage]
-  cancelAction: [msg: ChatMessage]
+  selectGuidedTarget: [msg: ChatMessageItem, option: GuidedSelectionOption]
+  confirmAction: [msg: ChatMessageItem]
+  cancelAction: [msg: ChatMessageItem]
   openReportDetail: [id: string]
   previewReportPdf: [id: string]
   downloadReportPdf: [id: string]

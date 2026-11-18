@@ -1,102 +1,21 @@
-import { apiBaseUrl } from '@/utils/deployment'
-import { isMockEnabled } from './client'
-import { LOCALE_STORAGE_KEY, detectInitialLocale, isSupportedLocale } from '@/i18n/strategies'
-import type { CameraStatusResponse, ViolationRecord } from '@/types/contract'
+import {
+  createStreamFromBundle,
+  resolveSafetyEventsStreamUrl,
+  type RealtimeConnectionState,
+  type RealtimeViolationEventPayload,
+  type SafetyEventStreamCallbacks,
+  type SafetyEventStreamHandle,
+} from './index'
 
-export type RealtimeConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'closed' | 'disabled'
-
-export interface RealtimeViolationEventPayload {
-  operation: 'CREATED' | 'UPDATED' | string
-  record: ViolationRecord
+export type {
+  RealtimeConnectionState,
+  RealtimeViolationEventPayload,
+  SafetyEventStreamCallbacks,
+  SafetyEventStreamHandle,
 }
 
-export interface SafetyEventStreamCallbacks {
-  onStateChange?: (state: RealtimeConnectionState) => void
-  onViolationEvent?: (payload: RealtimeViolationEventPayload) => void
-  onCameraStatus?: (status: CameraStatusResponse) => void
-}
-
-export interface SafetyEventStreamHandle {
-  close: () => void
-}
-
-export function resolveSafetyEventsStreamUrl(): string {
-  let lang = detectInitialLocale()
-  if (typeof document !== 'undefined' && isSupportedLocale(document.documentElement.lang)) {
-    lang = document.documentElement.lang
-  } else if (typeof window !== 'undefined') {
-    try {
-      const saved = window.localStorage.getItem(LOCALE_STORAGE_KEY)
-      if (isSupportedLocale(saved)) lang = saved
-    } catch {
-      // Ignore storage access errors
-    }
-  }
-  return `${apiBaseUrl}/api/v1/safety/events/stream?lang=${encodeURIComponent(lang)}`
-}
+export { resolveSafetyEventsStreamUrl }
 
 export function createSafetyEventStream(callbacks: SafetyEventStreamCallbacks): SafetyEventStreamHandle {
-  if (isMockEnabled || typeof window === 'undefined' || typeof window.EventSource === 'undefined') {
-    callbacks.onStateChange?.('disabled')
-    return {
-      close() {
-        callbacks.onStateChange?.('closed')
-      },
-    }
-  }
-
-  let closed = false
-  callbacks.onStateChange?.('connecting')
-  const source = new EventSource(resolveSafetyEventsStreamUrl())
-
-  const markConnected = () => {
-    if (!closed) {
-      callbacks.onStateChange?.('connected')
-    }
-  }
-
-  source.onopen = markConnected
-  source.addEventListener('ping', markConnected)
-
-  source.addEventListener('violation_event', (event: Event) => {
-    if (closed) return
-    markConnected()
-    try {
-      const msg = event as MessageEvent<string>
-      const parsed = JSON.parse(msg.data) as RealtimeViolationEventPayload
-      if (parsed && parsed.record) {
-        callbacks.onViolationEvent?.(parsed)
-      }
-    } catch {
-      // Ignore malformed SSE event payload
-    }
-  })
-
-  source.addEventListener('camera_status', (event: Event) => {
-    if (closed) return
-    markConnected()
-    try {
-      const msg = event as MessageEvent<string>
-      const parsed = JSON.parse(msg.data) as CameraStatusResponse
-      if (parsed && parsed.camera_id) {
-        callbacks.onCameraStatus?.(parsed)
-      }
-    } catch {
-      // Ignore malformed SSE event payload
-    }
-  })
-
-  source.onerror = () => {
-    if (closed) return
-    callbacks.onStateChange?.('reconnecting')
-  }
-
-  return {
-    close() {
-      if (closed) return
-      closed = true
-      source.close()
-      callbacks.onStateChange?.('closed')
-    },
-  }
+  return createStreamFromBundle(callbacks)
 }

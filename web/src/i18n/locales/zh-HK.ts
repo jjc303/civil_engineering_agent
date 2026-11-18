@@ -708,8 +708,8 @@ export const zhHkMessages: MessageSchema = {
     trainingPendingCreated: '已根據選定報告生成培訓待確認操作。請確認後生成草稿。',
     trainingProposeFailed: '培訓操作創建失敗',
     rectificationValidation: '請填寫整改要求、負責人和截止時間',
-    rectificationPrompt: '創建整改任務：關聯違規 {optionId}，整改內容為 {title}，負責人 {owner}，截止 {dueAt}{descPart}',
-    rectificationDescPart: '，補充説明：{desc}',
+    rectificationPendingCreated: '已生成整改任務待確認操作，請確認後創建整改任務。',
+    rectificationProposeFailed: '整改待確認操作創建失敗',
     confirmWriteTitle: '確認執行寫操作',
     confirmWriteBody: '將執行：{summary}',
     confirmWriteOk: '確認執行',
@@ -948,6 +948,9 @@ export const zhHkMessages: MessageSchema = {
     fillIdentityWarning: '請填寫工號和姓名',
     completeAllWarning: '請完成全部題目',
     submitFailed: '提交失敗，請核對工號或聯繫管理員',
+  },
+  mock: {
+    heatmapEmptySummary: '模擬數據：暫無風險數據。',
   },
 }
 

@@ -71,7 +71,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { DataBoard, Warning, DocumentChecked, Crop, VideoCamera, ChatDotRound, Reading, Fold, Expand, Menu, Search } from '@element-plus/icons-vue'
-import { isMockEnabled } from '@/api/client'
+import { APP_CONFIG } from '@/config/runtime'
 import { useAppI18n } from '@/i18n/useAppI18n'
 import { navigationFailure, resolveRouteTitle, syncDocumentTitle } from '@/router'
 import { appPath } from '@/utils/deployment'
@@ -108,7 +108,8 @@ function shortcuts(event: KeyboardEvent) {
 }
 onMounted(() => document.addEventListener('keydown', shortcuts))
 onUnmounted(() => document.removeEventListener('keydown', shortcuts))
-const localVideoDemo = import.meta.env.VITE_LOCAL_VIDEO_DEMO === 'true'
+const isMockEnabled = APP_CONFIG.useMock
+const localVideoDemo = APP_CONFIG.localVideoDemo
 const collapsed = ref(false)
 const mobileOpen = ref(false)
 const now = ref(new Date())

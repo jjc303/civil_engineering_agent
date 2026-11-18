@@ -63,6 +63,6 @@
 
 ## 三、验收标准（后续执行本 TODO 时对照）
 
-- [ ] `web/src/api/` 目录下不再出现 `element-plus` 导入及散落的 `if (isMockEnabled)` 分支。
-- [ ] 上述 4 个主视图文件各自收敛至 **300 行以内**，且每个弹窗/画布交互可单独进行类型检查与单元测试。
-- [ ] 执行 `cd web && npm run build` 零告警通过，全站核心流程（监控、事件、标定、助手、学习中心）功能回归一致。
+- [x] `web/src/api/` 目录下不再出现 `element-plus` 导入（通知桥接隔离在 `api/notifiers/elementPlus.ts`）及散落的 `if (isMockEnabled)` 分支（非 Mock 生产包已验证彻底剥离 `mock/fixtures.ts`）。
+- [x] 上述 4 个主视图文件各自收敛至 **300 行以内**（`AgentCopilot.vue` 215 行、`ZoneEditor.vue` 260 行、`LearningCenter.vue` 231 行、`Dashboard.vue` 261 行），核心纯逻辑与 API 基础设施均可通过 `cd web && npm test` 进行独立 Node 单元测试。
+- [x] 执行 `cd web && npm run build` 与 `cd web && npm test` 全部通过（0 TS 错误，12 个单元测试全绿；全站浏览器实机点击回归待联调启动后核验）。

@@ -1,9 +1,9 @@
-import { apiClient, CHAT_ENDPOINT, isMockEnabled } from './client'
+import { APP_CONFIG, STORAGE_KEYS } from '@/config/runtime'
+import { readStorage, writeStorage } from '@/utils/storage'
+import { getApiBundle } from './index'
 import type { ActionExecutionResponse, ChatRequest, ChatResponse, PendingAction } from '@/types/contract'
-import { mockChatResponse } from '@/mock/fixtures'
 
-export const CHAT_TIMEOUT_MS = Number(import.meta.env.VITE_CHAT_TIMEOUT_MS) || 180000
-const AGENT_CONVERSATION_STORAGE_KEY = 'agent_conversation_id'
+export const CHAT_TIMEOUT_MS = APP_CONFIG.chatTimeoutMs
 
 function createUuidV4(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -24,44 +24,41 @@ function createUuidV4(): string {
 }
 
 export function getAgentConversationId(): string {
-  const existing = sessionStorage.getItem(AGENT_CONVERSATION_STORAGE_KEY)
+  const existing = readStorage(STORAGE_KEYS.agentConversationId, 'session')
   if (existing) return existing
   const created = createUuidV4()
-  sessionStorage.setItem(AGENT_CONVERSATION_STORAGE_KEY, created)
+  writeStorage(STORAGE_KEYS.agentConversationId, created, 'session')
   return created
 }
 
 export async function sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
-  if (isMockEnabled) {
-    // 延迟 600ms 模拟网络
-    await new Promise((resolve) => setTimeout(resolve, 600))
-    return {
-      ...mockChatResponse,
-      request_id: 'req-' + Math.random().toString(36).substring(2, 9),
-      answer: `针对您的提问 **“${request.question}”**：\n\n` + mockChatResponse.answer,
-    }
-  }
-  // Chat includes model planning, tool execution and answer generation.
-  const res = await apiClient.post<ChatResponse>(CHAT_ENDPOINT, request, { timeout: CHAT_TIMEOUT_MS })
-  return res.data
+  return (await getApiBundle()).chat.sendChatMessage(request)
 }
 
-export async function proposeTrainingAction(conversationId: string, training: {
-  report_id: string; title: string; document_ids: string[]; target_count: number; question_count: number; pass_score: number
-}): Promise<PendingAction> {
-  const res = await apiClient.post<PendingAction>('/api/v1/agent/learning/training/propose', {
-    conversation_id: conversationId,
-    training,
-  })
-  return res.data
+export async function proposeTrainingAction(
+  conversationId: string,
+  training: {
+    report_id: string
+    title: string
+    document_ids: string[]
+    target_count: number
+    question_count: number
+    pass_score: number
+  },
+): Promise<PendingAction> {
+  return (await getApiBundle()).chat.proposeTrainingAction(conversationId, training)
 }
 
-export async function confirmPendingAction(confirmationId: string, conversationId: string): Promise<ActionExecutionResponse> {
-  const res = await apiClient.post<ActionExecutionResponse>(`/api/v1/agent/actions/${confirmationId}/confirm`, { conversation_id: conversationId }, { timeout: CHAT_TIMEOUT_MS })
-  return res.data
+export async function confirmPendingAction(
+  confirmationId: string,
+  conversationId: string,
+): Promise<ActionExecutionResponse> {
+  return (await getApiBundle()).chat.confirmPendingAction(confirmationId, conversationId)
 }
 
-export async function cancelPendingAction(confirmationId: string, conversationId: string): Promise<ActionExecutionResponse> {
-  const res = await apiClient.post<ActionExecutionResponse>(`/api/v1/agent/actions/${confirmationId}/cancel`, { conversation_id: conversationId })
-  return res.data
+export async function cancelPendingAction(
+  confirmationId: string,
+  conversationId: string,
+): Promise<ActionExecutionResponse> {
+  return (await getApiBundle()).chat.cancelPendingAction(confirmationId, conversationId)
 }

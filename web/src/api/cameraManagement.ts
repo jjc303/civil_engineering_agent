@@ -1,50 +1,54 @@
-import { apiClient, isMockEnabled } from './client'
 import { apiBaseUrl } from '@/utils/deployment'
+import { getApiBundle, type CvNodeMediaDirectory, type CvNodeMediaEntry } from './index'
 import type { CvNodeResponse, ManagedCameraResponse } from '@/types/contract'
 
-export interface CvNodeMediaEntry { name: string; path: string }
-export interface CvNodeMediaDirectory { current_path: string; parent_path: string | null; directories: CvNodeMediaEntry[]; files: CvNodeMediaEntry[] }
+export type { CvNodeMediaDirectory, CvNodeMediaEntry }
 
 export async function fetchCvNodes(): Promise<CvNodeResponse[]> {
-  if (isMockEnabled) return []
-  const res = await apiClient.get<CvNodeResponse[]>('/api/v1/cv-nodes')
-  return res.data
+  return (await getApiBundle()).cameraManagement.fetchCvNodes()
 }
 
-export async function createCvNode(payload: { node_id: string; display_name: string; control_url: string; capacity: number }): Promise<CvNodeResponse & { control_token: string }> {
-  const res = await apiClient.post<CvNodeResponse & { control_token: string }>('/api/v1/cv-nodes', payload)
-  return res.data
+export async function createCvNode(payload: {
+  node_id: string
+  display_name: string
+  control_url: string
+  capacity: number
+}): Promise<CvNodeResponse & { control_token: string }> {
+  return (await getApiBundle()).cameraManagement.createCvNode(payload)
 }
 
 export async function fetchManagedCameras(): Promise<ManagedCameraResponse[]> {
-  if (isMockEnabled) return []
-  const res = await apiClient.get<ManagedCameraResponse[]>('/api/v1/managed-cameras')
-  return res.data
+  return (await getApiBundle()).cameraManagement.fetchManagedCameras()
 }
 
 export async function createManagedCamera(payload: {
-  camera_id: string; display_name: string; node_id: string; source_type: 'rtsp' | 'file'; source_uri: string
+  camera_id: string
+  display_name: string
+  node_id: string
+  source_type: 'rtsp' | 'file'
+  source_uri: string
 }): Promise<ManagedCameraResponse> {
-  const res = await apiClient.post<ManagedCameraResponse>('/api/v1/managed-cameras', payload)
-  return res.data
+  return (await getApiBundle()).cameraManagement.createManagedCamera(payload)
 }
 
-export async function updateManagedCamera(cameraId: string, payload: {
-  display_name?: string; node_id: string; source_type: 'rtsp' | 'file'; source_uri?: string
-}): Promise<ManagedCameraResponse> {
-  const res = await apiClient.put<ManagedCameraResponse>(`/api/v1/managed-cameras/${encodeURIComponent(cameraId)}/source`, payload)
-  return res.data
+export async function updateManagedCamera(
+  cameraId: string,
+  payload: {
+    display_name?: string
+    node_id: string
+    source_type: 'rtsp' | 'file'
+    source_uri?: string
+  },
+): Promise<ManagedCameraResponse> {
+  return (await getApiBundle()).cameraManagement.updateManagedCamera(cameraId, payload)
 }
 
 export async function fetchNodeMediaFiles(nodeId: string, directory?: string): Promise<CvNodeMediaDirectory> {
-  const res = await apiClient.get<CvNodeMediaDirectory>(`/api/v1/cv-nodes/${encodeURIComponent(nodeId)}/media-files`, {
-    params: directory ? { directory } : undefined,
-  })
-  return res.data
+  return (await getApiBundle()).cameraManagement.fetchNodeMediaFiles(nodeId, directory)
 }
 
 export async function setMonitoring(cameraId: string, action: 'start' | 'stop'): Promise<void> {
-  await apiClient.post(`/api/v1/cameras/${encodeURIComponent(cameraId)}/monitoring:${action}`, {})
+  return (await getApiBundle()).cameraManagement.setMonitoring(cameraId, action)
 }
 
 export function previewUrl(cameraId: string): string {

@@ -22,13 +22,14 @@
 import { computed, ref, watch } from 'vue'
 import { VideoCamera, FullScreen } from '@element-plus/icons-vue'
 import { previewUrl } from '@/api/cameraManagement'
-import { isMockEnabled } from '@/api/client'
+import { APP_CONFIG } from '@/config/runtime'
 import { useAppI18n } from '@/i18n/useAppI18n'
 import type { CameraStatusResponse } from '@/types/contract'
 
 const props = defineProps<{ camera: CameraStatusResponse; index: number; activeEventCount: number; stale: boolean; previewAllowed: boolean }>()
 defineEmits<{ focus: [cameraId: string] }>()
 const { t, formatTime } = useAppI18n()
+const isMockEnabled = APP_CONFIG.useMock
 const failed = ref(false)
 const retry = ref(0)
 const canPreview = computed(() => !isMockEnabled && props.camera.is_online && props.previewAllowed)

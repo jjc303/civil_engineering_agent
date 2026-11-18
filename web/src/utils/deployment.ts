@@ -1,5 +1,7 @@
-export const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, '')
-export const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || appBasePath).replace(/\/$/, '')
+const metaEnv = (import.meta as { env?: { BASE_URL?: string; VITE_API_BASE_URL?: string } }).env ?? {}
+
+export const appBasePath = (metaEnv.BASE_URL || '/').replace(/\/$/, '')
+export const apiBaseUrl = (metaEnv.VITE_API_BASE_URL || appBasePath).replace(/\/$/, '')
 
 export function appPath(path: string): string {
   return `${appBasePath}/${path.replace(/^\/+/, '')}`
