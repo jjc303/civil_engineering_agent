@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from agent.api.dependencies import get_chat_service, get_request_locale, get_write_action_service
@@ -9,6 +10,7 @@ from agent.contracts.chat import ChatRequest, ChatResponse, ToolDecision
 from agent.contracts.learning import TrainingCreate
 from agent.i18n import SupportedLocale, localize_response
 from agent.services.agent_write_actions import AgentWriteActionError
+from agent.services.sse_serializer import format_sse_event
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent-chat"])
 
@@ -20,6 +22,29 @@ def chat(
     locale: SupportedLocale = Depends(get_request_locale),
 ) -> ChatResponse:
     return get_chat_service(http_request).answer(request, locale=locale)
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    request: ChatRequest,
+    http_request: Request,
+    locale: SupportedLocale = Depends(get_request_locale),
+) -> StreamingResponse:
+    chat_service = get_chat_service(http_request)
+
+    async def event_generator():
+        async for event in chat_service.answer_stream(request, locale=locale):
+            yield format_sse_event(event.stage, event)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 class TrainingActionProposal(BaseModel):

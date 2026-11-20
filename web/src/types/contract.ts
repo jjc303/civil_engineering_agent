@@ -167,9 +167,33 @@ export interface GuidedSelection {
   options: GuidedSelectionOption[];
 }
 
+export interface PageContext {
+  route_key?: string | null;
+  route_title?: string | null;
+  camera_id?: string | null;
+  event_uuid?: string | null;
+}
+
 export interface ChatRequest {
   question: string;
   conversation_id?: string | null;
+  page_context?: PageContext | null;
+}
+
+export type ChatStreamStage =
+  | 'retrieving_standards'
+  | 'selecting_tool'
+  | 'executing_tool'
+  | 'responding'
+  | 'completed'
+  | 'error';
+
+export interface ChatStreamEvent {
+  stage: ChatStreamStage;
+  tool_name?: string | null;
+  purpose?: string | null;
+  detail?: string | null;
+  response?: ChatResponse | null;
 }
 
 export interface ChatResponse {
@@ -188,6 +212,14 @@ export interface ChatResponse {
   error_code?: string | null;
 }
 
+export interface MascotProfile {
+  enabled: boolean;
+  persona_name: string;
+  idle_greeting: string;
+  alert_reaction_enabled: boolean;
+  voice_enabled_by_default: boolean;
+}
+
 export interface AssistantUiConfig {
   version: number;
   assistant_name: string;
@@ -195,6 +227,7 @@ export interface AssistantUiConfig {
   input_placeholder: string;
   quick_questions: string[];
   show_evidence: boolean;
+  mascot_profile?: MascotProfile;
   updated_at_utc: string;
 }
 

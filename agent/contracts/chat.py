@@ -23,9 +23,19 @@ ToolName = Literal[
 ]
 
 
+class PageContext(BaseModel):
+    """Sanitized frontend route/view context for contextual assistant responses."""
+
+    route_key: str | None = Field(default=None, max_length=64)
+    route_title: str | None = Field(default=None, max_length=128)
+    camera_id: str | None = Field(default=None, max_length=128)
+    event_uuid: str | None = Field(default=None, max_length=64)
+
+
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     conversation_id: str | None = Field(default=None, max_length=128)
+    page_context: PageContext | None = None
 
     @field_validator("question")
     @classmethod
@@ -246,3 +256,23 @@ class ToolResult(BaseModel):
     tool_name: ToolName | str
     data: Any
     success: bool = True
+
+
+ChatStreamStage = Literal[
+    "retrieving_standards",
+    "selecting_tool",
+    "executing_tool",
+    "responding",
+    "completed",
+    "error",
+]
+
+
+class ChatStreamEvent(BaseModel):
+    """Incremental progress or final payload frame emitted by /chat/stream."""
+
+    stage: ChatStreamStage
+    tool_name: str | None = None
+    purpose: str | None = None
+    detail: str | None = None
+    response: ChatResponse | None = None

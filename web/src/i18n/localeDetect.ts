@@ -36,3 +36,19 @@ export function resolveActiveClientLocale(): SupportedLocale {
   }
   return detectInitialLocale()
 }
+
+type LocaleChangeListener = (locale: SupportedLocale) => void
+const localeListeners = new Set<LocaleChangeListener>()
+
+export function subscribeLocaleChange(listener: LocaleChangeListener): () => void {
+  localeListeners.add(listener)
+  return () => {
+    localeListeners.delete(listener)
+  }
+}
+
+export function notifyLocaleChanged(locale: SupportedLocale): void {
+  for (const listener of localeListeners) {
+    listener(locale)
+  }
+}

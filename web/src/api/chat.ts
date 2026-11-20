@@ -1,7 +1,7 @@
 import { APP_CONFIG, STORAGE_KEYS } from '@/config/runtime'
 import { readStorage, writeStorage } from '@/utils/storage'
 import { getApiBundle } from './index'
-import type { ActionExecutionResponse, ChatRequest, ChatResponse, PendingAction } from '@/types/contract'
+import type { ActionExecutionResponse, ChatRequest, ChatResponse, ChatStreamEvent, PendingAction } from '@/types/contract'
 
 export const CHAT_TIMEOUT_MS = APP_CONFIG.chatTimeoutMs
 
@@ -33,6 +33,20 @@ export function getAgentConversationId(): string {
 
 export async function sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
   return (await getApiBundle()).chat.sendChatMessage(request)
+}
+
+export async function sendChatMessageStream(
+  request: ChatRequest,
+  onEvent: (event: ChatStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<ChatResponse> {
+  const adapter = (await getApiBundle()).chat
+  if (typeof adapter.sendChatMessageStream === 'function') {
+    return adapter.sendChatMessageStream(request, onEvent, signal)
+  }
+  const response = await adapter.sendChatMessage(request)
+  onEvent({ stage: 'completed', response })
+  return response
 }
 
 export async function proposeTrainingAction(

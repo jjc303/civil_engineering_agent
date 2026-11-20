@@ -8,9 +8,9 @@
       <div class="agent-bubble thinking-bubble">
         <el-icon class="is-loading"><Loading /></el-icon>
         <div>
-          <strong>{{ waitSeconds >= 20 ? t('copilot.thinkingLongWait') : t('copilot.thinkingNormal') }}</strong>
+          <strong>{{ waitSeconds >= longWaitSeconds ? t('copilot.thinkingLongWait') : t('copilot.thinkingNormal') }}</strong>
           <small>
-            {{ t('copilot.thinkingWaited', { seconds: waitSeconds }) }}{{ waitSeconds >= 20 ? t('copilot.thinkingLongHint') : t('copilot.thinkingShortHint') }}
+            {{ t('copilot.thinkingWaited', { seconds: waitSeconds }) }}{{ waitSeconds >= longWaitSeconds ? t('copilot.thinkingLongHint') : t('copilot.thinkingShortHint') }}
           </small>
         </div>
       </div>
@@ -21,8 +21,10 @@
 <script setup lang="ts">
 import { Service, Loading } from '@element-plus/icons-vue'
 import { useAppI18n } from '@/i18n/useAppI18n'
+import { MASCOT_DEFAULTS } from '@/mascot/config'
 
 const { t } = useAppI18n()
+const longWaitSeconds = MASCOT_DEFAULTS.longWaitThresholdSeconds
 
 defineProps<{
   waitSeconds: number

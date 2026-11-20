@@ -6,6 +6,7 @@ import type {
   CameraStatusResponse,
   ChatRequest,
   ChatResponse,
+  ChatStreamEvent,
   CvNodeResponse,
   EventStatus,
   ManagedCameraResponse,
@@ -24,14 +25,27 @@ import type {
 export interface ApiNotifier {
   error(message: string): void
   warning(message: string): void
+  success?(message: string): void
 }
+
+export interface ConfirmDialogOptions {
+  title: string
+  message: string
+  confirmText: string
+  cancelText: string
+}
+
+export type ConfirmDialogPort = (options: ConfirmDialogOptions) => Promise<boolean>
 
 export type ApiTranslator = (key: string, params?: Record<string, string | number>) => string
 
 const noopNotifier: ApiNotifier = {
   error: () => undefined,
   warning: () => undefined,
+  success: () => undefined,
 }
+
+const defaultConfirmDialog: ConfirmDialogPort = () => Promise.resolve(true)
 
 const fallbackTranslator: ApiTranslator = (key, params) => {
   if (!params) return key
@@ -42,6 +56,7 @@ const fallbackTranslator: ApiTranslator = (key, params) => {
 }
 
 let activeNotifier: ApiNotifier = noopNotifier
+let activeConfirmDialog: ConfirmDialogPort = defaultConfirmDialog
 let activeTranslator: ApiTranslator = fallbackTranslator
 
 export function registerApiNotifier(notifier: ApiNotifier): void {
@@ -54,6 +69,18 @@ export function resetApiNotifier(): void {
 
 export function getApiNotifier(): ApiNotifier {
   return activeNotifier
+}
+
+export function registerConfirmDialog(confirmDialog: ConfirmDialogPort): void {
+  activeConfirmDialog = confirmDialog
+}
+
+export function resetConfirmDialog(): void {
+  activeConfirmDialog = defaultConfirmDialog
+}
+
+export function getConfirmDialog(): ConfirmDialogPort {
+  return activeConfirmDialog
 }
 
 export function registerApiTranslator(translator: ApiTranslator): void {
@@ -169,6 +196,11 @@ export interface ZonesPort {
 
 export interface ChatPort {
   sendChatMessage(request: ChatRequest): Promise<ChatResponse>
+  sendChatMessageStream?(
+    request: ChatRequest,
+    onEvent: (event: ChatStreamEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<ChatResponse>
   proposeTrainingAction(
     conversationId: string,
     training: {

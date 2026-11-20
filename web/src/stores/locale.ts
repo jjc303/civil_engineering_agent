@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { setI18nLocale } from '@/i18n'
+import { notifyLocaleChanged } from '@/i18n/localeDetect'
 import { writeStorage } from '@/utils/storage'
 import {
   LOCALE_OPTIONS,
@@ -31,6 +32,7 @@ export const useLocaleStore = defineStore('locale', () => {
     if (persist) {
       writeStorage(LOCALE_STORAGE_KEY, next, 'local')
     }
+    notifyLocaleChanged(next)
   }
 
   function init(): void {

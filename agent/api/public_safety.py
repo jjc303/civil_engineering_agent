@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-import json
 import time
 from typing import Any
 
@@ -15,6 +14,7 @@ from agent.contracts.event_v1 import EventStatus, ViolationSeverity, ViolationTy
 from agent.contracts.query import CameraStatusResponse, RiskHeatmapResponse, SafetyQueryRequest, SafetyQueryResponse, ViolationPageResponse, ViolationQuery, ViolationStatisticsResponse
 from agent.i18n import SupportedLocale, localize_response
 from agent.services.perception_service import PerceptionService
+from agent.services.sse_serializer import format_sse_comment, format_sse_event
 
 router = APIRouter(prefix="/api/v1", tags=["safety"])
 
@@ -110,8 +110,11 @@ async def stream_safety_events(
     if broadcaster is None:
         raise HTTPException(status_code=503, detail="Realtime event broadcasting is not available")
 
+    settings = getattr(request.app.state, "settings", None)
+    keepalive_seconds = float(getattr(settings, "sse_keepalive_seconds", 15.0))
+
     async def event_generator():
-        yield f"event: ping\ndata: {{\"connected\": true}}\n\n"
+        yield format_sse_event("ping", {"connected": True})
         yielded_count = 1
         if max_events > 0 and yielded_count >= max_events:
             return
@@ -123,14 +126,13 @@ async def stream_safety_events(
                 item = await asyncio.to_thread(lambda: next(iterator, None))
                 if item is None:
                     now = time.monotonic()
-                    if (now - last_keepalive) >= 15.0:
-                        yield ": keepalive\n\n"
+                    if (now - last_keepalive) >= keepalive_seconds:
+                        yield format_sse_comment()
                         last_keepalive = now
                     continue
                 event_type = item.get("event_type", "message")
                 data = localize_response(item.get("data", {}), locale)
-                payload = json.dumps(data, ensure_ascii=False)
-                yield f"event: {event_type}\ndata: {payload}\n\n"
+                yield format_sse_event(event_type, data)
                 last_keepalive = time.monotonic()
                 yielded_count += 1
                 if max_events > 0 and yielded_count >= max_events:

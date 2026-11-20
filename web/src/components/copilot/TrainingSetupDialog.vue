@@ -29,6 +29,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getAgentConversationId, proposeTrainingAction } from '@/api/chat'
 import { useAppI18n } from '@/i18n/useAppI18n'
+import { extractApiError } from '@/utils/errors'
 import type { GuidedSelectionOption, PendingAction } from '@/types/contract'
 
 const props = defineProps<{
@@ -87,8 +88,7 @@ async function submit(): Promise<void> {
     open.value = false
     emit('proposed', pending)
   } catch (err: unknown) {
-    const typed = err as { response?: { data?: { detail?: string } }; message?: string }
-    ElMessage.error(typed?.response?.data?.detail || typed?.message || t('copilot.trainingProposeFailed'))
+    ElMessage.error(extractApiError(err, t('copilot.trainingProposeFailed')))
   } finally {
     busy.value = false
   }

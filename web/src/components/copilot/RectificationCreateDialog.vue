@@ -30,6 +30,7 @@ import { ElMessage } from 'element-plus'
 import { getAgentConversationId } from '@/api/chat'
 import { proposeRectificationTaskCreate } from '@/api/rectificationTasks'
 import { useAppI18n } from '@/i18n/useAppI18n'
+import { extractApiError } from '@/utils/errors'
 import type { GuidedSelectionOption, PendingAction } from '@/types/contract'
 
 const props = defineProps<{
@@ -86,8 +87,7 @@ async function submit(): Promise<void> {
     open.value = false
     emit('proposed', pending)
   } catch (err: unknown) {
-    const typed = err as { response?: { data?: { detail?: string } }; message?: string }
-    ElMessage.error(typed?.response?.data?.detail || typed?.message || t('copilot.rectificationProposeFailed'))
+    ElMessage.error(extractApiError(err, t('copilot.rectificationProposeFailed')))
   } finally {
     busy.value = false
   }

@@ -42,8 +42,20 @@ const httpBundle: ApiBundle = {
 }
 
 let cachedBundle: Promise<ApiBundle> | null = null
+let overrideRealtimePort: RealtimePort | null = null
+
+export function registerRealtimePort(port: RealtimePort): void {
+  overrideRealtimePort = port
+}
+
+export function resetRealtimePort(): void {
+  overrideRealtimePort = null
+}
 
 export function getApiBundle(): Promise<ApiBundle> {
+  if (overrideRealtimePort) {
+    return Promise.resolve({ ...httpBundle, realtime: overrideRealtimePort })
+  }
   if (import.meta.env?.VITE_USE_MOCK === 'true') {
     if (!cachedBundle) {
       cachedBundle = import('./mock').then((mod) => mod.createMockApiBundle())
@@ -54,11 +66,21 @@ export function getApiBundle(): Promise<ApiBundle> {
 }
 
 export function createStreamFromBundle(callbacks: SafetyEventStreamCallbacks): SafetyEventStreamHandle {
+  if (overrideRealtimePort) {
+    return overrideRealtimePort.createSafetyEventStream(callbacks)
+  }
   if (import.meta.env?.VITE_USE_MOCK === 'true') {
-    callbacks.onStateChange?.('disabled')
+    let closed = false
+    let innerHandle: SafetyEventStreamHandle | null = null
+    void import('./mock/realtime.mock').then((mod) => {
+      if (closed) return
+      innerHandle = mod.mockRealtimeAdapter.createSafetyEventStream(callbacks)
+    })
     return {
       close() {
-        callbacks.onStateChange?.('closed')
+        closed = true
+        innerHandle?.close()
+        if (!innerHandle) callbacks.onStateChange?.('closed')
       },
     }
   }

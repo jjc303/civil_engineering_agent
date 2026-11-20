@@ -67,103 +67,43 @@
 
         <CopilotAside />
       </div>
-
-      <EvidenceModal v-model="modalVisible" :record="selectedViolation" />
-      <CopilotReportDetailDialog v-model="reportDetailOpen" :report-id="selectedReportId" @preview-pdf="previewReportPdf" />
-      <CopilotTrainingDetailDialog v-model="trainingDetailOpen" :training-id="selectedTrainingId" />
-      <RectificationCreateDialog v-model="rectificationDialogVisible" :target="selectedRectificationTarget" @proposed="onRectificationProposed" />
-      <TrainingSetupDialog v-model="trainingSetupDialogVisible" :target="selectedTrainingReport" @proposed="onTrainingProposed" />
     </ErrorBoundary>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
 import { Document } from '@element-plus/icons-vue'
-import { downloadReport } from '@/api/learning'
+import { useCopilotModals } from '@/composables/useCopilotModals'
 import { useCopilotSession } from '@/composables/useCopilotSession'
-import { attachBlobToWindow, triggerBlobDownload } from '@/composables/useObjectUrl'
 import { useAppI18n } from '@/i18n/useAppI18n'
-import type { ChatMessageItem } from '@/types/chat'
-import type { ChatEvidence, GuidedSelectionOption, PendingAction, ViolationRecord } from '@/types/contract'
 import ChatMessage from '@/components/ChatMessage.vue'
 import ErrorBoundary from '@/components/ErrorBoundary.vue'
-import EvidenceModal from '@/components/EvidenceModal.vue'
 import ThinkingIndicator from '@/components/ThinkingIndicator.vue'
 import WelcomePanel from '@/components/WelcomePanel.vue'
 import CopilotAside from '@/components/copilot/CopilotAside.vue'
-import CopilotReportDetailDialog from '@/components/copilot/CopilotReportDetailDialog.vue'
-import CopilotTrainingDetailDialog from '@/components/copilot/CopilotTrainingDetailDialog.vue'
-import RectificationCreateDialog from '@/components/copilot/RectificationCreateDialog.vue'
-import TrainingSetupDialog from '@/components/copilot/TrainingSetupDialog.vue'
 
 const { t } = useAppI18n()
 const scrollRef = ref<HTMLDivElement | null>(null)
 const {
   inputQuestion, thinking, waitSeconds, uiConfig, quickQuestions,
   hasUserMessages, visibleMessages, handleSend, selectPrompt,
-  appendAssistantMessage, confirmAction, cancelAction,
+  confirmAction, cancelAction,
 } = useCopilotSession(scrollRef)
 
-const modalVisible = ref(false), selectedViolation = ref<ViolationRecord | null>(null)
-const reportDetailOpen = ref(false), selectedReportId = ref<string | null>(null)
-const trainingDetailOpen = ref(false), selectedTrainingId = ref<string | null>(null)
-const rectificationDialogVisible = ref(false), selectedRectificationTarget = ref<GuidedSelectionOption | null>(null)
-const trainingSetupDialogVisible = ref(false), selectedTrainingReport = ref<GuidedSelectionOption | null>(null)
+const {
+  viewEvidence,
+  openReportDetail,
+  openTrainingDetail,
+  previewReportPdf,
+  downloadReportPdf,
+  selectGuidedTarget,
+} = useCopilotModals()
 
 function handleComposerEnter(event: KeyboardEvent) {
   if (event.shiftKey || event.isComposing || event.keyCode === 229) return
   event.preventDefault()
   void handleSend()
-}
-
-function selectGuidedTarget(msg: ChatMessageItem, option: GuidedSelectionOption) {
-  if (msg.guidedSelection?.kind === 'CAMERA_TARGET' && option.follow_up_question) {
-    return selectPrompt(option.follow_up_question)
-  }
-  if (msg.guidedSelection?.kind === 'TRAINING_REPORT') {
-    selectedTrainingReport.value = option
-    trainingSetupDialogVisible.value = true
-    return
-  }
-  selectedRectificationTarget.value = option
-  rectificationDialogVisible.value = true
-}
-
-const onTrainingProposed = (pending: PendingAction) => appendAssistantMessage({ role: 'assistant', text: t('copilot.trainingPendingCreated'), pendingAction: pending })
-const onRectificationProposed = (pending: PendingAction) => appendAssistantMessage({ role: 'assistant', text: t('copilot.rectificationPendingCreated'), pendingAction: pending })
-
-function viewEvidence(ev: ChatEvidence) {
-  selectedViolation.value = {
-    event_uuid: ev.event_uuid, camera_id: t('copilot.evidenceSnapshotLabel'), monitor_session_id: '-',
-    track_id: 0, violation_type: 'NO_HELMET', severity: 'INFO', status: 'ACTIVE', zone_id: null, zone_name: null,
-    occurred_at_utc: ev.occurred_at_utc, resolved_at_utc: null, duration_seconds: 0, snapshot_uri: ev.snapshot_uri,
-    model_name: null, model_version: null, extra_details: {},
-  }
-  modalVisible.value = true
-}
-
-const openReportDetail = (id: string) => { selectedReportId.value = id; reportDetailOpen.value = true }
-const openTrainingDetail = (id: string) => { selectedTrainingId.value = id; trainingDetailOpen.value = true }
-
-async function previewReportPdf(id: string) {
-  const tab = window.open('', '_blank')
-  if (!tab) return ElMessage.warning(t('copilot.popupBlockedWarning'))
-  try {
-    attachBlobToWindow(await downloadReport(id), tab)
-  } catch {
-    tab.close()
-    ElMessage.error(t('copilot.pdfPreviewFailed'))
-  }
-}
-
-async function downloadReportPdf(id: string) {
-  try {
-    triggerBlobDownload(await downloadReport(id), `safety-report-${id}.pdf`)
-  } catch {
-    ElMessage.error(t('copilot.pdfDownloadFailed'))
-  }
 }
 </script>
 

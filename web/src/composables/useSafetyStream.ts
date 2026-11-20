@@ -1,38 +1,31 @@
-import { onUnmounted, ref } from 'vue'
-import {
-  createSafetyEventStream,
-  type RealtimeConnectionState,
-  type SafetyEventStreamCallbacks,
-  type SafetyEventStreamHandle,
-} from '@/api/realtime'
+import { computed, onUnmounted } from 'vue'
+import type { SafetyEventStreamCallbacks } from '@/api/realtime'
+import { useRealtimeStore } from '@/stores/realtime'
 
+/**
+ * Composable facade over the singleton useRealtimeStore so multiple views
+ * and the floating IP agent share a single SSE connection.
+ */
 export function useSafetyStream() {
-  const streamState = ref<RealtimeConnectionState>('closed')
-  let handle: SafetyEventStreamHandle | undefined
+  const realtimeStore = useRealtimeStore()
+  let unsubscribe: (() => void) | undefined
 
   function stop(): void {
-    if (handle) {
-      handle.close()
-      handle = undefined
+    if (unsubscribe) {
+      unsubscribe()
+      unsubscribe = undefined
     }
   }
 
   function start(callbacks: SafetyEventStreamCallbacks): void {
     stop()
-    handle = createSafetyEventStream({
-      onStateChange(state) {
-        streamState.value = state
-        callbacks.onStateChange?.(state)
-      },
-      onViolationEvent: callbacks.onViolationEvent,
-      onCameraStatus: callbacks.onCameraStatus,
-    })
+    unsubscribe = realtimeStore.subscribe(callbacks)
   }
 
   onUnmounted(stop)
 
   return {
-    streamState,
+    streamState: computed(() => realtimeStore.streamState),
     start,
     stop,
   }

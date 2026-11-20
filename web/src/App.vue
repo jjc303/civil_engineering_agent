@@ -64,6 +64,8 @@
           <p v-if="!searchResults.length">{{ t('app.quickSearchEmpty') }}</p>
         </div>
       </el-dialog>
+      <FloatingIpAgent />
+      <CopilotGlobalModals />
     </div>
   </el-config-provider>
 </template>
@@ -76,6 +78,8 @@ import { useAppI18n } from '@/i18n/useAppI18n'
 import { navigationFailure, resolveRouteTitle, syncDocumentTitle } from '@/router'
 import { appPath } from '@/utils/deployment'
 import LocaleToggle from '@/components/LocaleToggle.vue'
+import FloatingIpAgent from '@/components/mascot/FloatingIpAgent.vue'
+import CopilotGlobalModals from '@/components/copilot/CopilotGlobalModals.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -113,8 +117,8 @@ const localVideoDemo = APP_CONFIG.localVideoDemo
 const collapsed = ref(false)
 const mobileOpen = ref(false)
 const now = ref(new Date())
-const isMonitor = computed(() => route.path === '/dashboard')
-const isLearningRoute = computed(() => route.path.startsWith('/learn/'))
+const isMonitor = computed(() => route.meta?.layout === 'monitor')
+const isLearningRoute = computed(() => route.meta?.layout === 'standalone')
 const currentRouteTitle = computed(() => {
   void locale.value
   return resolveRouteTitle(route)

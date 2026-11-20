@@ -113,6 +113,12 @@ class Settings:
     stream_consumer_group: str = "agent_notification_workers"
     stream_async_enabled: bool = False
     pubsub_realtime_channel: str = "pubsub:realtime_events"
+    sse_keepalive_seconds: float = 15.0
+    mascot_enabled: bool = True
+    mascot_persona_name: str = "安小盾"
+    mascot_idle_greeting: str = "我是施工安全卫士安小盾，随时为您巡检风险与解答规范。"
+    mascot_alert_reaction_enabled: bool = True
+    mascot_voice_enabled_by_default: bool = False
     bind_host: str = ""
     port: int = 0
     cors_origins: tuple[str, ...] = ()
@@ -202,6 +208,18 @@ class Settings:
             stream_consumer_group=os.getenv("AGENT_STREAM_CONSUMER_GROUP", "agent_notification_workers").strip() or "agent_notification_workers",
             stream_async_enabled=os.getenv("AGENT_STREAM_ASYNC_ENABLED", "false").lower() == "true",
             pubsub_realtime_channel=os.getenv("AGENT_PUBSUB_REALTIME_CHANNEL", "pubsub:realtime_events").strip() or "pubsub:realtime_events",
+            sse_keepalive_seconds=float(os.getenv("AGENT_SSE_KEEPALIVE_SECONDS", "15")),
+            mascot_enabled=os.getenv("AGENT_MASCOT_ENABLED", "true").lower() == "true",
+            mascot_persona_name=os.getenv("AGENT_MASCOT_PERSONA_NAME", "安小盾").strip() or "安小盾",
+            mascot_idle_greeting=(
+                os.getenv(
+                    "AGENT_MASCOT_IDLE_GREETING",
+                    "我是施工安全卫士安小盾，随时为您巡检风险与解答规范。",
+                ).strip()
+                or "我是施工安全卫士安小盾，随时为您巡检风险与解答规范。"
+            ),
+            mascot_alert_reaction_enabled=os.getenv("AGENT_MASCOT_ALERT_REACTION_ENABLED", "true").lower() == "true",
+            mascot_voice_enabled_by_default=os.getenv("AGENT_MASCOT_VOICE_DEFAULT", "false").lower() == "true",
             bind_host=_required("AGENT_BIND_HOST"),
             port=int(_required("AGENT_PORT")),
             cors_origins=tuple(origin.strip() for origin in _required("AGENT_CORS_ORIGINS").split(",") if origin.strip()),
@@ -277,6 +295,8 @@ class Settings:
             self.rag_embedding_dimensions,
             self.rag_enabled,
         )
+        if self.sse_keepalive_seconds <= 0:
+            raise RuntimeError("AGENT_SSE_KEEPALIVE_SECONDS must be positive")
         if not self.auto_create_schema and (not self.bind_host or not 1 <= self.port <= 65535 or not self.cors_origins):
             raise RuntimeError("AGENT_BIND_HOST, AGENT_PORT and AGENT_CORS_ORIGINS must be configured")
 
