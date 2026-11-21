@@ -16,6 +16,7 @@ from agent.domain.standards_guard import (
     contains_unsupported_standard_reference as _contains_unsupported_standard_reference,
 )
 from agent.core.config import DEFAULT_RAG_TOP_K, DEFAULT_TOOL_MAX_CALLS
+from agent.domain.time_context import format_local_time_short, resolve_context_timezone
 from agent.llm.protocol import ChatModelPort
 from agent.prompts.chat_messages import (
     DATA_SERVICE_UNAVAILABLE_ANSWER,
@@ -69,6 +70,34 @@ def _resolve_context(
     return ctx
 
 
+def _accepted_optional_kwargs(fn: Any, candidates: dict[str, Any]) -> dict[str, Any]:
+    """Filter optional keyword arguments based on target method signature (LSP-safe)."""
+    try:
+        params = inspect.signature(fn).parameters.values()
+        accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params)
+        param_names = {p.name for p in params}
+    except (TypeError, ValueError):
+        return {}
+    if accepts_var_kw:
+        return dict(candidates)
+    return {key: value for key, value in candidates.items() if key in param_names}
+
+
+def _invoke_model_decide(
+    active_model: ChatModelPort,
+    question: str,
+    previous_results: Sequence[ToolResult],
+    memory_context: str,
+    tool_catalog: Sequence[dict[str, str]],
+    request_time_context: str = "",
+) -> ToolDecision | None:
+    kwargs = _accepted_optional_kwargs(
+        active_model.decide,
+        {"request_time_context": request_time_context},
+    )
+    return active_model.decide(question, previous_results, memory_context, tool_catalog, **kwargs)
+
+
 def _invoke_model_respond(
     active_model: ChatModelPort,
     question: str,
@@ -77,23 +106,18 @@ def _invoke_model_respond(
     tool_catalog: Sequence[dict[str, str]],
     capability_status: dict[str, Any],
     response_locale: str = "zh-CN",
+    request_time_context: str = "",
 ) -> str:
     """Invoke model.respond while keeping backwards compatibility with 3-arg stubs."""
-    try:
-        params = inspect.signature(active_model.respond).parameters.values()
-        accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params)
-        param_names = {p.name for p in params}
-    except (TypeError, ValueError):
-        accepts_var_kw = False
-        param_names = set()
-
-    kwargs: dict[str, Any] = {}
-    if accepts_var_kw or "tool_catalog" in param_names:
-        kwargs["tool_catalog"] = tool_catalog
-    if accepts_var_kw or "capability_status" in param_names:
-        kwargs["capability_status"] = capability_status
-    if accepts_var_kw or "response_locale" in param_names:
-        kwargs["response_locale"] = response_locale
+    kwargs = _accepted_optional_kwargs(
+        active_model.respond,
+        {
+            "tool_catalog": tool_catalog,
+            "capability_status": capability_status,
+            "response_locale": response_locale,
+            "request_time_context": request_time_context,
+        },
+    )
     return active_model.respond(question, tool_results, prompt_context, **kwargs)
 
 
@@ -116,7 +140,16 @@ def build_compiled_chat_graph(
                 question=state.get("question"),
                 prune_by_intent=bool(ctx.extensions.get("prune_by_intent", False)),
             )
-            return {"decision": active_model.decide(state["question"], previous, state.get("memory_context", ""), tool_catalog)}
+            return {
+                "decision": _invoke_model_decide(
+                    active_model,
+                    state["question"],
+                    previous,
+                    state.get("memory_context", ""),
+                    tool_catalog,
+                    request_time_context=state.get("request_time_context", ""),
+                )
+            }
         except Exception:
             logger.exception("chat model failed to produce a validated tool decision")
             return {"error_code": "MODEL_DECISION_FAILED", "degraded": True}
@@ -179,10 +212,12 @@ def build_compiled_chat_graph(
     def respond(state: ChatGraphState, config: RunnableConfig) -> dict[str, Any]:
         pending = state.get("pending_action")
         if pending:
+            ctx = _resolve_context(state, config, default_context)
+            tz = resolve_context_timezone(ctx)
             return {
                 "answer": PENDING_ACTION_ANSWER_TEMPLATE.format(
                     summary=pending.summary,
-                    expires_at=pending.expires_at_utc.strftime("%H:%M"),
+                    expires_at_local=format_local_time_short(pending.expires_at_utc, tz),
                 )
             }
         selection = state.get("guided_selection")
@@ -234,6 +269,7 @@ def build_compiled_chat_graph(
                 full_catalog,
                 capability_status,
                 response_locale=state.get("response_locale", "zh-CN"),
+                request_time_context=state.get("request_time_context", ""),
             )
             if _contains_unsupported_standard_reference(answer, standards_context):
                 return {

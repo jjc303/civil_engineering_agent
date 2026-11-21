@@ -19,6 +19,7 @@ from agent.contracts.chat import (
 )
 from agent.core.config import DEFAULT_RAG_TOP_K, DEFAULT_TOOL_MAX_CALLS
 from agent.db.base import Database
+from agent.domain.time_context import DEFAULT_DISPLAY_TIMEZONE, format_request_time_context
 from agent.graph.chat_graph import build_compiled_chat_graph
 from agent.i18n import DEFAULT_LOCALE, SupportedLocale, localize_response, to_simplified_text
 from agent.llm.protocol import ChatModelPort
@@ -79,6 +80,7 @@ class ChatService:
         learning_service: LearningService | None = None,
         notification_service: BriefingNotificationPort | None = None,
         standards_on_demand: bool = False,
+        display_timezone: str = DEFAULT_DISPLAY_TIMEZONE,
     ):
         self.database = database
         self.model = model
@@ -94,6 +96,7 @@ class ChatService:
         self.learning_service = learning_service
         self.notification_service = notification_service
         self.standards_on_demand = standards_on_demand
+        self.display_timezone = display_timezone
         self._graph = build_compiled_chat_graph(self.model, self.max_tool_calls)
 
     def _build_standards_context(self, question: str) -> tuple[str, list[KnowledgeCitation], str | None]:
@@ -114,6 +117,7 @@ class ChatService:
     ) -> ChatResponse:
         request_id = str(uuid4())
         page_context_text = format_page_context(request.page_context)
+        request_time_context = format_request_time_context(timezone_name=self.display_timezone)
         with self.database.session() as session:
             memory = ConversationMemory(session, self.memory_ttl_hours, self.memory_recent_turns)
             if self.memory_enabled:
@@ -129,7 +133,10 @@ class ChatService:
                 standards_context, standard_citations, standards_error = self._build_standards_context(
                     request.question
                 )
-            extensions: dict[str, Any] = {"standards_top_k": self.standards_top_k}
+            extensions: dict[str, Any] = {
+                "standards_top_k": self.standards_top_k,
+                "display_timezone": self.display_timezone,
+            }
             if stage_callback is not None:
                 extensions["stage_callback"] = stage_callback
             tool_context = ToolContext(
@@ -154,6 +161,7 @@ class ChatService:
                     "knowledge_citations": standard_citations,
                     "memory_context": context,
                     "page_context_text": page_context_text,
+                    "request_time_context": request_time_context,
                     "standards_context": standards_context,
                     "degraded": False,
                 },

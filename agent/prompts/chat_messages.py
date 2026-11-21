@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 PENDING_ACTION_ANSWER_TEMPLATE = (
-    "已生成待确认操作：{summary}。请在下方确认后执行；确认有效期至 {expires_at} UTC。"
+    "已生成待确认操作：{summary}。请在下方确认后执行；确认有效期至 {expires_at_local}。"
 )
 WRITE_ACTION_PROPOSE_FAILED_TEMPLATE = "无法生成待确认操作：{reason}"
 UNSUPPORTED_STANDARD_ANSWER = (

@@ -1,7 +1,23 @@
 from __future__ import annotations
 
 from agent.contracts.chat import ToolDecision
+from agent.domain.time_context import (
+    enrich_record_local_times,
+    enrich_records_local_times,
+    resolve_context_timezone,
+)
 from agent.tools.base import AgentTool, Capability, ToolContext, ToolOutcome
+
+_PERIOD_TIME_FIELDS = (
+    ("period_start_utc", "period_start_local"),
+    ("period_end_utc", "period_end_local"),
+    ("created_at_utc", "created_at_local"),
+)
+_INSIGHTS_TIME_FIELDS = (
+    ("period_start_utc", "period_start_local"),
+    ("generated_at_utc", "generated_at_local"),
+)
+_SUBMISSION_TIME_FIELDS = (("submitted_at_utc", "submitted_at_local"),)
 
 
 def _require_learning(ctx: ToolContext):
@@ -11,25 +27,34 @@ def _require_learning(ctx: ToolContext):
 
 
 def _get_learning_overview(_decision: ToolDecision, ctx: ToolContext) -> ToolOutcome:
-    return ToolOutcome(data=_require_learning(ctx).weekly_overview())
+    tz = resolve_context_timezone(ctx)
+    data = enrich_record_local_times(_require_learning(ctx).weekly_overview(), _PERIOD_TIME_FIELDS, tz)
+    return ToolOutcome(data=data)
 
 
 def _get_learning_insights(_decision: ToolDecision, ctx: ToolContext) -> ToolOutcome:
-    return ToolOutcome(data=_require_learning(ctx).weekly_insights())
+    tz = resolve_context_timezone(ctx)
+    data = enrich_record_local_times(_require_learning(ctx).weekly_insights(), _INSIGHTS_TIME_FIELDS, tz)
+    return ToolOutcome(data=data)
 
 
 def _list_safety_reports(_decision: ToolDecision, ctx: ToolContext) -> ToolOutcome:
     learning = _require_learning(ctx)
+    tz = resolve_context_timezone(ctx)
     data = [
-        {
-            "report_id": row.report_id,
-            "period_start_utc": row.period_start_utc.isoformat(),
-            "period_end_utc": row.period_end_utc.isoformat(),
-            "status": row.status,
-            "event_count": row.statistics.get("total", 0),
-            "summary": row.content.summary[:300],
-            "pdf_url": row.pdf_url,
-        }
+        enrich_record_local_times(
+            {
+                "report_id": row.report_id,
+                "period_start_utc": row.period_start_utc.isoformat(),
+                "period_end_utc": row.period_end_utc.isoformat(),
+                "status": row.status,
+                "event_count": row.statistics.get("total", 0),
+                "summary": row.content.summary[:300],
+                "pdf_url": row.pdf_url,
+            },
+            _PERIOD_TIME_FIELDS,
+            tz,
+        )
         for row in learning.list_reports()
     ]
     return ToolOutcome(data=data)
@@ -37,7 +62,9 @@ def _list_safety_reports(_decision: ToolDecision, ctx: ToolContext) -> ToolOutco
 
 def _get_safety_report(decision: ToolDecision, ctx: ToolContext) -> ToolOutcome:
     learning = _require_learning(ctx)
-    return ToolOutcome(data=learning.get_report(decision.report_id or "").model_dump(mode="json"))
+    tz = resolve_context_timezone(ctx)
+    raw = learning.get_report(decision.report_id or "").model_dump(mode="json")
+    return ToolOutcome(data=enrich_record_local_times(raw, _PERIOD_TIME_FIELDS, tz))
 
 
 def _list_training_tasks(_decision: ToolDecision, ctx: ToolContext) -> ToolOutcome:
@@ -65,8 +92,9 @@ def _get_training_task(decision: ToolDecision, ctx: ToolContext) -> ToolOutcome:
 
 def _get_training_statistics(decision: ToolDecision, ctx: ToolContext) -> ToolOutcome:
     learning = _require_learning(ctx)
+    tz = resolve_context_timezone(ctx)
     statistics = learning.training_statistics(decision.training_id or "")
-    submissions = statistics["submissions"]
+    submissions = enrich_records_local_times(statistics["submissions"], _SUBMISSION_TIME_FIELDS, tz)
     data = {**statistics, "submission_count": len(submissions), "submissions": submissions[:20]}
     return ToolOutcome(data=data)
 

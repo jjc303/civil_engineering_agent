@@ -7,7 +7,7 @@
     }
   ],
   "response": {
-    "answer": "已生成待确认操作：摘要:create_training_task。请在下方确认后执行；确认有效期至 12:30 UTC。",
+    "answer": "已生成待确认操作：摘要:create_training_task。请在下方确认后执行；确认有效期至 20:30 (Asia/Shanghai)。",
     "degraded": false,
     "error_code": null,
     "evidence": [],

@@ -17,7 +17,14 @@ class FakeChatModel(ChatModelPort):
 
     model_name = "fake-safety-chat-v1"
 
-    def decide(self, question: str, previous_results: Sequence[ToolResult], memory_context: str = "", tool_catalog: Sequence[dict[str, str]] = ()) -> ToolDecision | None:
+    def decide(
+        self,
+        question: str,
+        previous_results: Sequence[ToolResult],
+        memory_context: str = "",
+        tool_catalog: Sequence[dict[str, str]] = (),
+        request_time_context: str = "",
+    ) -> ToolDecision | None:
         question = to_simplified_text(question)
         normalized = question.lower()
         camera_id = self._camera_id(question)
@@ -85,6 +92,7 @@ class FakeChatModel(ChatModelPort):
         tool_catalog: Sequence[dict[str, str]] = (),
         capability_status: dict[str, Any] | None = None,
         response_locale: str = "zh-CN",
+        request_time_context: str = "",
     ) -> str:
         question = to_simplified_text(question)
         if not results:

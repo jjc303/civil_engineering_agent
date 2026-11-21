@@ -15,7 +15,7 @@ def test_decision_prompt_contains_core_constraints() -> None:
     for status in EventStatus:
         assert f'"{status.value}"' in _DECISION_PROMPT
     assert "1 到 100" in _DECISION_PROMPT
-    assert '{"tool_name": null}' in _DECISION_PROMPT
+    assert '{"tool_name": null, "purpose":' in _DECISION_PROMPT
 
 
 def test_decision_prompt_mentions_tool_decision_fields() -> None:

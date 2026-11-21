@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from agent.domain.time_context import normalize_to_utc
 from .actions import GuidedSelection, PendingActionResponse
 from .query import ViolationQuery
 from .learning import TrainingQuestion
@@ -81,6 +82,11 @@ class ToolDecision(BaseModel):
     notification_title: str | None = Field(default=None, min_length=1, max_length=128)
     notification_content: str | None = Field(default=None, min_length=1, max_length=4000)
     purpose: str = Field(min_length=1, max_length=256)
+
+    @field_validator("task_due_at_utc", "report_period_start_utc", "report_period_end_utc", mode="after")
+    @classmethod
+    def normalize_utc_timestamps(cls, value: datetime | None) -> datetime | None:
+        return normalize_to_utc(value)
 
     @model_validator(mode="after")
     def enforce_tool_boundaries(self) -> "ToolDecision":

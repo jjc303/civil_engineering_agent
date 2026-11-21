@@ -34,10 +34,10 @@ graph LR
 
 ## 2. Agent 的回答与工具调用机制
 
-1. 浏览器向 `POST /api/v1/agent/chat` 提交问题及 `conversation_id`。后端读取 MySQL 中尚未过期的短期会话上下文。
+1. 浏览器向 `POST /api/v1/agent/chat`（或流式 `POST /api/v1/agent/chat/stream`）提交问题及 `conversation_id`。后端读取 MySQL 中尚未过期的短期会话上下文，并在请求入口按 `LEARNING_TIMEZONE` 冻结一次分钟级 `[当前时间]` 上下文（含星期几与时区偏移）拼在最新用户消息前传入模型，保持 `SystemMessage` 静态以命中 KV Cache，且不污染持久化会话记忆。
 2. 如果启用 RAG，**每轮**先按当前问题自动检索工程规范片段，形成回答上下文；事故报告不在这个自动步骤中，只有模型选择 `search_knowledge` 时才检索。规范检索失败时会标记降级，不允许据此编造标准。
-3. 模型只能从运行时提供的工具目录选择工具，并提交符合 `ToolDecision` 的结构化参数。图根据返回结果最多执行 `AGENT_TOOL_MAX_CALLS` 次工具调用，配置允许 1～5 次（默认 4 次）。无必要工具时直接回答。
-4. 查询结果可附事件证据、知识片段出处、报告或培训预览卡片、工具调用轨迹。回答中出现无法由规范片段支持的标准名称、编号或条款时，服务会拒绝该回答。
+3. 模型只能从运行时提供的工具目录选择工具，并提交符合 `ToolDecision` 的结构化参数（时间筛选与截止时间支持直接提交带 `+08:00` 等偏移的 ISO 8601 字符串，由 `ViolationQuery` / `ToolDecision` 自动归一化为 UTC 查库）。图根据返回结果最多执行 `AGENT_TOOL_MAX_CALLS` 次工具调用，配置允许 1～5 次（默认 4 次）。无必要工具时直接回答。
+4. 查询结果可附事件证据、知识片段出处、报告或培训预览卡片、工具调用轨迹；返回给模型生成回答的工具结果会在保留 `*_utc` 契约的同时附加 `*_local` 本地时间字段（含星期与时区），避免模型跨零点换算出错。回答中出现无法由规范片段支持的标准名称、编号或条款时，服务会拒绝该回答。
 5. 写工具只**创建服务端待确认操作**；浏览器另行调用确认或取消接口后，才执行数据库写入或 CV 控制。待确认操作绑定页面会话，默认 15 分钟过期，执行过程留有审计记录。
 
 注意：聊天图动态加入部分工具。基础安全查询始终注册；学习工具在 `LearningService` 可用时注册；知识工具在 RAG 可用时出现；写工具依赖写操作服务。下表按完整服务装配后的目录统计，共 **30 个 Agent 工具**：只读查询 15 个、只读引导 3 个、需确认的写工具 12 个。其中基础查询 6 个和学习查询 7 个由 `ToolRegistry` 注册，其余由聊天图加入目录并分派执行。
@@ -206,7 +206,7 @@ graph LR
 | 主题 | 路径 |
 | --- | --- |
 | Agent 工具注册与契约 | `agent/tools/safety_tools.py`、`agent/tools/learning_tools.py`、`agent/contracts/chat.py` |
-| 动态工具、引导与回答 | `agent/graph/chat_graph.py`、`agent/services/chat_service.py` |
+| 动态工具、引导与回答 | `agent/graph/chat_graph.py`、`agent/services/chat_service.py`、`agent/domain/time_context.py` |
 | 待确认写操作与审计 | `agent/services/agent_write_actions.py`、`agent/contracts/actions.py` |
 | 事故/规范 RAG | `agent/services/knowledge_service.py`、`agent/rag/manager.py`、`agent/rag/chroma_adapter.py` |
 | 报告、培训和答题 | `agent/services/learning_service.py`、`agent/api/learning.py` |

@@ -2,14 +2,27 @@ from __future__ import annotations
 
 from agent.contracts.chat import ToolDecision
 from agent.contracts.query import ViolationQuery
+from agent.domain.time_context import (
+    enrich_record_local_times,
+    enrich_records_local_times,
+    resolve_context_timezone,
+)
 from agent.tools import safety_tools
 from agent.tools.base import AgentTool, ToolContext, ToolOutcome, extract_evidence
+
+_VIOLATION_TIME_FIELDS = (
+    ("occurred_at_utc", "occurred_at_local"),
+    ("resolved_at_utc", "resolved_at_local"),
+)
+_CAMERA_TIME_FIELDS = (("reported_at_utc", "reported_at_local"),)
 
 
 def _query_violations(decision: ToolDecision, ctx: ToolContext) -> ToolOutcome:
     query = ViolationQuery.model_validate(decision.query.model_dump(mode="json"))
-    data = [item.model_dump(mode="json") for item in ctx.repository.query_events(query)]
-    return ToolOutcome(data=data, evidence=extract_evidence(data))
+    raw_rows = [item.model_dump(mode="json") for item in ctx.repository.query_events(query)]
+    tz = resolve_context_timezone(ctx)
+    data = enrich_records_local_times(raw_rows, _VIOLATION_TIME_FIELDS, tz)
+    return ToolOutcome(data=data, evidence=extract_evidence(raw_rows))
 
 
 def _get_violation_statistics(decision: ToolDecision, ctx: ToolContext) -> ToolOutcome:
@@ -20,12 +33,17 @@ def _get_violation_statistics(decision: ToolDecision, ctx: ToolContext) -> ToolO
 
 def _get_camera_status(decision: ToolDecision, ctx: ToolContext) -> ToolOutcome:
     status = ctx.repository.get_camera_status(decision.camera_id) if decision.camera_id else None
-    data = status.model_dump(mode="json") if status else None
+    if status is None:
+        return ToolOutcome(data=None)
+    tz = resolve_context_timezone(ctx)
+    data = enrich_record_local_times(status.model_dump(mode="json"), _CAMERA_TIME_FIELDS, tz)
     return ToolOutcome(data=data)
 
 
 def _get_all_camera_statuses(_decision: ToolDecision, ctx: ToolContext) -> ToolOutcome:
-    data = [status.model_dump(mode="json") for status in ctx.repository.list_camera_statuses()]
+    raw_rows = [status.model_dump(mode="json") for status in ctx.repository.list_camera_statuses()]
+    tz = resolve_context_timezone(ctx)
+    data = enrich_records_local_times(raw_rows, _CAMERA_TIME_FIELDS, tz)
     return ToolOutcome(data=data)
 
 

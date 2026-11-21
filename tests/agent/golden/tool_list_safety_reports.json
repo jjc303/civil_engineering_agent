@@ -14,7 +14,9 @@
             {
               "event_count": 3,
               "pdf_url": "/api/v1/learning/reports/r/pdf",
+              "period_end_local": "2026-09-27 20:30:00 (星期日, Asia/Shanghai)",
               "period_end_utc": "2026-09-27T12:30:00+00:00",
+              "period_start_local": "2026-09-25 20:30:00 (星期五, Asia/Shanghai)",
               "period_start_utc": "2026-09-25T12:30:00+00:00",
               "report_id": "22222222-2222-4222-8222-222222222222",
               "status": "CONFIRMED",

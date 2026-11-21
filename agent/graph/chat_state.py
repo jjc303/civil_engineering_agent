@@ -18,6 +18,7 @@ class ChatGraphState(TypedDict, total=False):
     knowledge_citations: list[KnowledgeCitation]
     memory_context: str
     page_context_text: str
+    request_time_context: str
     standards_context: str
     answer: str
     pending_action: PendingActionResponse | None

@@ -53,6 +53,7 @@
               "model_name": null,
               "model_version": null,
               "monitor_session_id": "s1",
+              "occurred_at_local": "2026-09-25 20:30:00 (星期五, Asia/Shanghai)",
               "occurred_at_utc": "2026-09-25T12:30:00Z",
               "resolved_at_utc": null,
               "severity": "CRITICAL",

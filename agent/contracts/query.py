@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from agent.domain.time_context import normalize_to_utc
 from .event_v1 import EventStatus, ViolationSeverity, ViolationType
 
 
@@ -17,6 +18,11 @@ class ViolationQuery(BaseModel):
     end_time_utc: datetime | None = None
     limit: int = Field(default=100, ge=1, le=500)
     offset: int = Field(default=0, ge=0)
+
+    @field_validator("start_time_utc", "end_time_utc", mode="after")
+    @classmethod
+    def normalize_utc(cls, value: datetime | None) -> datetime | None:
+        return normalize_to_utc(value)
 
 
 class ViolationRecord(BaseModel):
@@ -38,11 +44,7 @@ class ViolationRecord(BaseModel):
     @field_validator("occurred_at_utc", "resolved_at_utc", mode="after")
     @classmethod
     def normalize_utc(cls, value: datetime | None) -> datetime | None:
-        if value is None:
-            return None
-        if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+        return normalize_to_utc(value)
     model_version: str | None
     extra_details: dict[str, Any]
 

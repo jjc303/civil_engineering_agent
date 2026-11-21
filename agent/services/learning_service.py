@@ -509,7 +509,7 @@ class LearningService:
         generated = self.model.generate_structured(instruction, generation_context)
         material = str(generated.get("material", "")).strip()
         questions = [TrainingQuestion.model_validate(item) for item in generated.get("questions", [])]
-        if not material or len(questions) != request.question_count:
+        if not material or not questions or len(questions) > request.question_count:
             raise ValueError("培训内容或题目数量不完整，请补充案例、规范资料或减少题数")
         row = TrainingTaskModel(
             task_id=str(uuid4()),
@@ -517,7 +517,7 @@ class LearningService:
             status="DRAFT",
             title=request.title,
             target_count=request.target_count,
-            question_count=request.question_count,
+            question_count=len(questions),
             pass_score=request.pass_score,
             selected_documents_json=selected,
             material=material,

@@ -20,6 +20,7 @@
             "model_version": null,
             "monitor_session_id": "s1",
             "processed_frame_id": 9,
+            "reported_at_local": "2026-09-25 20:30:00 (星期五, Asia/Shanghai)",
             "reported_at_utc": "2026-09-25T12:30:00"
           },
           "success": true,
@@ -42,6 +43,7 @@
             "model_version": null,
             "monitor_session_id": "s1",
             "processed_frame_id": 9,
+            "reported_at_local": "2026-09-25 20:30:00 (星期五, Asia/Shanghai)",
             "reported_at_utc": "2026-09-25T12:30:00"
           },
           "success": true,

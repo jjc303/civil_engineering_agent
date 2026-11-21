@@ -10,7 +10,14 @@ class ChatModelPort(Protocol):
 
     model_name: str
 
-    def decide(self, question: str, previous_results: Sequence[ToolResult], memory_context: str = "", tool_catalog: Sequence[dict[str, str]] = ()) -> ToolDecision | None:
+    def decide(
+        self,
+        question: str,
+        previous_results: Sequence[ToolResult],
+        memory_context: str = "",
+        tool_catalog: Sequence[dict[str, str]] = (),
+        request_time_context: str = "",
+    ) -> ToolDecision | None:
         """Return a validated tool decision, or None when enough facts are available."""
 
     def respond(
@@ -21,6 +28,7 @@ class ChatModelPort(Protocol):
         tool_catalog: Sequence[dict[str, str]] = (),
         capability_status: dict[str, Any] | None = None,
         response_locale: str = "zh-CN",
+        request_time_context: str = "",
     ) -> str:
         """Create a user-facing answer from validated tool results and runtime capability status."""
 

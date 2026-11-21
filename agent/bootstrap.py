@@ -166,6 +166,7 @@ def build_service_container(settings: Settings, database: Database, infra: Infra
         learning_service,
         notification_service=notification_service,
         standards_on_demand=settings.rag_standards_on_demand,
+        display_timezone=settings.learning_timezone,
     )
 
     if settings.stream_async_enabled and notification_service is not None:
